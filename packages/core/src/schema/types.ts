@@ -2,7 +2,7 @@
  * Types for the schema definition system
  */
 
-import { ContainerType } from "./container-types";
+import { ContainerType } from "loro-crdt";
 
 /**
  * Options for schema definitions

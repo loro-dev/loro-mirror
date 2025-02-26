@@ -5,11 +5,11 @@
  */
 
 import type { ContainerType as LoroContainerType } from "loro-crdt";
-import { ContainerType } from "./container-types";
 import {
     ContainerSchemaType,
     LoroListSchema,
     LoroMapSchema,
+    LoroTextSchemaType,
     RootSchemaDefinition,
     RootSchemaType,
     SchemaDefinition,
@@ -19,7 +19,6 @@ import {
 
 export * from "./types";
 export * from "./validators";
-export * from "./container-types";
 
 /**
  * Create a schema definition
@@ -33,7 +32,7 @@ export function schema<T extends Record<string, ContainerSchemaType>>(
         definition,
         options: options || {},
         getContainerType() {
-            return ContainerType.Map;
+            return "Map";
         },
     };
 }
@@ -102,7 +101,7 @@ schema.LoroMap = function <T extends Record<string, SchemaType>>(
         definition,
         options: options || {},
         getContainerType() {
-            return ContainerType.Map;
+            return "Map";
         },
     };
 };
@@ -121,7 +120,7 @@ schema.LoroList = function <T extends SchemaType>(
         idSelector,
         options: options || {},
         getContainerType() {
-            return ContainerType.List;
+            return "List";
         },
     };
 };
@@ -129,12 +128,12 @@ schema.LoroList = function <T extends SchemaType>(
 /**
  * Define a Loro text field
  */
-schema.LoroText = function (options?: SchemaOptions) {
+schema.LoroText = function (options?: SchemaOptions): LoroTextSchemaType {
     return {
         type: "loro-text" as const,
         options: options || {},
         getContainerType() {
-            return ContainerType.RichText;
+            return "Text";
         },
     };
 };
