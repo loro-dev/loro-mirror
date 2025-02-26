@@ -1,46 +1,13 @@
 import { Mirror, SyncDirection } from "../../src/core/mirror";
 import { schema } from "../../src/schema";
-import { LoroDoc, LoroList, LoroMap } from "loro-crdt";
+import { LoroDoc } from "loro-crdt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-// Type guard for LoroMap
-function isLoroMap(obj: unknown): obj is LoroMap {
-  return obj !== null &&
-    typeof obj === "object" &&
-    "kind" in obj &&
-    typeof obj.kind === "function" &&
-    obj.kind() === "Map";
-}
-
-// Type guard for LoroList
-function isLoroList(obj: unknown): obj is LoroList {
-  return obj !== null &&
-    typeof obj === "object" &&
-    "kind" in obj &&
-    typeof obj.kind === "function" &&
-    obj.kind() === "List";
-}
-
-// Define interfaces for our test states with wrapped values
-interface CounterState {
-  counter: number | { value: number };
-}
-
-interface ValueState {
-  value: string | { value: string };
-}
-
-interface NoteState {
-  note: string | { value: string };
-}
 
 describe("Mirror - State Consistency", () => {
   let doc: LoroDoc;
 
   // Utility function to wait for sync to complete (three microtasks for better reliability)
   const waitForSync = async () => {
-    await Promise.resolve();
-    await Promise.resolve();
     await Promise.resolve();
   };
 

@@ -101,9 +101,6 @@ export class Mirror<S extends SchemaType> {
     // Map of container IDs to their containers
     private containerRegistry: Map<ContainerID, Container> = new Map();
 
-    // WeakMap to cache container paths for performance
-    private containerPathCache: WeakMap<Container, string[]> = new WeakMap();
-
     // Unsubscribe functions for container subscriptions
     private containerSubscriptions: Map<ContainerID, () => void> = new Map();
 
@@ -170,7 +167,7 @@ export class Mirror<S extends SchemaType> {
                         fieldSchema.type,
                     )
                 ) {
-                    this.registerContainer(key, [key]);
+                    this.registerContainer(key);
                 }
             }
         }
@@ -179,7 +176,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Register a container with the Mirror
      */
-    private registerContainer(name: string, path: string[]) {
+    private registerContainer(name: string) {
         try {
             let container: Container;
 
@@ -189,18 +186,20 @@ export class Mirror<S extends SchemaType> {
                 container = this.doc.getContainerById(name as ContainerID)!;
             } else {
                 // Root container by name
-                const schema = this.getSchemaForPath(path);
+                const schema = this.schema.type === "schema"
+                    ? this.schema.definition[name]
+                    : null;
 
                 if (!schema) {
                     if (this.options.debug) {
                         console.warn(
-                            `No schema found for path: ${path.join(".")}`,
+                            `No schema found for container: ${name}`,
                         );
                     }
                     return;
                 }
 
-                switch (schema.type) {
+                switch (schema.type as string) {
                     case "loro-map":
                         container = this.doc.getMap(name);
                         break;
@@ -213,7 +212,8 @@ export class Mirror<S extends SchemaType> {
                     default:
                         if (this.options.debug) {
                             console.warn(
-                                `Unsupported container type: ${schema.type}`,
+                                `Unsupported container type: ${schema
+                                    .type as string}`,
                             );
                         }
                         return;
@@ -229,15 +229,12 @@ export class Mirror<S extends SchemaType> {
             // Store container in registry
             this.containerRegistry.set(containerId, container);
 
-            // Cache the path for this container
-            this.containerPathCache.set(container, path);
-
             // Subscribe to container events
             const unsubscribe = container.subscribe(this.handleContainerEvent);
             this.containerSubscriptions.set(containerId, unsubscribe);
 
             // Register nested containers
-            this.registerNestedContainers(container, path);
+            this.registerNestedContainers(container);
         } catch (error) {
             if (this.options.debug) {
                 console.error(
@@ -251,10 +248,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Register nested containers within a container
      */
-    private registerNestedContainers(
-        container: Container,
-        parentPath: string[],
-    ) {
+    private registerNestedContainers(container: Container) {
         // Skip if not attached or has no getShallowValue
         if (!container.isAttached || !("getShallowValue" in container)) {
             return;
@@ -273,32 +267,21 @@ export class Mirror<S extends SchemaType> {
                             value as ContainerID,
                         );
                         if (nestedContainer) {
-                            const nestedPath = [...parentPath, key];
-                            this.registerContainer(
-                                value as ContainerID,
-                                nestedPath,
-                            );
+                            this.registerContainer(value as ContainerID);
                         }
                     }
                 }
             } else if (container.kind() === "List") {
                 // For lists, check each item
                 const list = container as LoroList;
-                shallowValue.forEach((value: any, index: number) => {
+                shallowValue.forEach((value: any) => {
                     if (typeof value === "string" && value.startsWith("cid:")) {
                         // This is a container reference
                         const nestedContainer = this.doc.getContainerById(
                             value as ContainerID,
                         );
                         if (nestedContainer) {
-                            const nestedPath = [
-                                ...parentPath,
-                                index.toString(),
-                            ];
-                            this.registerContainer(
-                                value as ContainerID,
-                                nestedPath,
-                            );
+                            this.registerContainer(value as ContainerID);
                         }
                     }
                 });
@@ -311,36 +294,6 @@ export class Mirror<S extends SchemaType> {
                 );
             }
         }
-    }
-
-    /**
-     * Get schema definition for a specific path
-     */
-    private getSchemaForPath(path: string[]): SchemaType | null {
-        let currentSchema: SchemaType = this.schema;
-
-        for (let i = 0; i < path.length; i++) {
-            const part = path[i];
-
-            if (
-                currentSchema.type === "schema" ||
-                currentSchema.type === "loro-map"
-            ) {
-                if (
-                    !currentSchema.definition || !currentSchema.definition[part]
-                ) {
-                    return null;
-                }
-                currentSchema = currentSchema.definition[part];
-            } else if (currentSchema.type === "loro-list") {
-                // For lists, we only care about the item schema
-                currentSchema = currentSchema.itemSchema;
-            } else {
-                return null;
-            }
-        }
-
-        return currentSchema;
     }
 
     /**
@@ -384,14 +337,13 @@ export class Mirror<S extends SchemaType> {
                         loroEvent.target,
                     );
                     if (container) {
-                        // Try to determine the path for this container
+                        // Try to determine the name for this container
                         const path = this.doc.getPathToContainer(
                             loroEvent.target,
                         );
-                        if (path) {
+                        if (path && path.length > 0) {
                             this.registerContainer(
-                                loroEvent.target,
-                                path.map((p) => p.toString()),
+                                path[path.length - 1].toString(),
                             );
                         }
                     }
@@ -438,10 +390,9 @@ export class Mirror<S extends SchemaType> {
                             const path = this.doc.getPathToContainer(
                                 loroEvent.target,
                             );
-                            if (path) {
+                            if (path && path.length > 0) {
                                 this.registerContainer(
-                                    loroEvent.target,
-                                    path.map((p) => p.toString()),
+                                    path[path.length - 1].toString(),
                                 );
                             }
                         }
@@ -473,10 +424,19 @@ export class Mirror<S extends SchemaType> {
         try {
             // Find the differences between current Loro state and new state
             const currentDocState = this.state;
+            console.log("currentDocState:", JSON.stringify(currentDocState, null, 2));
+            console.log("newState:", JSON.stringify(newState, null, 2));
+            
             const changes = this.findChanges(currentDocState, newState);
+            
+            // Always log changes for debugging
+            console.log("changes:", JSON.stringify(changes, null, 2));
 
             // Apply the changes to the Loro document
             this.applyChangesToLoro(changes);
+            
+            // Log the doc state after changes
+            console.log("Doc state after changes:", JSON.stringify(this.doc.toJSON(), null, 2));
         } finally {
             this.syncing = false;
         }
@@ -532,7 +492,7 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Apply changes to root-level fields
+     * Update root-level fields
      */
     private applyRootChanges(
         changes: Array<{ key: string | number; value: any }>,
@@ -540,27 +500,260 @@ export class Mirror<S extends SchemaType> {
         for (const { key, value } of changes) {
             const keyStr = key.toString();
 
-            // Find the container for this key
-            const container = this.findContainerForPath(keyStr);
-            if (container) {
-                // Apply direct changes to the container
-                this.updateTopLevelContainer(container, value);
-            } else if (
+            // Special handling for property paths on root containers (e.g. "todos.0.completed")
+            if (keyStr.includes('.')) {
+                const [containerName, ...pathParts] = keyStr.split('.');
+                
+                // Get the container for this root key
+                if (this.schema.type === "schema" && this.schema.definition && 
+                    this.schema.definition[containerName]) {
+                    
+                    const fieldSchema = this.schema.definition[containerName];
+                    let container: Container | null = null;
+                    
+                    // Create or get the container based on the schema type
+                    if (fieldSchema.type === "loro-list") {
+                        container = this.doc.getList(containerName);
+                    } else if (fieldSchema.type === "loro-map") {
+                        container = this.doc.getMap(containerName);
+                    }
+                    
+                    if (container) {
+                        if (container.kind() === "List") {
+                            const list = container as LoroList;
+                            const indexStr = pathParts[0];
+                            const index = parseInt(indexStr, 10);
+                            
+                            if (!isNaN(index) && index >= 0 && index < list.length) {
+                                if (pathParts.length > 1) {
+                                    // Update a nested property in a list item
+                                    const propName = pathParts[1];
+                                    const item = list.get(index);
+                                    
+                                    if (typeof item === 'object' && item !== null) {
+                                        const updatedItem = {
+                                            ...(item as Record<string, any>),
+                                            [propName]: value
+                                        };
+                                        
+                                        // Replace the item with the updated version
+                                        list.delete(index, 1);
+                                        list.insert(index, updatedItem);
+                                    }
+                                } else {
+                                    // Update the entire item at index
+                                    list.delete(index, 1);
+                                    list.insert(index, value);
+                                }
+                            }
+                        } else if (container.kind() === "Map") {
+                            const map = container as LoroMap;
+                            const propKey = pathParts[0];
+                            
+                            if (propKey && propKey.length > 0) {
+                                map.set(propKey, value);
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Get the appropriate container type based on schema
+            if (
                 this.schema.type === "schema" && this.schema.definition &&
                 this.schema.definition[keyStr]
             ) {
-                // This is a valid field in the schema but the container doesn't exist yet
-                // This is normal for new fields, so we don't throw an error
-                if (this.options.debug) {
-                    console.warn(
-                        `No container found for root key: ${keyStr}, but it exists in schema. This might be a new field.`,
-                    );
+                const fieldSchema = this.schema.definition[keyStr];
+                let container: Container | null = null;
+
+                // Create or get the container based on the schema type
+                if (fieldSchema.type === "loro-map") {
+                    container = this.doc.getMap(keyStr);
+                } else if (fieldSchema.type === "loro-list") {
+                    container = this.doc.getList(keyStr);
+                } else if (fieldSchema.type === "loro-text") {
+                    container = this.doc.getText(keyStr);
+                }
+
+                if (container) {
+                    // Apply direct changes to the container
+                    this.updateTopLevelContainer(container, value);
+                } else {
+                    // This may be a non-container field
+                    if (this.options.debug) {
+                        console.warn(
+                            `No container found for root key: ${keyStr}, but it exists in schema.`,
+                        );
+                    }
                 }
             } else {
-                throw new Error(
-                    `No container found for root key: ${keyStr}. This key may not be defined in the schema.`,
-                );
+                if (this.options.debug) {
+                    console.warn(
+                        `No schema definition found for root key: ${keyStr}.`,
+                    );
+                }
             }
+        }
+    }
+
+    /**
+     * Apply multiple changes to a container
+     */
+    private applyContainerChanges(
+        container: Container,
+        changes: Array<{ key: string | number; value: any }>,
+    ) {
+        // Apply changes in bulk by container type
+        switch (container.kind()) {
+            case "Map": {
+                const map = container as LoroMap;
+                
+                for (const { key, value } of changes) {
+                    if (key === "") {
+                        continue; // Skip empty key
+                    }
+                    
+                    if (value === undefined) {
+                        map.delete(key as string);
+                    } else {
+                        map.set(key as string, value);
+                    }
+                }
+                break;
+            }
+            case "List": {
+                const list = container as LoroList;
+                
+                // First process property path notation like "0.completed"
+                const propertyChanges = new Map<string, { index: number; property: string; value: any }>();
+                const otherChanges = [];
+                
+                // Split changes by type (property path vs direct index)
+                for (const change of changes) {
+                    const { key, value } = change;
+                    
+                    if (typeof key === 'string' && key.includes('.')) {
+                        // Handle property path notation like "0.completed"
+                        const [indexStr, ...propertyParts] = key.split('.');
+                        const index = parseInt(indexStr, 10);
+                        
+                        if (!isNaN(index) && index >= 0 && index < list.length) {
+                            const property = propertyParts.join('.');
+                            propertyChanges.set(`${index}.${property}`, { index, property, value });
+                        }
+                    } else {
+                        // Handle direct index changes
+                        otherChanges.push(change);
+                    }
+                }
+                
+                // Process property changes
+                if (propertyChanges.size > 0) {
+                    // Group by index to avoid multiple updates to the same item
+                    const itemChanges = new Map<number, Map<string, any>>();
+                    
+                    for (const { index, property, value } of propertyChanges.values()) {
+                        if (!itemChanges.has(index)) {
+                            itemChanges.set(index, new Map());
+                        }
+                        itemChanges.get(index)!.set(property, value);
+                    }
+                    
+                    // Apply the changes to each item
+                    for (const [index, properties] of itemChanges.entries()) {
+                        const item = list.get(index);
+                        
+                        // Only process object items
+                        if (item && typeof item === 'object' && !Array.isArray(item)) {
+                            const newItem = { ...item } as Record<string, any>;
+                            let changed = false;
+                            
+                            // Apply each property change
+                            for (const [prop, val] of properties.entries()) {
+                                if (val === undefined) {
+                                    delete newItem[prop];
+                                } else {
+                                    newItem[prop] = val;
+                                }
+                                changed = true;
+                            }
+                            
+                            // Only update if something actually changed
+                            if (changed) {
+                                list.delete(index, 1);
+                                list.insert(index, newItem);
+                            }
+                        }
+                    }
+                }
+                
+                // Process other changes (add/remove/replace)
+                for (const { key, value } of otherChanges) {
+                    const index = typeof key === 'number' ? key : parseInt(key as string, 10);
+                    
+                    if (isNaN(index)) {
+                        if (key === 'length' && typeof value === 'number') {
+                            // Special case for length property
+                            const currentLength = list.length;
+                            
+                            if (value < currentLength) {
+                                // Truncate the list
+                                list.delete(value, currentLength - value);
+                            } else if (value > currentLength) {
+                                // Extend the list with undefined values
+                                for (let i = currentLength; i < value; i++) {
+                                    list.insert(i, undefined);
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    
+                    if (index < 0) {
+                        console.warn(`Invalid list index: ${index}`);
+                        continue;
+                    }
+                    
+                    if (value === undefined) {
+                        // Delete item at index if in bounds
+                        if (index < list.length) {
+                            list.delete(index, 1);
+                        }
+                    } else {
+                        // Insert or replace item
+                        if (index < list.length) {
+                            // Replace existing item
+                            list.delete(index, 1);
+                            list.insert(index, value);
+                        } else if (index === list.length) {
+                            // Append to end
+                            list.insert(index, value);
+                        } else {
+                            // Out of bounds - warn but still attempt to insert
+                            console.warn(`List index out of bounds: ${index}, current length: ${list.length}`);
+                            // Try to insert at the end instead
+                            list.insert(list.length, value);
+                        }
+                    }
+                }
+                break;
+            }
+            case "Text": {
+                const text = container as LoroText;
+                
+                // Text containers only support direct value updates
+                for (const { key, value } of changes) {
+                    if (key === "value" && typeof value === "string") {
+                        text.update(value);
+                    } else {
+                        console.warn(`Invalid Text change. Only 'value' property can be updated`);
+                    }
+                }
+                break;
+            }
+            default:
+                console.warn(`Unsupported container type: ${container.kind()}`);
         }
     }
 
@@ -588,141 +781,6 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Apply multiple changes to a container
-     */
-    private applyContainerChanges(
-        container: Container,
-        changes: Array<{ key: string | number; value: any }>,
-    ) {
-        const kind = container.kind();
-
-        switch (kind) {
-            case "Map": {
-                const map = container as LoroMap;
-                for (const { key, value } of changes) {
-                    if (value === undefined) {
-                        map.delete(key.toString());
-                    } else {
-                        // Find container schema for proper handling
-                        const containerPath = this.getContainerPath(container);
-                        if (!containerPath) {
-                            throw new Error(
-                                `Cannot determine path for container: ${container.id}. This is likely due to a detached container.`,
-                            );
-                        }
-
-                        const schema = this.getSchemaForPath(containerPath);
-                        this.updateMapEntry(map, key.toString(), value, schema);
-                    }
-                }
-                break;
-            }
-            case "List": {
-                const list = container as LoroList;
-
-                // Collect all changes to process in the right order
-                const indexedChanges = changes
-                    .filter((change) => !isNaN(Number(change.key)))
-                    .map((change) => ({
-                        index: Number(change.key),
-                        value: change.value,
-                    }))
-                    .sort((a, b) => a.index - b.index);
-
-                if (indexedChanges.length > 0) {
-                    // Get container schema for proper handling
-                    const containerPath = this.getContainerPath(container);
-                    if (!containerPath) {
-                        throw new Error(
-                            `Cannot determine path for container: ${container.id}. This is likely due to a detached container.`,
-                        );
-                    }
-
-                    const schema = this.getSchemaForPath(containerPath);
-                    const itemSchema = schema && schema.type === "loro-list"
-                        ? schema.itemSchema
-                        : null;
-
-                    if (!itemSchema) {
-                        throw new Error(
-                            `No item schema found for list container: ${container.id}. This suggests a schema validation issue.`,
-                        );
-                    }
-
-                    for (const { index, value } of indexedChanges) {
-                        if (value === undefined) {
-                            // Delete item
-                            if (index >= 0 && index < list.length) {
-                                list.delete(index, 1);
-                            } else {
-                                throw new Error(
-                                    `Cannot delete item at index ${index} in list with length ${list.length}. Index out of bounds.`,
-                                );
-                            }
-                        } else if (index >= 0 && index < list.length) {
-                            // Update existing item
-                            list.delete(index, 1);
-                            this.insertItemIntoList(
-                                list,
-                                index,
-                                value,
-                                itemSchema,
-                            );
-                        } else if (index === list.length) {
-                            // Append item
-                            this.insertItemIntoList(
-                                list,
-                                index,
-                                value,
-                                itemSchema,
-                            );
-                        } else {
-                            throw new Error(
-                                `Cannot update item at index ${index} in list with length ${list.length}. Index out of bounds.`,
-                            );
-                        }
-                    }
-                } else if (
-                    changes.length === 1 && changes[0].key === "length"
-                ) {
-                    // Special case for length property
-                    const newLength = Number(changes[0].value);
-                    if (!isNaN(newLength) && newLength >= 0) {
-                        if (newLength < list.length) {
-                            // Truncate the list
-                            list.delete(newLength, list.length - newLength);
-                        }
-                    } else {
-                        throw new Error(
-                            `Invalid length value: ${
-                                changes[0].value
-                            }. Length must be a non-negative number.`,
-                        );
-                    }
-                }
-                break;
-            }
-            case "Text": {
-                const text = container as LoroText;
-                // For text, we only handle the direct value update
-                if (changes.length === 1 && changes[0].key === "value") {
-                    const newText = String(changes[0].value || "");
-                    text.update(newText);
-                } else {
-                    throw new Error(
-                        `Unsupported operation on text container: ${container.id}. Text containers only support 'value' updates.`,
-                    );
-                }
-                break;
-            }
-            default:
-                throw new Error(
-                    `Unknown container kind: ${kind}. This is likely a programming error or unsupported container type.`,
-                );
-        }
-    }
-
-    /**
      * Update a Text container
      */
     private updateTextContainer(text: LoroText, path: string[], value: any) {
@@ -742,17 +800,7 @@ export class Mirror<S extends SchemaType> {
             // Replace entire list
             if (Array.isArray(value)) {
                 // Find the schema for this container path
-                const containerPath = this.getContainerPath(list);
-                if (!containerPath) {
-                    if (this.options.debug) {
-                        console.warn(
-                            `No container path found for list: ${list.id}`,
-                        );
-                    }
-                    return;
-                }
-
-                const schema = this.getSchemaForPath(containerPath);
+                const schema = this.getSchemaForContainer(list);
                 if (!schema || schema.type !== "loro-list") {
                     if (this.options.debug) {
                         console.warn(
@@ -766,8 +814,13 @@ export class Mirror<S extends SchemaType> {
                 const idSelector = schema.idSelector;
                 const itemSchema = schema.itemSchema;
 
-                // If we have an ID selector, use it for more efficient updates
+                console.log(`Updating list container, idSelector: ${!!idSelector}, current length: ${list.length}`);
+
+                // Clear out the list first to avoid duplicate items
+                // Instead of clearing the entire list, which can leave it empty if there's an error,
+                // we'll replace items one by one and only remove items that aren't in the new list
                 if (idSelector) {
+                    // If we have an ID selector, we can use it for more intelligent updates
                     this.updateListWithIdSelector(
                         list,
                         value,
@@ -786,171 +839,161 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Update a list using ID selector for efficient updates
-     *
-     * This method:
-     * 1. Maps current and new items by their IDs
-     * 2. Identifies items to add, remove, or update
-     * 3. Applies minimal operations to achieve the target state
      */
     private updateListWithIdSelector(
         list: LoroList,
         newItems: any[],
-        idSelector: (item: any) => string,
+        idSelector: (item: any) => string | null,
         itemSchema: SchemaType,
     ) {
-        // Get current list items
-        const currentItems = [];
-        for (let i = 0; i < list.length; i++) {
-            currentItems.push(list.get(i));
-        }
-
-        // Create maps for current and new items by ID
-        const currentItemMap = new Map();
-        const newItemMap = new Map();
-        const newPositions = new Map(); // Map ID to its position in the new array
-
-        // Map current items
-        for (const item of currentItems) {
+        // First, map current items by ID
+        const currentItemsById = new Map<string, { item: any; index: number }>();
+        const currentLength = list.length;
+        
+        for (let i = 0; i < currentLength; i++) {
+            const item = list.get(i);
             try {
-                const id = idSelector(item);
-                if (id) {
-                    currentItemMap.set(id, item);
+                if (item && typeof item === 'object') {
+                    const id = idSelector(item);
+                    if (id) {
+                        currentItemsById.set(id, { item, index: i });
+                    }
                 }
-            } catch (error) {
+            } catch (e) {
                 if (this.options.debug) {
-                    console.warn(`Error getting ID for item: ${error}`);
+                    console.warn(`Error getting ID for current list item:`, e);
                 }
             }
         }
-
-        // Map new items and their positions
+        
+        // Then map new items by ID
+        const newItemsById = new Map<string, { item: any; index: number }>();
+        
+        // Helper function to get ID from either LoroMap or plain object
+        const getIdFromItem = (item: any) => {
+            if (!item || typeof item !== 'object') return null;
+            
+            try {
+                // First try using the idSelector directly (for LoroMap objects)
+                const id = idSelector(item);
+                if (id) return id;
+            } catch (e) {
+                // If that fails, try to extract ID from plain object
+                if (this.options.debug) {
+                    console.warn(`Error using ID selector directly:`, e);
+                }
+                
+                // If idSelector tries to call .get("id"), we can try to access .id directly
+                if (typeof item.id === 'string') {
+                    return item.id;
+                }
+            }
+            return null;
+        };
+        
         newItems.forEach((item, index) => {
             try {
-                const id = idSelector(item);
+                const id = getIdFromItem(item);
                 if (id) {
-                    newItemMap.set(id, item);
-                    newPositions.set(id, index);
+                    newItemsById.set(id, { item, index });
                 }
-            } catch (error) {
+            } catch (e) {
                 if (this.options.debug) {
-                    console.warn(`Error getting ID for new item: ${error}`);
+                    console.warn(`Error getting ID for new list item at index ${index}:`, e);
                 }
             }
         });
-
+        
+        console.log(`Current items by ID: ${currentItemsById.size}, New items by ID: ${newItemsById.size}`);
+        
         // Find items to remove (in current but not in new)
-        const idsToRemove = [];
-        for (const [id] of currentItemMap) {
-            if (!newItemMap.has(id)) {
-                idsToRemove.push(id);
+        const itemsToRemove: number[] = [];
+        for (const [id, { index }] of currentItemsById.entries()) {
+            if (!newItemsById.has(id)) {
+                itemsToRemove.push(index);
             }
         }
-
-        // Find items to add (in new but not in current)
-        const idsToAdd = [];
-        for (const [id] of newItemMap) {
-            if (!currentItemMap.has(id)) {
-                idsToAdd.push(id);
-            }
+        
+        // Sort in reverse order to remove higher indices first (to avoid index shifting issues)
+        itemsToRemove.sort((a, b) => b - a);
+        
+        // Remove items that aren't in the new list
+        for (const index of itemsToRemove) {
+            list.delete(index, 1);
         }
-
-        // Find items to update (in both but potentially changed)
-        const idsToUpdate = [];
-        for (const [id] of currentItemMap) {
-            if (newItemMap.has(id)) {
-                const currentItem = currentItemMap.get(id);
-                const newItem = newItemMap.get(id);
+        
+        // Now go through the new list and add or update items
+        let currentIndex = 0;
+        
+        for (let i = 0; i < newItems.length; i++) {
+            const newItem = newItems[i];
+            let id: string | null = null;
+            
+            try {
+                id = getIdFromItem(newItem);
+            } catch (e) {
+                console.warn(`Error getting ID for new item at index ${i}:`, e);
+                continue;
+            }
+            
+            if (!id) continue;
+            
+            const currentEntry = currentItemsById.get(id);
+            
+            if (currentEntry) {
+                // Item exists, update if needed
+                const currentItem = list.get(currentIndex);
                 if (!deepEqual(currentItem, newItem)) {
-                    idsToUpdate.push(id);
+                    // Only update if different
+                    list.delete(currentIndex, 1);
+                    this.insertItemIntoList(list, currentIndex, newItem, itemSchema);
                 }
+            } else {
+                // New item, insert at current position
+                this.insertItemIntoList(list, currentIndex, newItem, itemSchema);
             }
+            
+            currentIndex++;
         }
-
-        // Apply removals (remove from end to start to avoid index shifts)
-        for (let i = list.length - 1; i >= 0; i--) {
-            const item = list.get(i);
-            try {
-                const id = idSelector(item);
-                if (id && idsToRemove.includes(id)) {
-                    list.delete(i, 1);
-                }
-            } catch (error) {
-                if (this.options.debug) {
-                    console.warn(`Error removing item: ${error}`);
-                }
-            }
-        }
-
-        // Apply updates
-        for (let i = 0; i < list.length; i++) {
-            const item = list.get(i);
-            try {
-                const id = idSelector(item);
-                if (id && idsToUpdate.includes(id)) {
-                    const newItem = newItemMap.get(id);
-
-                    // Remove and re-insert for now (future optimization: support partial updates)
-                    list.delete(i, 1);
-                    this.insertItemIntoList(list, i, newItem, itemSchema);
-                }
-            } catch (error) {
-                if (this.options.debug) {
-                    console.warn(`Error updating item: ${error}`);
-                }
-            }
-        }
-
-        // Apply additions (at their correct position in the new array)
-        for (const id of idsToAdd) {
-            const newItem = newItemMap.get(id);
-            const targetPosition = newPositions.get(id);
-
-            if (targetPosition !== undefined) {
-                // Insert at specified position
-                this.insertItemIntoList(
-                    list,
-                    targetPosition,
-                    newItem,
-                    itemSchema,
-                );
-            }
+        
+        // Truncate any remaining items if the new list is shorter
+        if (currentIndex < list.length) {
+            list.delete(currentIndex, list.length - currentIndex);
         }
     }
 
     /**
-     * Update a list by comparing items at each index
-     *
-     * Used when no ID selector is available. Less efficient than ID-based updates
-     * but still tries to minimize operations by only changing what's needed.
+     * Update a list by index (for lists without an ID selector)
      */
     private updateListByIndex(
         list: LoroList,
         newItems: any[],
         itemSchema: SchemaType,
     ) {
-        const currentLength = list.length;
-        const newLength = newItems.length;
-
-        // Update existing items where possible
-        const minLength = Math.min(currentLength, newLength);
-        for (let i = 0; i < minLength; i++) {
-            const currentItem = list.get(i);
-            const newItem = newItems[i];
-
-            if (!deepEqual(currentItem, newItem)) {
-                list.delete(i, 1);
-                this.insertItemIntoList(list, i, newItem, itemSchema);
+        // First, clear the list
+        const oldLength = list.length;
+        
+        // Instead of clearing everything and re-adding, update existing items and add/remove as needed
+        const maxLength = Math.max(oldLength, newItems.length);
+        
+        for (let i = 0; i < maxLength; i++) {
+            if (i >= oldLength) {
+                // Add new item
+                this.insertItemIntoList(list, i, newItems[i], itemSchema);
+            } else if (i >= newItems.length) {
+                // Remove excess items, starting from the end
+                list.delete(newItems.length, oldLength - newItems.length);
+                break;
+            } else {
+                // Update existing item
+                const oldItem = list.get(i);
+                const newItem = newItems[i];
+                
+                if (!deepEqual(oldItem, newItem)) {
+                    list.delete(i, 1);
+                    this.insertItemIntoList(list, i, newItem, itemSchema);
+                }
             }
-        }
-
-        // Remove extra items if the new list is shorter
-        if (currentLength > newLength) {
-            list.delete(newLength, currentLength - newLength);
-        }
-
-        // Add new items if the new list is longer
-        for (let i = minLength; i < newLength; i++) {
-            this.insertItemIntoList(list, i, newItems[i], itemSchema);
         }
     }
 
@@ -994,300 +1037,16 @@ export class Mirror<S extends SchemaType> {
         // Replace the item with new value
         list.delete(index, 1);
 
-        // Use the schema to determine if this should be a container
-        const containerPath = this.getContainerPath(list);
-        if (containerPath) {
-            const schema = this.getSchemaForPath(containerPath);
-            if (schema && schema.type === "loro-list") {
-                const itemSchema = schema.itemSchema;
-                this.insertItemIntoList(list, index, value, itemSchema);
-                return;
-            }
+        // Get the schema for this list
+        const schema = this.getSchemaForContainer(list);
+        if (schema && schema.type === "loro-list") {
+            const itemSchema = schema.itemSchema;
+            this.insertItemIntoList(list, index, value, itemSchema);
+            return;
         }
 
         // Default to simple insert
         list.insert(index, value);
-    }
-
-    /**
-     * Update a Map container
-     */
-    private updateMapContainer(map: LoroMap, path: string[], value: any) {
-        if (path.length === 0) {
-            // Replace entire map
-            if (isObject(value)) {
-                // Find the schema for this container path
-                const containerPath = this.getContainerPath(map);
-                if (!containerPath) {
-                    if (this.options.debug) {
-                        console.warn(
-                            `No container path found for map: ${map.id}`,
-                        );
-                    }
-                    return;
-                }
-
-                const schema = this.getSchemaForPath(containerPath);
-                if (!schema || schema.type !== "loro-map") {
-                    if (this.options.debug) {
-                        console.warn(
-                            `No valid schema found for map: ${map.id}`,
-                        );
-                    }
-                    return;
-                }
-
-                // Get current keys
-                const currentKeys = new Set(map.keys());
-
-                // Process each field in the new value
-                for (const [key, val] of Object.entries(value)) {
-                    this.updateMapEntry(map, key, val, schema);
-                    currentKeys.delete(key);
-                }
-
-                // Delete keys that are no longer present
-                for (const key of currentKeys) {
-                    map.delete(key);
-                }
-            }
-        } else if (path.length === 1) {
-            // Update a specific key
-            const key = path[0];
-
-            // Find the schema for this container path
-            const containerPath = this.getContainerPath(map);
-            if (!containerPath) {
-                if (this.options.debug) {
-                    console.warn(
-                        `No container path found for map: ${map.id}`,
-                    );
-                }
-                return;
-            }
-
-            const schema = this.getSchemaForPath(containerPath);
-
-            // Update the map entry
-            this.updateMapEntry(map, key, value, schema);
-        }
-    }
-
-    /**
-     * Helper to update a single entry in a map
-     */
-    private updateMapEntry(
-        map: LoroMap,
-        key: string,
-        value: any,
-        schema: SchemaType | null,
-    ) {
-        // Check if this field should be a container according to schema
-        if (schema && schema.type === "loro-map" && schema.definition) {
-            const fieldSchema = schema.definition[key];
-            if (fieldSchema) {
-                const isContainer = fieldSchema.type === "loro-map" ||
-                    fieldSchema.type === "loro-list" ||
-                    fieldSchema.type === "loro-text";
-
-                if (
-                    isContainer && typeof value === "object" && value !== null
-                ) {
-                    const container = this.createContainer(
-                        value,
-                        fieldSchema,
-                    );
-                    if (container) {
-                        map.setContainer(key, container);
-                    }
-                }
-            }
-        }
-
-        // Default to simple set
-        map.set(key, value);
-    }
-
-    /**
-     * Find a container for a given path string
-     */
-    private findContainerForPath(pathStr: string): Container | null {
-        // Check all containers to find one with this path
-        for (const container of this.containerRegistry.values()) {
-            const containerPath = this.getContainerPath(container);
-            if (containerPath && containerPath.join(".") === pathStr) {
-                return container;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Get the path for a container, using cache when available
-     */
-    private getContainerPath(container: Container): string[] | null {
-        // Check cache first
-        const cachedPath = this.containerPathCache.get(container);
-        if (cachedPath) {
-            return cachedPath;
-        }
-
-        // Get path from doc
-        const path = this.doc.getPathToContainer(container.id);
-        if (path) {
-            const stringPath = path.map((p) => p.toString());
-            // Cache the result
-            this.containerPathCache.set(container, stringPath);
-            return stringPath;
-        }
-
-        if (!container.isAttached) {
-            throw new Error(
-                `Container ${container.id} is not attached to the document. This is likely due to a detached container.`,
-            );
-        }
-
-        return null;
-    }
-
-    /**
-     * Get current state
-     */
-    getState(): InferType<S> {
-        return this.state;
-    }
-
-    /**
-     * Update state and propagate changes to Loro
-     */
-    setState(
-        updater:
-            | ((state: InferType<S>) => InferType<S>)
-            | Partial<InferType<S>>,
-    ) {
-        if (this.syncing) return; // Prevent recursive updates
-
-        // Calculate new state
-        const newState = typeof updater === "function"
-            ? updater(this.state)
-            : { ...this.state, ...updater };
-
-        // Validate state if needed
-        if (this.options.validateUpdates) {
-            const validation = validateSchema(this.schema, newState);
-            if (!validation.valid) {
-                const errorMessage = `State validation failed: ${
-                    validation.errors?.join(", ")
-                }`;
-                throw new Error(errorMessage);
-            }
-        }
-
-        // Update Loro based on new state
-        this.updateLoro(newState);
-
-        // Update the in-memory state
-        this.state = newState;
-
-        // Notify subscribers
-        this.notifySubscribers(SyncDirection.TO_LORO);
-    }
-
-    /**
-     * Find changes between old and new state
-     */
-    private findChanges(
-        oldState: unknown,
-        newState: unknown,
-        path: string[] = [],
-    ): Array<
-        { container: ContainerID | ""; key: string | number; value: any }
-    > {
-        const changes: Array<
-            { container: ContainerID | ""; key: string | number; value: any }
-        > = [];
-
-        if (!isObject(oldState) || !isObject(newState)) {
-            // Simple value comparison
-            if (!deepEqual(oldState, newState)) {
-                // For root level changes, path will be empty
-                // We need to handle this case specially when applying changes
-                changes.push({
-                    container: "",
-                    key: path.join("."),
-                    value: newState,
-                });
-            }
-            return changes;
-        }
-
-        // Find the container for this path
-        const container = path.length > 0
-            ? this.findContainerForPath(path.join("."))
-            : null;
-        const containerId = container ? container.id : "";
-
-        // Check for removed keys
-        for (const key in oldState) {
-            if (!(key in newState)) {
-                if (path.length === 0) {
-                    // Root level property removal
-                    changes.push({ container: "", key, value: undefined });
-                } else {
-                    // Nested property removal
-                    changes.push({
-                        container: containerId,
-                        key,
-                        value: undefined,
-                    });
-                }
-            }
-        }
-
-        // Check for added or modified keys
-        for (const key in newState) {
-            if (!(key in oldState)) {
-                if (path.length === 0) {
-                    // Root level property addition
-                    changes.push({ container: "", key, value: newState[key] });
-                } else {
-                    // Nested property addition
-                    changes.push({
-                        container: containerId,
-                        key,
-                        value: newState[key],
-                    });
-                }
-            } else if (!deepEqual(oldState[key], newState[key])) {
-                if (isObject(oldState[key]) && isObject(newState[key])) {
-                    // Recursively find changes in nested objects
-                    changes.push(
-                        ...this.findChanges(oldState[key], newState[key], [
-                            ...path,
-                            key,
-                        ]),
-                    );
-                } else {
-                    if (path.length === 0) {
-                        // Root level property modification
-                        changes.push({
-                            container: "",
-                            key,
-                            value: newState[key],
-                        });
-                    } else {
-                        // Nested property modification
-                        changes.push({
-                            container: containerId,
-                            key,
-                            value: newState[key],
-                        });
-                    }
-                }
-            }
-        }
-
-        return changes;
     }
 
     /**
@@ -1380,7 +1139,6 @@ export class Mirror<S extends SchemaType> {
 
         // Clear all collections
         this.containerRegistry.clear();
-        this.containerPathCache = new WeakMap();
         this.containerSubscriptions.clear();
         this.subscribers.clear();
     }
@@ -1471,5 +1229,549 @@ export class Mirror<S extends SchemaType> {
         } else {
             throw new Error(`Unknown schema type: ${schema.type}`);
         }
+    }
+
+    /**
+     * Check if a container is attached
+     */
+    private isContainerAttached(container: Container): boolean {
+        return Boolean(container.isAttached);
+    }
+
+    /**
+     * Get schema definition for a container
+     */
+    private getSchemaForContainer(container: Container): SchemaType | null {
+        if (!container.isAttached) return null;
+
+        // For root-level containers
+        if (this.schema.type === "schema") {
+            for (const key in this.schema.definition) {
+                const fieldSchema = this.schema.definition[key];
+
+                if (
+                    fieldSchema.type === "loro-map" &&
+                    this.doc.getMap(key).id === container.id
+                ) {
+                    return fieldSchema;
+                } else if (
+                    fieldSchema.type === "loro-list" &&
+                    this.doc.getList(key).id === container.id
+                ) {
+                    return fieldSchema;
+                } else if (
+                    fieldSchema.type === "loro-text" &&
+                    this.doc.getText(key).id === container.id
+                ) {
+                    return fieldSchema;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find changes between old and new state
+     */
+    private findChanges(
+        oldState: unknown,
+        newState: unknown,
+        containerId: ContainerID | "" = "",
+    ): Array<
+        { container: ContainerID | ""; key: string | number; value: any }
+    > {
+        const changes: Array<
+            { container: ContainerID | ""; key: string | number; value: any }
+        > = [];
+
+        // For debugging
+        console.log("findChanges called with containerId:", containerId);
+        
+        if (!isObject(oldState) || !isObject(newState)) {
+            // Simple value comparison
+            if (!deepEqual(oldState, newState)) {
+                changes.push({
+                    container: containerId,
+                    key: "",
+                    value: newState,
+                });
+            }
+            return changes;
+        }
+
+        // Handle Array (List) differently
+        if (Array.isArray(oldState) && Array.isArray(newState)) {
+            // For debugging arrays
+            if (containerId === "") {
+                console.log("Processing root array:", JSON.stringify(oldState), JSON.stringify(newState));
+            }
+            
+            // For root level lists, we need to check if this is a container
+            let listContainer: Container | null = null;
+            let listIdSelector = null;
+            
+            if (containerId === "") {
+                // This is a root level list, we need to find if it corresponds to a LoroList
+                if (this.schema.type === "schema") {
+                    for (const key in this.schema.definition) {
+                        const fieldSchema = this.schema.definition[key];
+                        // Check if we have a key in schema definition that matches a list type
+                        if (fieldSchema.type === "loro-list") {
+                            // We found a matching list, get the container and idSelector
+                            const container = this.doc.getList(key);
+                            if (container) {
+                                listContainer = container;
+                                listIdSelector = fieldSchema.idSelector;
+                                containerId = container.id;
+                                console.log(`Found list container for root array: ${key}, id: ${containerId}, idSelector: ${!!listIdSelector}`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // This is a nested list, we already have the container ID
+                const container = this.containerRegistry.get(containerId as ContainerID);
+                if (container && container.kind() === "List") {
+                    listContainer = container;
+                    // Try to find the idSelector
+                    if (this.schema.type === "schema") {
+                        for (const key in this.schema.definition) {
+                            const fieldSchema = this.schema.definition[key];
+                            if (fieldSchema.type === "loro-list" && 
+                                this.doc.getList(key).id === listContainer.id) {
+                                listIdSelector = fieldSchema.idSelector;
+                                console.log(`Found idSelector for nested list container: ${key}, idSelector: ${!!listIdSelector}`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Try to find a relevant container (if it's a LoroList)
+            const container = containerId !== ""
+                ? this.containerRegistry.get(containerId as ContainerID)
+                : null;
+
+            if (container && container.kind() === "List") {
+                // Find the schema for this list
+                let idSelector = listIdSelector;
+                const list = container as LoroList;
+
+                // Check if we can get the schema with idSelector for this list container
+                if (!idSelector && this.schema.type === "schema") {
+                    for (const key in this.schema.definition) {
+                        const fieldSchema = this.schema.definition[key];
+                        if (
+                            fieldSchema.type === "loro-list" &&
+                            this.doc.getList(key).id === list.id
+                        ) {
+                            idSelector = fieldSchema.idSelector;
+                            console.log(`Found idSelector from schema for list: ${key}, idSelector: ${!!idSelector}`);
+                            break;
+                        }
+                    }
+                }
+
+                if (idSelector) {
+                    console.log("Using idSelector for list diff");
+                    // Compare arrays using the idSelector for identity
+                    const oldItemsById = new Map();
+                    const newItemsById = new Map();
+
+                    // Map items by ID
+                    oldState.forEach((item: any, index: number) => {
+                        try {
+                            const id = idSelector!(item);
+                            if (id) {
+                                oldItemsById.set(id, { item, index });
+                                console.log(`Mapped old item with ID: ${id} at index ${index}`);
+                            }
+                        } catch (e) {
+                            console.warn(
+                                `Error getting ID for old list item:`,
+                                e,
+                            );
+                        }
+                    });
+
+                    newState.forEach((item: any, index: number) => {
+                        try {
+                            const id = idSelector!(item);
+                            if (id) {
+                                newItemsById.set(id, { item, index });
+                                console.log(`Mapped new item with ID: ${id} at index ${index}`);
+                            }
+                        } catch (e) {
+                            console.warn(
+                                `Error getting ID for new list item:`,
+                                e,
+                            );
+                        }
+                    });
+
+                    // Find items to remove, add, or update
+                    for (const [id, { item, index }] of oldItemsById.entries()) {
+                        if (!newItemsById.has(id)) {
+                            // Item was removed
+                            console.log(`Item with ID ${id} was removed`);
+                            changes.push({
+                                container: containerId,
+                                key: index,
+                                value: undefined,
+                            });
+                        }
+                    }
+
+                    for (const [id, { item, index }] of newItemsById.entries()) {
+                        if (!oldItemsById.has(id)) {
+                            // Item was added
+                            console.log(`Item with ID ${id} was added at index ${index}`);
+                            changes.push({
+                                container: containerId,
+                                key: index,
+                                value: item,
+                            });
+                        } else {
+                            // Check if item was updated
+                            const oldEntry = oldItemsById.get(id);
+                            const oldItem = oldEntry.item;
+                            const oldIndex = oldEntry.index;
+                            
+                            if (!deepEqual(oldItem, item)) {
+                                console.log(`Item with ID ${id} was updated from`, oldItem, "to", item);
+                                
+                                // For root level lists with ID selectors, we need to generate individual changes
+                                // for each property that changed rather than replacing the entire item
+                                if (isObject(oldItem) && isObject(item) && !Array.isArray(oldItem) && !Array.isArray(item)) {
+                                    const oldItemObj = oldItem as Record<string, any>;
+                                    const newItemObj = item as Record<string, any>;
+                                    
+                                    // Check for removed properties
+                                    for (const propKey in oldItemObj) {
+                                        if (!(propKey in newItemObj)) {
+                                            console.log(`Property ${propKey} was removed from item with ID ${id}`);
+                                            changes.push({
+                                                container: containerId,
+                                                key: `${oldIndex}.${propKey}`,
+                                                value: undefined,
+                                            });
+                                        }
+                                    }
+                                    
+                                    // Check for added or modified properties
+                                    for (const propKey in newItemObj) {
+                                        if (!(propKey in oldItemObj)) {
+                                            console.log(`Property ${propKey} was added to item with ID ${id} with value ${newItemObj[propKey]}`);
+                                            changes.push({
+                                                container: containerId,
+                                                key: `${oldIndex}.${propKey}`,
+                                                value: newItemObj[propKey],
+                                            });
+                                        } else if (!deepEqual(oldItemObj[propKey], newItemObj[propKey])) {
+                                            console.log(`Property ${propKey} was modified in item with ID ${id} from ${oldItemObj[propKey]} to ${newItemObj[propKey]}`);
+                                            changes.push({
+                                                container: containerId,
+                                                key: `${oldIndex}.${propKey}`,
+                                                value: newItemObj[propKey],
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    // If not an object, replace the entire item
+                                    console.log(`Replacing entire item with ID ${id} at index ${oldIndex}`);
+                                    changes.push({
+                                        container: containerId,
+                                        key: oldIndex,
+                                        value: item,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    return changes;
+                }
+            }
+            
+            // Fallback to index-based comparison for arrays without idSelector
+            const maxLength = Math.max(oldState.length, newState.length);
+            for (let i = 0; i < maxLength; i++) {
+                if (i >= oldState.length) {
+                    // New item added
+                    changes.push({
+                        container: containerId,
+                        key: i,
+                        value: newState[i],
+                    });
+                } else if (i >= newState.length) {
+                    // Item removed
+                    changes.push({
+                        container: containerId,
+                        key: i,
+                        value: undefined,
+                    });
+                } else if (!deepEqual(oldState[i], newState[i])) {
+                    if (isObject(oldState[i]) && isObject(newState[i])) {
+                        // Get the container for the nested item if it exists
+                        let nestedContainerId: ContainerID | "" = "";
+                        if (containerId !== "") {
+                            const container = this.containerRegistry.get(
+                                containerId as ContainerID,
+                            );
+                            if (container && container.kind() === "List") {
+                                // Use explicit type assertion to make TypeScript happy
+                                const oldVal = oldState[i] as unknown;
+                                // First check if it's a string at all
+                                if (
+                                    oldVal !== null && oldVal !== undefined &&
+                                    typeof oldVal === "string"
+                                ) {
+                                    // Then check if it's a container ID
+                                    const strVal = oldVal as string;
+                                    if (strVal.indexOf("cid:") === 0) {
+                                        nestedContainerId =
+                                            strVal as ContainerID;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Recursively find changes in nested objects
+                        changes.push(
+                            ...this.findChanges(
+                                oldState[i],
+                                newState[i],
+                                nestedContainerId,
+                            ),
+                        );
+                    } else {
+                        // Simple value update
+                        changes.push({
+                            container: containerId,
+                            key: i,
+                            value: newState[i],
+                        });
+                    }
+                }
+            }
+        }
+
+        // Handle Object (Map) changes
+        const oldStateObj = oldState as Record<string, any>;
+        const newStateObj = newState as Record<string, any>;
+
+        // Check for removed keys
+        for (const key in oldStateObj) {
+            if (!(key in newStateObj)) {
+                changes.push({ container: containerId, key, value: undefined });
+            }
+        }
+
+        // Check for added or modified keys
+        for (const key in newStateObj) {
+            if (!(key in oldStateObj)) {
+                // Key was added
+                changes.push({
+                    container: containerId,
+                    key,
+                    value: newStateObj[key],
+                });
+            } else if (!deepEqual(oldStateObj[key], newStateObj[key])) {
+                if (isObject(oldStateObj[key]) && isObject(newStateObj[key])) {
+                    // Get the container for the nested property if it exists
+                    let nestedContainerId: ContainerID | "" = "";
+                    if (containerId) {
+                        const container = this.containerRegistry.get(
+                            containerId as ContainerID,
+                        );
+                        if (container && container.kind() === "Map") {
+                            // Use explicit type assertion to make TypeScript happy
+                            const oldVal = oldStateObj[key] as unknown;
+                            // First check if it's a string at all
+                            if (
+                                oldVal !== null && oldVal !== undefined &&
+                                typeof oldVal === "string"
+                            ) {
+                                // Then check if it's a container ID
+                                const strVal = oldVal as string;
+                                if (strVal.indexOf("cid:") === 0) {
+                                    nestedContainerId = strVal as ContainerID;
+                                }
+                            }
+                        }
+                    } else if (this.schema.type === "schema") {
+                        // For root level objects, check if they map to containers
+                        const fieldSchema = this.schema.definition[key];
+                        if (
+                            fieldSchema && (fieldSchema.type === "loro-map" ||
+                                fieldSchema.type === "loro-list" ||
+                                fieldSchema.type === "loro-text")
+                        ) {
+                            // Find the container for this key
+                            let container: Container | undefined;
+                            switch (fieldSchema.type) {
+                                case "loro-map":
+                                    container = this.doc.getMap(key);
+                                    break;
+                                case "loro-list":
+                                    container = this.doc.getList(key);
+                                    break;
+                                case "loro-text":
+                                    container = this.doc.getText(key);
+                                    break;
+                            }
+
+                            if (container) {
+                                nestedContainerId = container.id;
+                            }
+                        }
+                    }
+
+                    // Recursively find changes in nested objects
+                    changes.push(
+                        ...this.findChanges(
+                            oldStateObj[key],
+                            newStateObj[key],
+                            nestedContainerId,
+                        ),
+                    );
+                } else {
+                    // Simple value update
+                    changes.push({
+                        container: containerId,
+                        key,
+                        value: newStateObj[key],
+                    });
+                }
+            }
+        }
+
+        return changes;
+    }
+    
+    /**
+     * Update a Map container
+     */
+    private updateMapContainer(map: LoroMap, path: string[], value: any) {
+        if (path.length === 0) {
+            // Replace entire map
+            if (isObject(value)) {
+                // Find the schema for this container
+                const schema = this.getSchemaForContainer(map);
+                if (!schema || schema.type !== "loro-map") {
+                    if (this.options.debug) {
+                        console.warn(
+                            `No valid schema found for map: ${map.id}`,
+                        );
+                    }
+                    return;
+                }
+
+                // Get current keys
+                const currentKeys = new Set(map.keys());
+
+                // Process each field in the new value
+                for (const [key, val] of Object.entries(value)) {
+                    this.updateMapEntry(map, key, val, schema);
+                    currentKeys.delete(key);
+                }
+
+                // Delete keys that are no longer present
+                for (const key of currentKeys) {
+                    map.delete(key);
+                }
+            }
+        } else if (path.length === 1) {
+            // Update a specific key
+            const key = path[0];
+
+            // Find the schema for this container
+            const schema = this.getSchemaForContainer(map);
+
+            // Update the map entry
+            this.updateMapEntry(map, key, value, schema);
+        }
+    }
+
+    /**
+     * Helper to update a single entry in a map
+     */
+    private updateMapEntry(
+        map: LoroMap,
+        key: string,
+        value: any,
+        schema: SchemaType | null,
+    ) {
+        // Check if this field should be a container according to schema
+        if (schema && schema.type === "loro-map" && schema.definition) {
+            const fieldSchema = schema.definition[key];
+            if (fieldSchema) {
+                const isContainer = fieldSchema.type === "loro-map" ||
+                    fieldSchema.type === "loro-list" ||
+                    fieldSchema.type === "loro-text";
+
+                if (
+                    isContainer && typeof value === "object" && value !== null
+                ) {
+                    const container = this.createContainer(
+                        value,
+                        fieldSchema,
+                    );
+                    if (container) {
+                        map.setContainer(key, container);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Default to simple set
+        map.set(key, value);
+    }
+
+    /**
+     * Get current state
+     */
+    getState(): InferType<S> {
+        return this.state;
+    }
+
+    /**
+     * Update state and propagate changes to Loro
+     */
+    setState(
+        updater:
+            | ((state: InferType<S>) => InferType<S>)
+            | Partial<InferType<S>>,
+    ) {
+        if (this.syncing) return; // Prevent recursive updates
+
+        // Calculate new state
+        const newState = typeof updater === "function"
+            ? updater(this.state)
+            : { ...this.state, ...updater };
+
+        // Validate state if needed
+        if (this.options.validateUpdates) {
+            const validation = validateSchema(this.schema, newState);
+            if (!validation.valid) {
+                const errorMessage = `State validation failed: ${
+                    validation.errors?.join(", ")
+                }`;
+                throw new Error(errorMessage);
+            }
+        }
+
+        // Update Loro based on new state
+        this.updateLoro(newState);
+
+        // Update the in-memory state
+        this.state = newState;
+
+        // Notify subscribers
+        this.notifySubscribers(SyncDirection.TO_LORO);
     }
 }
