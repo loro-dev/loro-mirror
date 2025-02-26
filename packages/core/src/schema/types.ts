@@ -2,7 +2,6 @@
  * Types for the schema definition system
  */
 
-import type { ContainerType as LoroContainerType } from "loro-crdt";
 import { ContainerType } from "./container-types";
 
 /**
@@ -23,7 +22,7 @@ export interface SchemaOptions {
 /**
  * Base interface for all schema types
  */
-export interface BaseSchemaType<T> {
+export interface BaseSchemaType {
     type: string;
     options: SchemaOptions;
     getContainerType(): ContainerType | null;
@@ -32,36 +31,36 @@ export interface BaseSchemaType<T> {
 /**
  * String schema type
  */
-export interface StringSchemaType extends BaseSchemaType<string> {
+export interface StringSchemaType extends BaseSchemaType {
     type: "string";
 }
 
 /**
  * Number schema type
  */
-export interface NumberSchemaType extends BaseSchemaType<number> {
+export interface NumberSchemaType extends BaseSchemaType {
     type: "number";
 }
 
 /**
  * Boolean schema type
  */
-export interface BooleanSchemaType extends BaseSchemaType<boolean> {
+export interface BooleanSchemaType extends BaseSchemaType {
     type: "boolean";
 }
 
 /**
  * Ignored field schema type
  */
-export interface IgnoreSchemaType extends BaseSchemaType<any> {
+export interface IgnoreSchemaType extends BaseSchemaType {
     type: "ignore";
 }
 
 /**
  * Loro Map schema type
  */
-export interface LoroMapSchema<T extends Record<string, SchemaType<any>>>
-    extends BaseSchemaType<Record<string, any>> {
+export interface LoroMapSchema<T extends Record<string, SchemaType>>
+    extends BaseSchemaType {
     type: "loro-map";
     definition: SchemaDefinition<T>;
 }
@@ -69,8 +68,7 @@ export interface LoroMapSchema<T extends Record<string, SchemaType<any>>>
 /**
  * Loro List schema type
  */
-export interface LoroListSchema<T extends SchemaType<any>>
-    extends BaseSchemaType<Array<any>> {
+export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
     type: "loro-list";
     itemSchema: T;
     idSelector?: (item: any) => string;
@@ -79,43 +77,57 @@ export interface LoroListSchema<T extends SchemaType<any>>
 /**
  * Loro Text schema type
  */
-export interface LoroTextSchemaType extends BaseSchemaType<string> {
+export interface LoroTextSchemaType extends BaseSchemaType {
     type: "loro-text";
 }
 
 /**
  * Root schema type
  */
-export interface RootSchemaType<T extends Record<string, SchemaType<any>>>
-    extends BaseSchemaType<Record<string, any>> {
+export interface RootSchemaType<T extends Record<string, ContainerSchemaType>>
+    extends BaseSchemaType {
     type: "schema";
-    definition: SchemaDefinition<T>;
+    definition: RootSchemaDefinition<T>;
 }
 
 /**
  * Union of all schema types
  */
-export type SchemaType<T> =
+export type SchemaType =
     | StringSchemaType
     | NumberSchemaType
     | BooleanSchemaType
     | IgnoreSchemaType
-    | LoroMapSchema<Record<string, SchemaType<any>>>
-    | LoroListSchema<SchemaType<any>>
+    | LoroMapSchema<Record<string, SchemaType>>
+    | LoroListSchema<SchemaType>
     | LoroTextSchemaType
-    | RootSchemaType<Record<string, SchemaType<any>>>;
+    | RootSchemaType<Record<string, ContainerSchemaType>>;
+
+export type ContainerSchemaType =
+    | LoroMapSchema<Record<string, SchemaType>>
+    | LoroListSchema<SchemaType>
+    | LoroTextSchemaType;
 
 /**
  * Schema definition type
  */
-export type SchemaDefinition<T extends Record<string, SchemaType<any>>> = {
+export type RootSchemaDefinition<
+    T extends Record<string, ContainerSchemaType>,
+> = {
+    [K in keyof T]: T[K];
+};
+
+/**
+ * Schema definition type
+ */
+export type SchemaDefinition<T extends Record<string, SchemaType>> = {
     [K in keyof T]: T[K];
 };
 
 /**
  * Infer the JavaScript type from a schema type
  */
-export type InferType<S extends SchemaType<any>> = S extends StringSchemaType
+export type InferType<S extends SchemaType> = S extends StringSchemaType
     ? string
     : S extends NumberSchemaType ? number
     : S extends BooleanSchemaType ? boolean
@@ -129,6 +141,6 @@ export type InferType<S extends SchemaType<any>> = S extends StringSchemaType
 /**
  * Infer the JavaScript type from a schema definition
  */
-export type InferSchemaType<T extends Record<string, SchemaType<any>>> = {
+export type InferSchemaType<T extends Record<string, SchemaType>> = {
     [K in keyof T]: InferType<T[K]>;
 };

@@ -6,16 +6,20 @@ describe("Schema Validators", () => {
   describe("validateSchema", () => {
     it("should validate a simple schema with primitive types", () => {
       const testSchema = schema({
-        name: schema.String({ required: true }),
-        age: schema.Number(),
-        isActive: schema.Boolean({ defaultValue: true }),
+        meta: schema.LoroMap({
+          name: schema.String({ required: true }),
+          age: schema.Number(),
+          isActive: schema.Boolean({ defaultValue: true }),
+        }),
       });
 
       // Valid data
       const validData = {
-        name: "John Doe",
-        age: 30,
-        isActive: false,
+        meta: {
+          name: "John Doe",
+          age: 30,
+          isActive: false,
+        },
       };
       const validResult = validateSchema(testSchema, validData);
       expect(validResult.valid).toBe(true);
@@ -23,22 +27,28 @@ describe("Schema Validators", () => {
 
       // Invalid data - missing required field
       const invalidData1 = {
-        age: 30,
-        isActive: false,
+        meta: {
+          age: 30,
+          isActive: false,
+        },
       };
       const invalidResult1 = validateSchema(testSchema, invalidData1);
       expect(invalidResult1.valid).toBe(false);
-      expect(invalidResult1.errors).toContain("name: Value is required");
+      expect(invalidResult1.errors).toContain("meta: name: Value is required");
 
       // Invalid data - wrong type
       const invalidData2 = {
-        name: "John Doe",
-        age: "30", // String instead of number
-        isActive: false,
+        meta: {
+          name: "John Doe",
+          age: "30", // String instead of number
+          isActive: false,
+        },
       };
       const invalidResult2 = validateSchema(testSchema, invalidData2);
       expect(invalidResult2.valid).toBe(false);
-      expect(invalidResult2.errors).toContain("age: Value must be a number");
+      expect(invalidResult2.errors).toContain(
+        "meta: age: Value must be a number",
+      );
     });
 
     it("should validate nested schemas", () => {
@@ -49,17 +59,21 @@ describe("Schema Validators", () => {
       });
 
       const userSchema = schema({
-        name: schema.String({ required: true }),
-        address: addressSchema,
+        meta: schema.LoroMap({
+          name: schema.String({ required: true }),
+          address: addressSchema,
+        }),
       });
 
       // Valid data
       const validData = {
-        name: "John Doe",
-        address: {
-          street: "123 Main St",
-          city: "Anytown",
-          zipCode: "12345",
+        meta: {
+          name: "John Doe",
+          address: {
+            street: "123 Main St",
+            city: "Anytown",
+            zipCode: "12345",
+          },
         },
       };
       const validResult = validateSchema(userSchema, validData);
@@ -67,16 +81,18 @@ describe("Schema Validators", () => {
 
       // Invalid nested data
       const invalidData = {
-        name: "John Doe",
-        address: {
-          street: "123 Main St",
-          // Missing required city
+        meta: {
+          name: "John Doe",
+          address: {
+            street: "123 Main St",
+            // Missing required city
+          },
         },
       };
       const invalidResult = validateSchema(userSchema, invalidData);
       expect(invalidResult.valid).toBe(false);
       expect(invalidResult.errors).toContain(
-        "address: city: Value is required",
+        "meta: address: city: Value is required",
       );
     });
 
@@ -116,32 +132,38 @@ describe("Schema Validators", () => {
 
     it("should validate with custom validation functions", () => {
       const userSchema = schema({
-        email: schema.String({
-          required: true,
-          validate: (value) => {
-            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ||
-              "Invalid email format";
-          },
-        }),
-        age: schema.Number({
-          validate: (value) => {
-            return (value >= 18) || "Must be at least 18 years old";
-          },
+        meta: schema.LoroMap({
+          email: schema.String({
+            required: true,
+            validate: (value) => {
+              return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ||
+                "Invalid email format";
+            },
+          }),
+          age: schema.Number({
+            validate: (value) => {
+              return (value >= 18) || "Must be at least 18 years old";
+            },
+          }),
         }),
       });
 
       // Valid data
       const validData = {
-        email: "test@example.com",
-        age: 25,
+        meta: {
+          email: "test@example.com",
+          age: 25,
+        },
       };
       const validResult = validateSchema(userSchema, validData);
       expect(validResult.valid).toBe(true);
 
       // Invalid email format
       const invalidData1 = {
-        email: "not-an-email",
-        age: 25,
+        meta: {
+          email: "not-an-email",
+          age: 25,
+        },
       };
       const invalidResult1 = validateSchema(userSchema, invalidData1);
       expect(invalidResult1.valid).toBe(false);
@@ -152,8 +174,10 @@ describe("Schema Validators", () => {
 
       // Invalid age
       const invalidData2 = {
-        email: "test@example.com",
-        age: 16,
+        meta: {
+          email: "test@example.com",
+          age: 16,
+        },
       };
       const invalidResult2 = validateSchema(userSchema, invalidData2);
       expect(invalidResult2.valid).toBe(false);
@@ -165,13 +189,17 @@ describe("Schema Validators", () => {
 
     it("should ignore fields with Ignore schema type", () => {
       const userSchema = schema({
-        name: schema.String({ required: true }),
-        temporaryData: schema.Ignore(),
+        meta: schema.LoroMap({
+          name: schema.String({ required: true }),
+          temporaryData: schema.Ignore(),
+        }),
       });
 
       const data = {
-        name: "John Doe",
-        temporaryData: { anything: "goes here" },
+        meta: {
+          name: "John Doe",
+          temporaryData: { anything: "goes here" },
+        },
       };
 
       const result = validateSchema(userSchema, data);
@@ -180,22 +208,28 @@ describe("Schema Validators", () => {
 
     it("should validate LoroText schema type", () => {
       const noteSchema = schema({
-        title: schema.String({ required: true }),
-        content: schema.LoroText(),
+        meta: schema.LoroMap({
+          title: schema.String({ required: true }),
+          content: schema.LoroText(),
+        }),
       });
 
       // Valid data
       const validData = {
-        title: "My Note",
-        content: "This is the content of my note",
+        meta: {
+          title: "My Note",
+          content: "This is the content of my note",
+        },
       };
       const validResult = validateSchema(noteSchema, validData);
       expect(validResult.valid).toBe(true);
 
       // Invalid data - wrong type for content
       const invalidData = {
-        title: "My Note",
-        content: 123, // Number instead of string
+        meta: {
+          title: "My Note",
+          content: 123, // Number instead of string
+        },
       };
       const invalidResult = validateSchema(noteSchema, invalidData);
       expect(invalidResult.valid).toBe(false);
@@ -209,18 +243,21 @@ describe("Schema Validators", () => {
   describe("getDefaultValue", () => {
     it("should return default values for primitive types", () => {
       const testSchema = schema({
-        name: schema.String({ defaultValue: "Unknown" }),
-        age: schema.Number({ defaultValue: 0 }),
-        isActive: schema.Boolean({ defaultValue: true }),
-        noDefault: schema.String(),
+        meta: schema.LoroMap({
+          name: schema.String({ defaultValue: "Unknown" }),
+          age: schema.Number({ defaultValue: 0 }),
+          isActive: schema.Boolean({ defaultValue: true }),
+          noDefault: schema.String(),
+        }),
       });
 
       const defaults = getDefaultValue(testSchema);
       expect(defaults).toEqual({
-        name: "Unknown",
-        age: 0,
-        isActive: true,
-        noDefault: undefined,
+        meta: {
+          name: "Unknown",
+          age: 0,
+          isActive: true,
+        },
       });
     });
 
@@ -232,17 +269,21 @@ describe("Schema Validators", () => {
       });
 
       const userSchema = schema({
-        name: schema.String({ defaultValue: "Guest" }),
-        address: addressSchema,
+        meta: schema.LoroMap({
+          name: schema.String({ defaultValue: "Guest" }),
+          address: addressSchema,
+        }),
       });
 
       const defaults = getDefaultValue(userSchema);
       expect(defaults).toEqual({
-        name: "Guest",
-        address: {
-          street: "",
-          city: "",
-          country: "USA",
+        meta: {
+          name: "Guest",
+          address: {
+            street: "",
+            city: "",
+            country: "USA",
+          },
         },
       });
     });
@@ -280,23 +321,27 @@ describe("Schema Validators", () => {
       });
 
       const storeSchema = schema({
-        name: schema.String({ defaultValue: "My Store" }),
-        categories: schema.LoroList(categorySchema, undefined, {
-          defaultValue: [],
-        }),
-        settings: schema.LoroMap({
-          darkMode: schema.Boolean({ defaultValue: false }),
-          notifications: schema.Boolean({ defaultValue: true }),
+        meta: schema.LoroMap({
+          name: schema.String({ defaultValue: "My Store" }),
+          categories: schema.LoroList(categorySchema, undefined, {
+            defaultValue: [],
+          }),
+          settings: schema.LoroMap({
+            darkMode: schema.Boolean({ defaultValue: false }),
+            notifications: schema.Boolean({ defaultValue: true }),
+          }),
         }),
       });
 
       const defaults = getDefaultValue(storeSchema);
       expect(defaults).toEqual({
-        name: "My Store",
-        categories: [],
-        settings: {
-          darkMode: false,
-          notifications: true,
+        meta: {
+          name: "My Store",
+          categories: [],
+          settings: {
+            darkMode: false,
+            notifications: true,
+          },
         },
       });
     });

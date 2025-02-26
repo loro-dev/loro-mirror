@@ -1,20 +1,29 @@
 /**
  * React hooks for Loro Mirror
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState, createContext, useContext, PropsWithChildren } from "react";
+import React, {
+    createContext,
+    PropsWithChildren,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import type {
+    CreateStoreOptions,
     InferType,
     SchemaType,
     Store,
     SyncDirection,
-    CreateStoreOptions
 } from "@loro-mirror/core";
 import type { LoroDoc } from "loro-crdt";
 
 /**
  * Context options for creating a Loro Mirror store
  */
-export interface UseLoroStoreOptions<S extends SchemaType<any>> {
+export interface UseLoroStoreOptions<S extends SchemaType> {
     /**
      * The Loro document to sync with
      */
@@ -51,7 +60,7 @@ export interface UseLoroStoreOptions<S extends SchemaType<any>> {
 
 /**
  * Hook to create and use a Loro Mirror store
- * 
+ *
  * @example
  * ```tsx
  * const todoSchema = schema({
@@ -61,7 +70,7 @@ export interface UseLoroStoreOptions<S extends SchemaType<any>> {
  *     completed: schema.Boolean({ defaultValue: false }),
  *   })),
  * });
- * 
+ *
  * function TodoApp() {
  *   const doc = useMemo(() => new LoroDoc(), []);
  *   const { state, setState } = useLoroStore({
@@ -69,74 +78,74 @@ export interface UseLoroStoreOptions<S extends SchemaType<any>> {
  *     schema: todoSchema,
  *     initialState: { todos: [] },
  *   });
- * 
+ *
  *   // Use state and setState to interact with the store
  * }
  * ```
  */
-export function useLoroStore<S extends SchemaType<any>>(
-    options: UseLoroStoreOptions<S>
+export function useLoroStore<S extends SchemaType>(
+    options: UseLoroStoreOptions<S>,
 ) {
     // Create a stable reference to the store
     const storeRef = useRef<Store<S> | null>(null);
-    
+
     // Initialize the store and get initial state
     const getStore = useCallback((): Store<S> => {
         if (!storeRef.current) {
             // We need to dynamically import the core package to avoid circular dependencies
-            const coreModule = require('@loro-mirror/core');
+            const coreModule = require("@loro-mirror/core");
             storeRef.current = coreModule.createStore(options);
         }
         return storeRef.current!;
     }, [options]);
-    
+
     // Get the current state
     const [state, setLocalState] = useState<InferType<S>>(() => {
         return getStore().getState();
     });
-    
+
     // Subscribe to state changes
     useEffect(() => {
         const store = getStore();
-        
+
         // Update local state when the store changes
         const unsubscribe = store.subscribe((newState: InferType<S>) => {
             setLocalState(newState);
         });
-        
+
         // Initial sync
         store.sync();
-        
+
         return unsubscribe;
     }, [getStore]);
-    
+
     // Create a stable setState function
     const setState = useCallback(
         (
             updater:
                 | ((state: InferType<S>) => InferType<S>)
-                | Partial<InferType<S>>
+                | Partial<InferType<S>>,
         ) => {
             getStore().setState(updater);
         },
-        [getStore]
+        [getStore],
     );
-    
+
     // Create a stable sync function
     const sync = useCallback(() => {
         return getStore().sync();
     }, [getStore]);
-    
+
     // Create a stable syncFromLoro function
     const syncFromLoro = useCallback(() => {
         return getStore().syncFromLoro();
     }, [getStore]);
-    
+
     // Create a stable syncToLoro function
     const syncToLoro = useCallback(() => {
         getStore().syncToLoro();
     }, [getStore]);
-    
+
     return {
         state,
         setState,
@@ -149,13 +158,13 @@ export function useLoroStore<S extends SchemaType<any>>(
 
 /**
  * Hook to subscribe to a specific value from a Loro Mirror store
- * 
+ *
  * @example
  * ```tsx
  * function TodoList({ store }) {
  *   // Subscribe only to the todos array
  *   const todos = useLoroValue(store, state => state.todos);
- *   
+ *
  *   return (
  *     <ul>
  *       {todos.map(todo => (
@@ -166,34 +175,34 @@ export function useLoroStore<S extends SchemaType<any>>(
  * }
  * ```
  */
-export function useLoroValue<S extends SchemaType<any>, R>(
+export function useLoroValue<S extends SchemaType, R>(
     store: Store<S>,
-    selector: (state: InferType<S>) => R
+    selector: (state: InferType<S>) => R,
 ): R {
     // Get the initial value
     const [value, setValue] = useState<R>(() => selector(store.getState()));
-    
+
     // Subscribe to changes
     useEffect(() => {
         const unsubscribe = store.subscribe((state: InferType<S>) => {
             const newValue = selector(state);
             setValue(newValue);
         });
-        
+
         return unsubscribe;
     }, [store, selector]);
-    
+
     return value;
 }
 
 /**
  * Hook to create a callback that updates a Loro Mirror store
- * 
+ *
  * @example
  * ```tsx
  * function AddTodo({ store }) {
  *   const [text, setText] = useState('');
- *   
+ *
  *   const addTodo = useLoroCallback(
  *     store,
  *     (state) => {
@@ -205,7 +214,7 @@ export function useLoroValue<S extends SchemaType<any>, R>(
  *     },
  *     [text]
  *   );
- *   
+ *
  *   return (
  *     <form onSubmit={(e) => {
  *       e.preventDefault();
@@ -219,10 +228,10 @@ export function useLoroValue<S extends SchemaType<any>, R>(
  * }
  * ```
  */
-export function useLoroCallback<S extends SchemaType<any>, Args extends any[]>(
+export function useLoroCallback<S extends SchemaType, Args extends any[]>(
     store: Store<S>,
     updater: (state: InferType<S>, ...args: Args) => void,
-    deps: React.DependencyList = []
+    deps: React.DependencyList = [],
 ): (...args: Args) => void {
     return useCallback(
         (...args: Args) => {
@@ -233,13 +242,13 @@ export function useLoroCallback<S extends SchemaType<any>, Args extends any[]>(
                 return newState;
             });
         },
-        [store, updater, ...deps]
+        [store, updater, ...deps],
     );
 }
 
 /**
  * Hook to create a Loro Mirror context provider and hooks
- * 
+ *
  * @example
  * ```tsx
  * // In a shared file:
@@ -250,7 +259,7 @@ export function useLoroCallback<S extends SchemaType<any>, Args extends any[]>(
  *     completed: schema.Boolean({ defaultValue: false }),
  *   })),
  * });
- * 
+ *
  * export const {
  *   LoroProvider,
  *   useLoroContext,
@@ -258,11 +267,11 @@ export function useLoroCallback<S extends SchemaType<any>, Args extends any[]>(
  *   useLoroSelector,
  *   useLoroAction,
  * } = createLoroContext(todoSchema);
- * 
+ *
  * // In your app:
  * function App() {
  *   const doc = useMemo(() => new LoroDoc(), []);
- *   
+ *
  *   return (
  *     <LoroProvider doc={doc} initialState={{ todos: [] }}>
  *       <TodoList />
@@ -272,10 +281,10 @@ export function useLoroCallback<S extends SchemaType<any>, Args extends any[]>(
  * }
  * ```
  */
-export function createLoroContext<S extends SchemaType<any>>(schema: S) {
+export function createLoroContext<S extends SchemaType>(schema: S) {
     // Create a React context
     const LoroContext = createContext<Store<S> | null>(null);
-    
+
     // Create a provider component
     function LoroProvider({
         children,
@@ -293,65 +302,67 @@ export function createLoroContext<S extends SchemaType<any>>(schema: S) {
             throwOnValidationError,
             debug,
         });
-        
+
         return (
             <LoroContext.Provider value={store}>
                 {children}
             </LoroContext.Provider>
         );
     }
-    
+
     // Hook to access the context
     function useLoroContext() {
         const context = useContext(LoroContext);
         if (!context) {
-            throw new Error("useLoroContext must be used within a LoroProvider");
+            throw new Error(
+                "useLoroContext must be used within a LoroProvider",
+            );
         }
         return context;
     }
-    
+
     // Hook to access the full state
     function useLoroState() {
         const store = useLoroContext();
         const [state, setState] = useState(store.getState());
-        
+
         useEffect(() => {
             const unsubscribe = store.subscribe((newState: InferType<S>) => {
                 setState(newState);
             });
-            
+
             return unsubscribe;
         }, [store]);
-        
+
         const updateState = useCallback(
             (
                 updater:
                     | ((state: InferType<S>) => InferType<S>)
-                    | Partial<InferType<S>>
+                    | Partial<InferType<S>>,
             ) => {
                 store.setState(updater);
             },
-            [store]
+            [store],
         );
-        
+
         return [state, updateState] as const;
     }
-    
+
     // Hook to select a specific value from the state
     function useLoroSelector<R>(selector: (state: InferType<S>) => R): R {
         const store = useLoroContext();
         return useLoroValue(store, selector);
     }
-    
+
     // Hook to create an action that updates the state
     function useLoroAction<Args extends any[]>(
         updater: (state: InferType<S>, ...args: Args) => void,
-        deps: React.DependencyList = []
+        deps: React.DependencyList = [],
     ): (...args: Args) => void {
         const store = useLoroContext();
         return useLoroCallback(store, updater, deps);
     }
-    
+
     return {
         LoroContext,
         LoroProvider,
@@ -360,4 +371,4 @@ export function createLoroContext<S extends SchemaType<any>>(schema: S) {
         useLoroSelector,
         useLoroAction,
     };
-} 
+}

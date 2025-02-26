@@ -7,8 +7,10 @@
 import type { ContainerType as LoroContainerType } from "loro-crdt";
 import { ContainerType } from "./container-types";
 import {
+    ContainerSchemaType,
     LoroListSchema,
     LoroMapSchema,
+    RootSchemaDefinition,
     RootSchemaType,
     SchemaDefinition,
     SchemaOptions,
@@ -22,8 +24,8 @@ export * from "./container-types";
 /**
  * Create a schema definition
  */
-export function schema<T extends Record<string, SchemaType<any>>>(
-    definition: SchemaDefinition<T>,
+export function schema<T extends Record<string, ContainerSchemaType>>(
+    definition: RootSchemaDefinition<T>,
     options?: SchemaOptions,
 ): RootSchemaType<T> {
     return {
@@ -91,7 +93,7 @@ schema.Ignore = function (options?: SchemaOptions) {
 /**
  * Define a Loro map
  */
-schema.LoroMap = function <T extends Record<string, SchemaType<any>>>(
+schema.LoroMap = function <T extends Record<string, SchemaType>>(
     definition: SchemaDefinition<T>,
     options?: SchemaOptions,
 ): LoroMapSchema<T> {
@@ -108,7 +110,7 @@ schema.LoroMap = function <T extends Record<string, SchemaType<any>>>(
 /**
  * Define a Loro list
  */
-schema.LoroList = function <T extends SchemaType<any>>(
+schema.LoroList = function <T extends SchemaType>(
     itemSchema: T,
     idSelector?: (item: any) => string,
     options?: SchemaOptions,

@@ -9,7 +9,7 @@ import { InferType, SchemaType } from "../schema";
 /**
  * Options for creating a store
  */
-export interface CreateStoreOptions<S extends SchemaType<any>> {
+export interface CreateStoreOptions<S extends SchemaType> {
     /**
      * The Loro document to sync with
      */
@@ -47,7 +47,7 @@ export interface CreateStoreOptions<S extends SchemaType<any>> {
 /**
  * Store API returned by createStore
  */
-export interface Store<S extends SchemaType<any>> {
+export interface Store<S extends SchemaType> {
     /**
      * Get current state
      */
@@ -88,12 +88,13 @@ export interface Store<S extends SchemaType<any>> {
      * Get the underlying Mirror instance
      */
     getMirror: () => Mirror<S>;
+    getLoro: () => LoroDoc;
 }
 
 /**
  * Create a store that syncs state with Loro
  */
-export function createStore<S extends SchemaType<any>>(
+export function createStore<S extends SchemaType>(
     options: CreateStoreOptions<S>,
 ): Store<S> {
     const mirror = new Mirror<S>({
@@ -101,7 +102,7 @@ export function createStore<S extends SchemaType<any>>(
         schema: options.schema,
         initialState: options.initialState,
         validateUpdates: options.validateUpdates,
-        throwOnValidationError: options.throwOnValidationError,
+        throwOnValidationError: options.throwOnValidationError ?? true,
         debug: options.debug,
     });
 
@@ -113,6 +114,7 @@ export function createStore<S extends SchemaType<any>>(
         syncToLoro: () => mirror.syncToLoro(),
         sync: () => mirror.sync(),
         getMirror: () => mirror,
+        getLoro: () => options.doc,
     };
 }
 
@@ -120,7 +122,7 @@ export function createStore<S extends SchemaType<any>>(
  * Create an immer-based reducer function for a store
  */
 export function createReducer<
-    S extends SchemaType<any>,
+    S extends SchemaType,
     A extends Record<string, any>,
 >(
     actionHandlers: {
@@ -138,7 +140,6 @@ export function createReducer<
                 throw new Error(`Unknown action type: ${String(actionType)}`);
             }
 
-            const currentState = store.getState();
             store.setState((state) => {
                 // Use immer's produce to create a draft that can be mutated
                 const result = produce(state, (draft: any) => {
@@ -147,7 +148,7 @@ export function createReducer<
                         | InferType<S>
                         | void;
                 });
-                
+
                 // Cast the result to the correct type
                 return result as unknown as InferType<S>;
             });
