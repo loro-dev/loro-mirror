@@ -189,11 +189,6 @@ describe("Mirror List Update Optimization", () => {
 
         const item3 = itemsList.pushContainer(new LoroMap());
         item3.set("value", "Item 3");
-
-        // Add items directly to the list instead of using setState
-        itemsList.insertContainer(0, item1);
-        itemsList.insertContainer(1, item2);
-        itemsList.insertContainer(2, item3);
         doc.commit();
 
         const mirror = new Mirror({
@@ -213,13 +208,6 @@ describe("Mirror List Update Optimization", () => {
         mirror.setState({ items: initialItems });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync(); // Force explicit sync
-        await waitForSync();
-        doc.commit(); // Extra commit
-        await waitForSync();
-        mirror.sync(); // Second explicit sync
         await waitForSync();
 
         // Add debug logging to help understand what's happening
