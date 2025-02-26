@@ -1,6 +1,6 @@
 import { Mirror, SyncDirection } from "../../src/core/mirror";
 import { schema } from "../../src/schema";
-import { LoroDoc, LoroMap } from "loro-crdt";
+import { isContainer, LoroDoc, LoroMap } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 
 it("syncs initial state from LoroDoc correctly", async () => {
@@ -145,4 +145,15 @@ it("syncing from state => LoroDoc", async () => {
     });
     const f2 = doc.frontiers();
     expect(f2[0].counter - f[0].counter).toBe(2);
+    const v = doc.toJsonWithReplacer((key, v) => {
+        if (isContainer(v)) {
+            return {
+                id: v.id,
+                value: v.getShallowValue(),
+            };
+        } else {
+            return v;
+        }
+    });
+    expect(v).toMatchSnapshot();
 });

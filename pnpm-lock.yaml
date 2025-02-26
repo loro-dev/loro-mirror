@@ -49,8 +49,8 @@ importers:
         specifier: ^20.10.5
         version: 20.17.19
       loro-crdt:
-        specifier: ^1.4.3
-        version: 1.4.3
+        specifier: ^1.4.4
+        version: 1.4.4
       typescript:
         specifier: ^5.3.3
         version: 5.7.3
@@ -68,8 +68,8 @@ importers:
         specifier: ^18.2.45
         version: 18.3.18
       loro-crdt:
-        specifier: ^1.4.3
-        version: 1.4.3
+        specifier: ^1.4.4
+        version: 1.4.4
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -881,8 +881,8 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
-  loro-crdt@1.4.3:
-    resolution: {integrity: sha512-nY5D4cLdA67z4oRvvg0tqIUgBGoP8vfvi2YXStpuQT+DgKG3aoB5DlAPtGmg9vNhpaFIg68vVdwIc5DYGRTT+g==}
+  loro-crdt@1.4.4:
+    resolution: {integrity: sha512-4kGyBJ97FWJTaXzSECD7sq6b2+t65EKUGmfcKh+YCHNMSZvv6ZoqME+JpLzAjKyWbBhIGp0mzFyf/5EYZcDBxw==}
 
   loupe@3.1.3:
     resolution: {integrity: sha512-kkIp7XSkP78ZxJEsSxW3712C6teJVoeHHwgo9zJ380de7IYyJ2ISlxojcH2pC5OFLewESmnRi/+XCDIEEVyoug==}
@@ -2015,7 +2015,7 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
-  loro-crdt@1.4.3: {}
+  loro-crdt@1.4.4: {}
 
   loupe@3.1.3: {}
 
