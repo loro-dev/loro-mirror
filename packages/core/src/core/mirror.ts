@@ -297,9 +297,6 @@ export class Mirror<S extends SchemaType> {
                     }
                 }
             } else if (container.kind() === "List") {
-                if (this.options.debug) {
-                    console.log(`registerNestedContainers: for list ${container.id}, shallowValue ${shallowValue}`);
-                }
                 // For lists, check each item
                 const list = container as LoroList;
                 shallowValue.forEach((value: any) => {
@@ -509,10 +506,6 @@ export class Mirror<S extends SchemaType> {
         container: Container,
         changes: Change[],
     ) {
-        if (this.options.debug) {
-            console.log(`applyContainerChanges: container ${container.id}, changes `, changes);
-        }
-
         // Apply changes in bulk by container type
         switch (container.kind()) {
             case "Map": {
