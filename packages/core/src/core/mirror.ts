@@ -1092,6 +1092,7 @@ export class Mirror<S extends SchemaType> {
                         );
                         if (container) {
                             list.insertContainer(i, container);
+                            continue; // Skip the regular insert if we inserted as container
                         }
                     }
 
