@@ -181,7 +181,9 @@ export class Mirror<S extends SchemaType> {
                             fieldSchema.type,
                         )
                     ) {
-                        console.log(`initializeContainers: registering container`,key, fieldSchema);
+                        if (this.options.debug) {
+                            console.log(`initializeContainers: registering container`, key, fieldSchema);
+                        }
                         this.registerContainer(key, fieldSchema);
                     }
                 }
@@ -195,7 +197,9 @@ export class Mirror<S extends SchemaType> {
     private registerContainer(name: string, schemaType: ContainerSchemaType | undefined) {
         try {
             let container: Container;
-            console.log(`registerContainer: name ${name}, schemaType ${schemaType}`);
+            if (this.options.debug) {
+                console.log(`registerContainer: name ${name}, schemaType ${schemaType}`);
+            }
 
             // Get the container based on name
             if (name.includes("cid:")) {
@@ -224,7 +228,9 @@ export class Mirror<S extends SchemaType> {
                         container = this.doc.getList(name);
                         break;
                     case "loro-text":
-                        console.log("registering text container");
+                        if (this.options.debug) {
+                            console.log("registering text container");
+                        }
                         container = this.doc.getText(name);
                         break;
                     default:
@@ -279,7 +285,9 @@ export class Mirror<S extends SchemaType> {
             const shallowValue = (container as any).getShallowValue();
 
             if (container.kind() === "Map") {
-                console.log(`registerNestedContainers: for map ${container.id}, shallowValue`, shallowValue);
+                if (this.options.debug) {
+                    console.log(`registerNestedContainers: for map ${container.id}, shallowValue`, shallowValue);
+                }
                 // For maps, check each value
                 for (const [key, value] of Object.entries(shallowValue)) {
                     if (typeof value === "string" && value.startsWith("cid:")) {
@@ -293,7 +301,9 @@ export class Mirror<S extends SchemaType> {
                             nestedSchema = parentSchema.definition[key] as ContainerSchemaType;
                         }
 
-                        console.log(`going through nested containers of map ${container.id}, key ${key}, value ${value}, nestedSchema ${nestedSchema}`);
+                        if (this.options.debug) {
+                            console.log(`going through nested containers of map ${container.id}, key ${key}, value ${value}, nestedSchema ${nestedSchema}`);
+                        }
 
 
                         if (nestedContainer) {
@@ -302,7 +312,9 @@ export class Mirror<S extends SchemaType> {
                     }
                 }
             } else if (container.kind() === "List") {
-                console.log(`registerNestedContainers: for list ${container.id}, shallowValue ${shallowValue}`);
+                if (this.options.debug) {
+                    console.log(`registerNestedContainers: for list ${container.id}, shallowValue ${shallowValue}`);
+                }
                 // For lists, check each item
                 const list = container as LoroList;
                 shallowValue.forEach((value: any) => {
@@ -318,7 +330,9 @@ export class Mirror<S extends SchemaType> {
                             nestedSchema = parentSchema as ContainerSchemaType;
                         }
 
-                        console.log(`going through nested containers of list ${container.id}, value ${value}, nestedSchema ${nestedSchema}`);
+                        if (this.options.debug) {
+                            console.log(`going through nested containers of list ${container.id}, value ${value}, nestedSchema ${nestedSchema}`);
+                        }
                         if (nestedContainer) {
                             this.registerContainer(value as ContainerID,nestedSchema);
                         }
@@ -412,8 +426,9 @@ export class Mirror<S extends SchemaType> {
                 this.schema,
             );
 
-            // Always log changes for debugging
-            console.log("changes:", JSON.stringify(changes, null, 2));
+            if (this.options.debug) {
+                console.log("changes:", JSON.stringify(changes, null, 2));
+            }
 
             // Apply the changes to the Loro document
             this.applyChangesToLoro(changes);
@@ -436,7 +451,9 @@ export class Mirror<S extends SchemaType> {
     private applyChangesToLoro(
         changes: Change[],
     ) {
-        console.log(this.doc.getDeepValueWithID());
+        if (this.options.debug) {
+            console.log(this.doc.getDeepValueWithID());
+        }
         // Group changes by container for batch processing
         const changesByContainer = new Map<
             ContainerID | "",
@@ -455,7 +472,9 @@ export class Mirror<S extends SchemaType> {
             const [containerId, containerChanges] of changesByContainer
                 .entries()
         ) {
-            console.log("processing changes by container", containerId, containerChanges);
+            if (this.options.debug) {
+                console.log("processing changes by container", containerId, containerChanges);
+            }
             if (containerId === "") {
                 // Handle root level changes
                 this.applyRootChanges(containerChanges);
@@ -513,7 +532,9 @@ export class Mirror<S extends SchemaType> {
         container: Container,
         changes: Change[],
     ) {
-        console.log(`applyContainerChanges: container ${container.id}, changes ${changes}`);
+        if (this.options.debug) {
+            console.log(`applyContainerChanges: container ${container.id}, changes ${changes}`);
+        }
 
         // Apply changes in bulk by container type
         switch (container.kind()) {
@@ -551,7 +572,9 @@ export class Mirror<S extends SchemaType> {
                     const { key, value, kind, childContainerType } of changes
                 ) {
 
-                    console.log("applying change", key, value, kind, childContainerType);
+                    if (this.options.debug) {
+                        console.log("applying change", key, value, kind, childContainerType);
+                    }
                     if (typeof key !== "number") {
                         throw new Error(`Invalid list index: ${key}`);
                     }
@@ -567,11 +590,9 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "insert") {
                         list.insert(index, value);
                     } else if (kind === "insert-container") {
-                        const container = list.insertContainer(
-                            index,
-                            newContainer(childContainerType),
-                        );
-                        initContainer(container, value);
+                        const schema = this.getChildSchema(container.id, key);
+                        const containerToInsert = this.createContainer(value, schema);
+                        list.insertContainer(index, containerToInsert);
                     } else {
                         assertNever(kind);
                     }
@@ -1010,7 +1031,9 @@ export class Mirror<S extends SchemaType> {
             ? schemaTypeToContainerType(schema)
             : tryInferContainerType(value);
 
-        console.log(`createContainer: value ${value}, schema `, schema, t);
+        if (this.options.debug) {
+            console.log(`createContainer: value ${value}, schema`, schema, t);
+        }
         if (t === "Map") {
             // Generate a unique ID for the map
             const map = new LoroMap();
@@ -1619,9 +1642,13 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         schemaType: ContainerSchemaType,
     ) {
-        console.log("registering container schema", containerId, schemaType);
+        if (this.options.debug) {
+            console.log("registering container schema", containerId, schemaType);
+        }
         this.containerToSchemaMap.set(containerId, schemaType);
-        console.log("containerToSchemaMap", this.containerToSchemaMap);
+        if (this.options.debug) {
+            console.log("containerToSchemaMap", this.containerToSchemaMap);
+        }
     }
 
     private getContainerSchema(containerId: ContainerID): ContainerSchemaType | undefined {
@@ -1633,17 +1660,23 @@ export class Mirror<S extends SchemaType> {
         childKey: string | number,
     ): ContainerSchemaType | undefined {
         const containerSchema = this.getContainerSchema(containerId);
-        console.log("parent schema", containerId, containerSchema)
+        if (this.options.debug) {
+            console.log("parent schema", containerId, containerSchema);
+        }
 
         if (!containerSchema) {
-            console.warn(`tried to get schema for child ${childKey} for container ${containerId}, but no schema found`);
+            if (this.options.debug) {
+                console.warn(`tried to get schema for child ${childKey} for container ${containerId}, but no schema found`);
+            }
             return undefined;
         }
 
         if (isLoroMapSchema(containerSchema)) {
             return containerSchema.definition[childKey] as ContainerSchemaType;
         } else if (isLoroListSchema(containerSchema)) {
-            console.log(`getChildSchema list:`, containerSchema.itemSchema);
+            if (this.options.debug) {
+                console.log(`getChildSchema list:`, containerSchema.itemSchema);
+            }
             return containerSchema.itemSchema as ContainerSchemaType;
         }
 
@@ -1747,7 +1780,7 @@ function newContainer(
     childContainerType: ContainerType | undefined,
 ): Container {
     if (!childContainerType) {
-        throw new Error();
+        throw new Error("Container type is required");
     }
     if (childContainerType === "Map") {
         return new LoroMap();
@@ -1756,52 +1789,8 @@ function newContainer(
         return new LoroList();
     }
     if (childContainerType === "Text") {
-        console.log('new lorotext');
         return new LoroText();
     }
-    throw new Error();
+    throw new Error(`Unknown container type: ${childContainerType}`);
 }
 
-// FIXME: Init container should obey schema
-function initContainer(container: Container, value: any) {
-    console.log("initContainer", container.kind(), value);
-    if (container.kind() === "Map") {
-        if (!isObject(value)) {
-            throw new Error();
-        }
-        const map = container as LoroMap;
-        for (const [key, val] of Object.entries(value)) {
-            if (isObject(val)) {
-                const childContainer = map.setContainer(key, new LoroMap());
-                initContainer(childContainer, val);
-            } else if (Array.isArray(val)) {
-                const childContainer = map.setContainer(key, new LoroList());
-                initContainer(childContainer, val);
-            } else {
-                map.set(key, val);
-            }
-        }
-    } else if (container.kind() === "List") {
-        if (!Array.isArray(value)) {
-            throw new Error();
-        }
-        const list = container as LoroList;
-        for (const val of value) {
-            if (isObject(val)) {
-                const childContainer = list.pushContainer(new LoroMap());
-                initContainer(childContainer, val);
-            } else if (Array.isArray(val)) {
-                const childContainer = list.pushContainer(new LoroList());
-                initContainer(childContainer, val);
-            } else {
-                list.push(val);
-            }
-        }
-    } else if (container.kind() === "Text") {
-        console.log("initializing text container");
-        const text = container as LoroText;
-        text.update(value);
-    } else {
-        throw new Error();
-    }
-}
