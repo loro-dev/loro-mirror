@@ -15,7 +15,6 @@ import {
     SchemaDefinition,
     SchemaOptions,
     SchemaType,
-    UnionSchemaType,
 } from "./types";
 
 export * from "./types";
@@ -89,35 +88,6 @@ schema.Ignore = function (options?: SchemaOptions) {
         },
     };
 };
-
-/** 
- * Define a union of schemas
- *
- * Example:
- * schema.LoroMap(
- *  schema.Union({
- *      foo: schema.String(),
- *      bar: schema.Number(),
- *  })
- * )
- */
-schema.Union = function<T extends Record<string, SchemaType>>(
-    schemas: SchemaDefinition<T>,
-    discriminatorSelector: (value: any) => string,
-    options?: SchemaOptions,
-): UnionSchemaType<T> {
-    return {
-        type: "union" as const,
-        schemas,
-        discriminatorSelector,
-        options: options || {},
-        getContainerType() {
-            // Union itself doesn't have a container type
-            return null;
-        },
-    };
-};
-
 
 /**
  * Define a Loro map

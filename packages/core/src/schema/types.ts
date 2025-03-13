@@ -82,15 +82,6 @@ export interface LoroTextSchemaType extends BaseSchemaType {
 }
 
 /**
- * Union schema type
- */
-export interface UnionSchemaType<T extends Record<string, SchemaType>> extends BaseSchemaType {
-    type: "union";
-    schemas: SchemaDefinition<T>;
-    discriminatorSelector: (value: any) => string;
-}
-
-/**
  * Root schema type
  */
 export interface RootSchemaType<T extends Record<string, ContainerSchemaType>>
@@ -107,7 +98,6 @@ export type SchemaType =
     | NumberSchemaType
     | BooleanSchemaType
     | IgnoreSchemaType
-    | UnionSchemaType<Record<string, SchemaType>>
     | LoroMapSchema<Record<string, SchemaType>>
     | LoroListSchema<SchemaType>
     | LoroTextSchemaType
@@ -143,7 +133,6 @@ export type InferType<S extends SchemaType> = S extends StringSchemaType
     : S extends BooleanSchemaType ? boolean
     : S extends IgnoreSchemaType ? any
     : S extends LoroTextSchemaType ? string
-    : S extends UnionSchemaType<infer U> ? InferSchemaType<U>[keyof U]
     : S extends LoroMapSchema<infer M> ? { [K in keyof M]: InferType<M[K]> }
     : S extends LoroListSchema<infer I> ? Array<InferType<I>>
     : S extends RootSchemaType<infer R> ? { [K in keyof R]: InferType<R[K]> }
