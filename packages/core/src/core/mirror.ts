@@ -17,6 +17,8 @@ import {
     ContainerSchemaType,
     getDefaultValue,
     InferType,
+    isLoroListSchema,
+    isLoroMapSchema,
     LoroListSchema,
     LoroMapSchema,
     RootSchemaType,
@@ -113,6 +115,8 @@ export class Mirror<S extends SchemaType> {
     // Unsubscribe functions for container subscriptions
     private containerSubscriptions: Map<ContainerID, () => void> = new Map();
 
+    private containerToSchemaMap: Map<ContainerID, ContainerSchemaType> = new Map();
+
     /**
      * Creates a new Mirror instance
      */
@@ -177,7 +181,8 @@ export class Mirror<S extends SchemaType> {
                             fieldSchema.type,
                         )
                     ) {
-                        this.registerContainer(key);
+                        console.log(`initializeContainers: registering container`,key, fieldSchema);
+                        this.registerContainer(key, fieldSchema);
                     }
                 }
             }
@@ -187,9 +192,10 @@ export class Mirror<S extends SchemaType> {
     /**
      * Register a container with the Mirror
      */
-    private registerContainer(name: string) {
+    private registerContainer(name: string, schemaType: ContainerSchemaType | undefined) {
         try {
             let container: Container;
+            console.log(`registerContainer: name ${name}, schemaType ${schemaType}`);
 
             // Get the container based on name
             if (name.includes("cid:")) {
@@ -218,6 +224,7 @@ export class Mirror<S extends SchemaType> {
                         container = this.doc.getList(name);
                         break;
                     case "loro-text":
+                        console.log("registering text container");
                         container = this.doc.getText(name);
                         break;
                     default:
@@ -236,6 +243,10 @@ export class Mirror<S extends SchemaType> {
             }
 
             const containerId = container.id;
+
+            if (schemaType) {
+                this.registerContainerSchema(containerId, schemaType);
+            }
 
             // Subscribe to container events
             const unsubscribe = container.subscribe(this.handleContainerEvent);
@@ -262,10 +273,13 @@ export class Mirror<S extends SchemaType> {
             return;
         }
 
+        let parentSchema = this.getContainerSchema(container.id);
+
         try {
             const shallowValue = (container as any).getShallowValue();
 
             if (container.kind() === "Map") {
+                console.log(`registerNestedContainers: for map ${container.id}, shallowValue`, shallowValue);
                 // For maps, check each value
                 for (const [key, value] of Object.entries(shallowValue)) {
                     if (typeof value === "string" && value.startsWith("cid:")) {
@@ -273,12 +287,22 @@ export class Mirror<S extends SchemaType> {
                         const nestedContainer = this.doc.getContainerById(
                             value as ContainerID,
                         );
+                        let nestedSchema: ContainerSchemaType | undefined;
+
+                        if (parentSchema && isLoroMapSchema(parentSchema)) {
+                            nestedSchema = parentSchema.definition[key] as ContainerSchemaType;
+                        }
+
+                        console.log(`going through nested containers of map ${container.id}, key ${key}, value ${value}, nestedSchema ${nestedSchema}`);
+
+
                         if (nestedContainer) {
-                            this.registerContainer(value as ContainerID);
+                            this.registerContainer(value as ContainerID, nestedSchema);
                         }
                     }
                 }
             } else if (container.kind() === "List") {
+                console.log(`registerNestedContainers: for list ${container.id}, shallowValue ${shallowValue}`);
                 // For lists, check each item
                 const list = container as LoroList;
                 shallowValue.forEach((value: any) => {
@@ -287,8 +311,16 @@ export class Mirror<S extends SchemaType> {
                         const nestedContainer = this.doc.getContainerById(
                             value as ContainerID,
                         );
+
+                        let nestedSchema: ContainerSchemaType | undefined;
+
+                        if (parentSchema && isLoroListSchema(parentSchema)) {
+                            nestedSchema = parentSchema as ContainerSchemaType;
+                        }
+
+                        console.log(`going through nested containers of list ${container.id}, value ${value}, nestedSchema ${nestedSchema}`);
                         if (nestedContainer) {
-                            this.registerContainer(value as ContainerID);
+                            this.registerContainer(value as ContainerID,nestedSchema);
                         }
                     }
                 });
@@ -365,11 +397,13 @@ export class Mirror<S extends SchemaType> {
         try {
             // Find the differences between current Loro state and new state
             const currentDocState = this.state;
-            console.log(
-                "currentDocState:",
-                JSON.stringify(currentDocState, null, 2),
-            );
-            console.log("newState:", JSON.stringify(newState, null, 2));
+            if (this.options.debug) {
+                console.log(
+                    "currentDocState:",
+                    JSON.stringify(currentDocState, null, 2),
+                );
+                console.log("newState:", JSON.stringify(newState, null, 2));
+            }
 
             const changes = this.findChangesForContainer(
                 currentDocState,
@@ -385,10 +419,12 @@ export class Mirror<S extends SchemaType> {
             this.applyChangesToLoro(changes);
 
             // Log the doc state after changes
-            console.log(
-                "Doc state after changes:",
-                JSON.stringify(this.doc.toJSON(), null, 2),
-            );
+            if (this.options.debug) {
+                console.log(
+                    "Doc state after changes:",
+                    JSON.stringify(this.doc.toJSON(), null, 2),
+                );
+            }
         } finally {
             this.syncing = false;
         }
@@ -400,6 +436,7 @@ export class Mirror<S extends SchemaType> {
     private applyChangesToLoro(
         changes: Change[],
     ) {
+        console.log(this.doc.getDeepValueWithID());
         // Group changes by container for batch processing
         const changesByContainer = new Map<
             ContainerID | "",
@@ -418,6 +455,7 @@ export class Mirror<S extends SchemaType> {
             const [containerId, containerChanges] of changesByContainer
                 .entries()
         ) {
+            console.log("processing changes by container", containerId, containerChanges);
             if (containerId === "") {
                 // Handle root level changes
                 this.applyRootChanges(containerChanges);
@@ -475,6 +513,8 @@ export class Mirror<S extends SchemaType> {
         container: Container,
         changes: Change[],
     ) {
+        console.log(`applyContainerChanges: container ${container.id}, changes ${changes}`);
+
         // Apply changes in bulk by container type
         switch (container.kind()) {
             case "Map": {
@@ -490,11 +530,12 @@ export class Mirror<S extends SchemaType> {
                     if (kind === "insert") {
                         map.set(key as string, value);
                     } else if (kind === "insert-container") {
-                        const container = map.setContainer(
+                        let schema = this.getChildSchema(container.id, key);
+                        const containerToInsert = this.createContainer(value, schema);
+                        map.setContainer(
                             key as string,
-                            newContainer(childContainerType),
+                            containerToInsert,
                         );
-                        initContainer(container, value);
                     } else if (kind === "delete") {
                         map.delete(key as string);
                     } else {
@@ -509,6 +550,8 @@ export class Mirror<S extends SchemaType> {
                 for (
                     const { key, value, kind, childContainerType } of changes
                 ) {
+
+                    console.log("applying change", key, value, kind, childContainerType);
                     if (typeof key !== "number") {
                         throw new Error(`Invalid list index: ${key}`);
                     }
@@ -602,9 +645,11 @@ export class Mirror<S extends SchemaType> {
             const itemSchema =
                 (schema as LoroListSchema<SchemaType> | undefined)?.itemSchema;
 
-            console.log(
-                `Updating list container, idSelector: ${!!idSelector}, current length: ${list.length}`,
-            );
+            if (this.options.debug) {
+                console.log(
+                    `Updating list container, idSelector: ${!!idSelector}, current length: ${list.length}`,
+                );
+            }
 
             // Clear out the list first to avoid duplicate items
             // Instead of clearing the entire list, which can leave it empty if there's an error,
@@ -698,9 +743,11 @@ export class Mirror<S extends SchemaType> {
             }
         });
 
-        console.log(
-            `Current items by ID: ${currentItemsById.size}, New items by ID: ${newItemsById.size}`,
-        );
+        if (this.options.debug) {
+            console.log(
+                `Current items by ID: ${currentItemsById.size}, New items by ID: ${newItemsById.size}`,
+            );
+        }
 
         // Find items to remove (in current but not in new)
         const itemsToRemove: number[] = [];
@@ -962,6 +1009,8 @@ export class Mirror<S extends SchemaType> {
         const t = schema
             ? schemaTypeToContainerType(schema)
             : tryInferContainerType(value);
+
+        console.log(`createContainer: value ${value}, schema `, schema, t);
         if (t === "Map") {
             // Generate a unique ID for the map
             const map = new LoroMap();
@@ -1339,7 +1388,9 @@ export class Mirror<S extends SchemaType> {
         schema: LoroListSchema<SchemaType> | undefined,
     ): Change[] | undefined {
         const changes: Change[] = [];
-        console.log("Using idSelector for list diff");
+        if (this.options.debug) {
+            console.log("Using idSelector for list diff");
+        }
         const useContainer = !!(schema?.itemSchema.getContainerType() ?? true);
         // Compare arrays using the idSelector for identity
         const oldItemsById = new Map();
@@ -1563,6 +1614,41 @@ export class Mirror<S extends SchemaType> {
         // Notify subscribers
         this.notifySubscribers(SyncDirection.TO_LORO);
     }
+
+    private registerContainerSchema(
+        containerId: ContainerID,
+        schemaType: ContainerSchemaType,
+    ) {
+        console.log("registering container schema", containerId, schemaType);
+        this.containerToSchemaMap.set(containerId, schemaType);
+        console.log("containerToSchemaMap", this.containerToSchemaMap);
+    }
+
+    private getContainerSchema(containerId: ContainerID): ContainerSchemaType | undefined {
+        return this.containerToSchemaMap.get(containerId);
+    }
+    
+    private getChildSchema(
+        containerId: ContainerID,
+        childKey: string | number,
+    ): ContainerSchemaType | undefined {
+        const containerSchema = this.getContainerSchema(containerId);
+        console.log("parent schema", containerId, containerSchema)
+
+        if (!containerSchema) {
+            console.warn(`tried to get schema for child ${childKey} for container ${containerId}, but no schema found`);
+            return undefined;
+        }
+
+        if (isLoroMapSchema(containerSchema)) {
+            return containerSchema.definition[childKey] as ContainerSchemaType;
+        } else if (isLoroListSchema(containerSchema)) {
+            console.log(`getChildSchema list:`, containerSchema.itemSchema);
+            return containerSchema.itemSchema as ContainerSchemaType;
+        }
+
+        return undefined;
+    }
 }
 
 function insertChildToMap(
@@ -1670,6 +1756,7 @@ function newContainer(
         return new LoroList();
     }
     if (childContainerType === "Text") {
+        console.log('new lorotext');
         return new LoroText();
     }
     throw new Error();
@@ -1677,6 +1764,7 @@ function newContainer(
 
 // FIXME: Init container should obey schema
 function initContainer(container: Container, value: any) {
+    console.log("initContainer", container.kind(), value);
     if (container.kind() === "Map") {
         if (!isObject(value)) {
             throw new Error();
@@ -1709,6 +1797,10 @@ function initContainer(container: Container, value: any) {
                 list.push(val);
             }
         }
+    } else if (container.kind() === "Text") {
+        console.log("initializing text container");
+        const text = container as LoroText;
+        text.update(value);
     } else {
         throw new Error();
     }
