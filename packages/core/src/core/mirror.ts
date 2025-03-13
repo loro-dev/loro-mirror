@@ -586,8 +586,6 @@ export class Mirror<S extends SchemaType> {
                         continue;
                     }
 
-                    console.log("apllying container change to list", key, value, kind, childContainerType);
-
                     if (kind === "delete") {
                         list.delete(index, 1);
                     } else if (kind === "insert") {
@@ -1023,6 +1021,19 @@ export class Mirror<S extends SchemaType> {
         this.subscribers.clear();
     }
 
+    private isValueOfCotainerType(
+        containerType: ContainerType,
+        value: any,
+    ): boolean {
+        if (["Map", "List"].includes(containerType)) {
+            return typeof value === "object" && value !== null;
+        } else if (containerType === "Text") {
+            return typeof value === "string" && value !== null;
+        }
+        return false;
+    }
+
+
     /**
      * Find or create a container for a value based on its schema
      */
@@ -1060,13 +1071,9 @@ export class Mirror<S extends SchemaType> {
                         fieldSchema?.type === "loro-list" ||
                         fieldSchema?.type === "loro-text";
 
-                    // console.log("isContainer", isContainer);
-                    // console.log(typeof val);
-
-
                     if (
-                        isContainer && typeof val === "object" &&
-                        val !== null
+                        isContainer &&
+                        this.isValueOfCotainerType(schemaTypeToContainerType(fieldSchema), val)
                     ) {
                         console.log("creating container", key, fieldSchema.type);
                         const container = this.createContainer(
@@ -1111,8 +1118,7 @@ export class Mirror<S extends SchemaType> {
                     console.log("isContainer", isContainer);
 
                     if (
-                        isContainer && typeof item === "object" &&
-                        item !== null
+                        isContainer && this.isValueOfCotainerType(schemaTypeToContainerType(itemSchema), item)
                     ) {
                         const container = this.createContainer(
                             item,

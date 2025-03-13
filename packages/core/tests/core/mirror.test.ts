@@ -1,6 +1,6 @@
 import { Mirror, SyncDirection } from "../../src/core/mirror";
 import { schema } from "../../src/schema";
-import { LoroDoc } from "loro-crdt";
+import { Container, isContainer, LoroDoc, LoroList, LoroMap } from "loro-crdt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("Mirror - State Consistency", () => {
@@ -563,5 +563,114 @@ describe("Mirror - State Consistency", () => {
 
     // Unsubscribe should still work (even though dispose already cleaned up)
     unsubscribe();
+  });
+  
+  it("correctly initializes nested containers with schemas", async () => {
+    const nestedSchema = schema({
+      users: schema.LoroMap({
+        profile: schema.LoroMap({
+          name: schema.LoroText(),
+          age: schema.Number(),
+          tags: schema.LoroList(schema.String()),
+        }),
+        posts: schema.LoroList(
+          schema.LoroMap({
+            title: schema.String(),
+            content: schema.String(),
+            comments: schema.LoroList(
+              schema.LoroMap({
+                author: schema.String(),
+                text: schema.LoroText(),
+              })
+            ),
+          })
+        ),
+      }),
+    });
+
+    const mirror = new Mirror({
+      doc,
+      schema: nestedSchema,
+    });
+
+    await waitForSync();
+
+    mirror.setState({
+      users: {
+        profile: {
+          name: "John",
+          age: 30,
+          tags: ["developer", "typescript"],
+        },
+        posts: [
+          {
+            title: "First Post",
+            content: "Hello World",
+            comments: [
+              {
+                author: "Jane",
+                text: "Great post!",
+              },
+              {
+                author: "Bob",
+                text: "Nice job!",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await waitForSync();
+
+    const serialized: any = doc.getDeepValueWithID();
+
+    const userContainer = serialized.users;
+    expect(userContainer.cid.endsWith(":Map"))
+
+    const profileContainer = userContainer.value.profile;
+    // Profile container should be a LoroMap
+    expect(profileContainer.cid.endsWith(":Map"))
+
+    // Name in profile container should be a LoroText
+    expect(profileContainer.value.name.cid.endsWith(":Text"))
+    expect(profileContainer.value.name.value).toBe("John");
+
+    // Age in profile should be a regular number
+    expect(profileContainer.value.age).toBe(30);
+
+    // Tags in profile should be a LoroList
+    const tagsList = profileContainer.value.tags;
+    expect(tagsList.cid.endsWith(":List"))
+    expect(tagsList.value).toEqual(["developer", "typescript"]);
+
+    // Posts container should be a LoroList
+    const postsContainer = userContainer.value.posts;
+    expect(postsContainer.cid.endsWith(":List"))
+    expect(postsContainer.value.length).toBe(1);
+
+    // First post container should be a LoroMap
+    const postContainer = postsContainer.value[0];
+    expect(postContainer.cid.endsWith(":Map"))
+    expect(postContainer.value.title).toBe("First Post");
+    expect(postContainer.value.content).toBe("Hello World");
+
+
+    // Comments container should be a LoroList
+    const innerCommentsContainer = postContainer.value.comments;
+    expect(innerCommentsContainer.cid.endsWith(":List"))
+    expect(innerCommentsContainer.value.length).toBe(2);
+
+    // Comment container should be a LoroMap
+    const commentContainer = innerCommentsContainer.value[0];
+    expect(commentContainer.cid.endsWith(":Map"))
+
+    // Author in comment should be a regular string
+    expect(commentContainer.value.author).toBe("Jane");
+
+    // Comment text container should be a LoroText
+    const commentTextContainer = commentContainer.value.text;
+    expect(commentTextContainer.cid.endsWith(":Text"))
+    expect(commentTextContainer.value).toBe("Great post!");
   });
 });
