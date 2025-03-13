@@ -327,14 +327,15 @@ export class Mirror<S extends SchemaType> {
                         let nestedSchema: ContainerSchemaType | undefined;
 
                         if (parentSchema && isLoroListSchema(parentSchema)) {
-                            nestedSchema = parentSchema as ContainerSchemaType;
+                            // For list items, we need to use the itemSchema, not the parent list schema
+                            nestedSchema = parentSchema.itemSchema as ContainerSchemaType;
                         }
 
                         if (this.options.debug) {
                             console.log(`going through nested containers of list ${container.id}, value ${value}, nestedSchema ${nestedSchema}`);
                         }
                         if (nestedContainer) {
-                            this.registerContainer(value as ContainerID,nestedSchema);
+                            this.registerContainer(value as ContainerID, nestedSchema);
                         }
                     }
                 });
@@ -533,7 +534,7 @@ export class Mirror<S extends SchemaType> {
         changes: Change[],
     ) {
         if (this.options.debug) {
-            console.log(`applyContainerChanges: container ${container.id}, changes ${changes}`);
+            console.log(`applyContainerChanges: container ${container.id}, changes `, changes);
         }
 
         // Apply changes in bulk by container type
@@ -584,6 +585,8 @@ export class Mirror<S extends SchemaType> {
                         console.warn(`Invalid list index: ${index}`);
                         continue;
                     }
+
+                    console.log("apllying container change to list", key, value, kind, childContainerType);
 
                     if (kind === "delete") {
                         list.delete(index, 1);
@@ -1037,6 +1040,8 @@ export class Mirror<S extends SchemaType> {
         if (t === "Map") {
             // Generate a unique ID for the map
             const map = new LoroMap();
+            this.registerContainerSchema(map.id, schema as any);
+
 
             // Populate the map with values
             if (isObject(value)) {
@@ -1044,20 +1049,33 @@ export class Mirror<S extends SchemaType> {
                     const fieldSchema =
                         (schema as LoroMapSchema<any> | undefined)
                             ?.definition[key];
+                    console.log("")
+                    console.log("----")
+                    console.log("from map");
+                    console.log("item", val);
+                    console.log("itemSchema", fieldSchema);
+
+
                     const isContainer = fieldSchema?.type === "loro-map" ||
                         fieldSchema?.type === "loro-list" ||
                         fieldSchema?.type === "loro-text";
+
+                    // console.log("isContainer", isContainer);
+                    // console.log(typeof val);
+
 
                     if (
                         isContainer && typeof val === "object" &&
                         val !== null
                     ) {
+                        console.log("creating container", key, fieldSchema.type);
                         const container = this.createContainer(
                             val,
                             fieldSchema,
                         );
                         if (container) {
                             map.setContainer(key, container);
+                            continue;
                         }
                     }
 
@@ -1070,17 +1088,27 @@ export class Mirror<S extends SchemaType> {
         } else if (t === "List") {
             // Generate a unique ID for the list
             const list = new LoroList();
+            this.registerContainerSchema(list.id, schema as any);
 
             // Populate the list with values
             if (Array.isArray(value)) {
                 const itemSchema = (schema as LoroListSchema<any> | undefined)
                     ?.itemSchema;
-                const isContainer = itemSchema?.type === "loro-map" ||
-                    itemSchema?.type === "loro-list" ||
-                    itemSchema?.type === "loro-text";
+
+                const isContainer = itemSchema && (
+                    itemSchema.type === "loro-map" ||
+                    itemSchema.type === "loro-list" ||
+                    itemSchema.type === "loro-text"
+                );
 
                 for (let i = 0; i < value.length; i++) {
                     const item = value[i];
+                    console.log("")
+                    console.log("----")
+                    console.log("from list");
+                    console.log("item", item);
+                    console.log("itemSchema", itemSchema);
+                    console.log("isContainer", isContainer);
 
                     if (
                         isContainer && typeof item === "object" &&
@@ -1091,6 +1119,7 @@ export class Mirror<S extends SchemaType> {
                             itemSchema,
                         );
                         if (container) {
+                            console.log("creating container", i, itemSchema.type);
                             list.insertContainer(i, container);
                             continue; // Skip the regular insert if we inserted as container
                         }
