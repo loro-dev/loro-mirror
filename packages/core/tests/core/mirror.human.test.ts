@@ -112,6 +112,7 @@ it("works without schema", async () => {
 
 it("syncing from state => LoroDoc", async () => {
     const doc = new LoroDoc();
+    doc.setPeerId(1);
     const mirror = new Mirror({ doc });
     mirror.setState({
         todos: [

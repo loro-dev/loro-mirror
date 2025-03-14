@@ -15,7 +15,7 @@ import { isObject } from "../core/utils";
 /**
  * Type guard for LoroMapSchema
  */
-function isLoroMapSchema<T extends Record<string, SchemaType>>(
+export function isLoroMapSchema<T extends Record<string, SchemaType>>(
     schema: SchemaType,
 ): schema is LoroMapSchema<T> {
     return (schema as BaseSchemaType).type === "loro-map";
@@ -24,7 +24,7 @@ function isLoroMapSchema<T extends Record<string, SchemaType>>(
 /**
  * Type guard for LoroListSchema
  */
-function isLoroListSchema<T extends SchemaType>(
+export function isLoroListSchema<T extends SchemaType>(
     schema: SchemaType,
 ): schema is LoroListSchema<T> {
     return (schema as BaseSchemaType).type === "loro-list";
@@ -33,10 +33,21 @@ function isLoroListSchema<T extends SchemaType>(
 /**
  * Type guard for RootSchemaType
  */
-function isRootSchemaType<T extends Record<string, ContainerSchemaType>>(
+export function isRootSchemaType<T extends Record<string, ContainerSchemaType>>(
     schema: SchemaType,
 ): schema is RootSchemaType<T> {
     return (schema as BaseSchemaType).type === "schema";
+}
+
+/**
+ * Check if a schema is for a Loro container
+ */
+export function isContainerSchema(schema?: SchemaType): schema is ContainerSchemaType {
+  return !!schema && (
+    schema.type === "loro-map" || 
+    schema.type === "loro-list" || 
+    schema.type === "loro-text"
+  );
 }
 
 /**
