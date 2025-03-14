@@ -1014,7 +1014,7 @@ export class Mirror<S extends SchemaType> {
         }
 
         if (schema) {
-            this.registerContainer(insertedContainer.id, schema);
+            this.registerContainerSchema(insertedContainer.id, schema);
         }
     }
     /** 
@@ -1041,7 +1041,7 @@ export class Mirror<S extends SchemaType> {
         }
 
         if (schema) {
-            this.registerContainer(insertedContainer.id, schema);
+            this.registerContainerSchema(insertedContainer.id, schema);
         }
     }
 
