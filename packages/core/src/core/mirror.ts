@@ -521,7 +521,7 @@ export class Mirror<S extends SchemaType> {
                     if (kind === "insert") {
                         map.set(key as string, value);
                     } else if (kind === "insert-container") {
-                        let schema = this.getContainerChildSchema(container.id, key);
+                        let schema = this.getSchemaForChildContainer(container.id, key);
                         this.attachContainerToMap(
                             map,
                             this.createDetachedContainer(value, schema),
@@ -558,7 +558,7 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "insert") {
                         list.insert(index, value);
                     } else if (kind === "insert-container") {
-                        const schema = this.getContainerChildSchema(container.id, key);
+                        const schema = this.getSchemaForChildContainer(container.id, key);
                         this.attachContainerToList(
                             list,
                             this.createDetachedContainer(value, schema),
@@ -854,10 +854,10 @@ export class Mirror<S extends SchemaType> {
     ) {
         // Determine if the item should be a container
         let isContainer = false;
-        if (itemSchema) {
-            isContainer = itemSchema.type === "loro-map" ||
-                itemSchema.type === "loro-list" ||
-                itemSchema.type === "loro-text";
+        let containerSchema: ContainerSchemaType | undefined;
+        if (itemSchema && isContainerSchema(itemSchema)) {
+            isContainer = true;
+            containerSchema = itemSchema;
         } else {
             isContainer = tryInferContainerType(item) !== undefined;
         }
@@ -865,9 +865,9 @@ export class Mirror<S extends SchemaType> {
         if (isContainer && typeof item === "object" && item !== null) {
             this.attachContainerToList(
                 list,
-                this.createDetachedContainer(item, itemSchema),
+                this.createDetachedContainer(item, containerSchema),
                 index,
-                itemSchema,
+                containerSchema,
             )
             return;
         }
@@ -996,6 +996,11 @@ export class Mirror<S extends SchemaType> {
         this.subscribers.clear();
     }
 
+    /** 
+     * Attaches a detached container to a map
+     *
+     * If the schema is provided, the container will be registered with the schema
+     */
     private attachContainerToMap(
         map: LoroMap,
         container: Container,
@@ -1012,7 +1017,11 @@ export class Mirror<S extends SchemaType> {
             this.registerContainer(insertedContainer.id, schema);
         }
     }
-
+    /** 
+     * Attaches a detached container to a list
+     *
+     * If the schema is provided, the container will be registered with the schema
+     */
     private attachContainerToList(
         list: LoroList,
         container: Container,
@@ -1629,8 +1638,21 @@ export class Mirror<S extends SchemaType> {
     private getContainerSchema(containerId: ContainerID): ContainerSchemaType | undefined {
         return this.containerToSchemaMap.get(containerId);
     }
+
+    private getSchemaForChildContainer(
+        containerId: ContainerID,
+        childKey: string | number,
+    ): ContainerSchemaType | undefined {
+        const containerSchema = this.getSchemaForChild(containerId, childKey);
+
+        if (!containerSchema || !isContainerSchema(containerSchema)) {
+            return undefined;
+        }
+
+        return containerSchema;
+    }
     
-    private getContainerChildSchema(
+    private getSchemaForChild(
         containerId: ContainerID,
         childKey: string | number,
     ): SchemaType | undefined {
