@@ -112,6 +112,7 @@ it("works without schema", async () => {
 
 it("syncing from state => LoroDoc", async () => {
     const doc = new LoroDoc();
+    doc.setPeerId(1);
     const mirror = new Mirror({ doc });
     mirror.setState({
         todos: [
@@ -145,17 +146,15 @@ it("syncing from state => LoroDoc", async () => {
     });
     const f2 = doc.frontiers();
     expect(f2[0].counter - f[0].counter).toBe(2);
-    // NOTE: not sure what the intention of this test is, 
-    // snapshot testing wouldn't work since container ids are randomized ?
-    // -- @synoet
-    // const v = doc.toJsonWithReplacer((key, v) => { if (isContainer(v)) {
-    //         return {
-    //             id: v.id,
-    //             value: v.getShallowValue(),
-    //         };
-    //     } else {
-    //         return v;
-    //     }
-    // });
-    // expect(v).toMatchSnapshot();
+    const v = doc.toJsonWithReplacer((key, v) => {
+        if (isContainer(v)) {
+            return {
+                id: v.id,
+                value: v.getShallowValue(),
+            };
+        } else {
+            return v;
+        }
+    });
+    expect(v).toMatchSnapshot();
 });
