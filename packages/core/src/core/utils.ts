@@ -122,3 +122,19 @@ export function setPathValue(
         current[lastKey] = value;
     }
 }
+
+type ContainerValue = {
+    cid: string;
+    value: any;
+};
+
+export function valueIsContainer(value: any): value is ContainerValue {
+    return value && typeof value === "object" && "cid" in value && "value" in value;
+}
+
+export function valueIsContainerOfType(
+    value: any,
+    containerType: string,
+): value is ContainerValue {
+    return valueIsContainer(value) && value.cid.endsWith(containerType);
+}

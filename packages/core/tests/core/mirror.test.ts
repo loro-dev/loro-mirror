@@ -1,7 +1,8 @@
 import { Mirror, SyncDirection } from "../../src/core/mirror";
+import { valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
 import { schema } from "../../src/schema";
 import { Container, isContainer, LoroDoc, LoroList, LoroMap } from "loro-crdt";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { assert, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("Mirror - State Consistency", () => {
   let doc: LoroDoc;
@@ -626,14 +627,14 @@ describe("Mirror - State Consistency", () => {
     const serialized: any = doc.getDeepValueWithID();
 
     const userContainer = serialized.users;
-    expect(userContainer.cid.endsWith(":Map"))
+    expect(valueIsContainerOfType(userContainer, ":Map"))
 
     const profileContainer = userContainer.value.profile;
     // Profile container should be a LoroMap
-    expect(profileContainer.cid.endsWith(":Map"))
+    expect(valueIsContainerOfType(profileContainer, ":Map"))
 
     // Name in profile container should be a LoroText
-    expect(profileContainer.value.name.cid.endsWith(":Text"))
+    expect(valueIsContainerOfType(profileContainer.value.name, ":Text"))
     expect(profileContainer.value.name.value).toBe("John");
 
     // Age in profile should be a regular number
@@ -641,36 +642,108 @@ describe("Mirror - State Consistency", () => {
 
     // Tags in profile should be a LoroList
     const tagsList = profileContainer.value.tags;
-    expect(tagsList.cid.endsWith(":List"))
+    expect(valueIsContainerOfType(tagsList, ":List"))
     expect(tagsList.value).toEqual(["developer", "typescript"]);
 
     // Posts container should be a LoroList
     const postsContainer = userContainer.value.posts;
-    expect(postsContainer.cid.endsWith(":List"))
+    expect(valueIsContainerOfType(postsContainer, ":List"))
     expect(postsContainer.value.length).toBe(1);
 
     // First post container should be a LoroMap
     const postContainer = postsContainer.value[0];
-    expect(postContainer.cid.endsWith(":Map"))
+    expect(valueIsContainerOfType(postContainer, ":Map"))
     expect(postContainer.value.title).toBe("First Post");
     expect(postContainer.value.content).toBe("Hello World");
 
 
     // Comments container should be a LoroList
     const innerCommentsContainer = postContainer.value.comments;
-    expect(innerCommentsContainer.cid.endsWith(":List"))
+    expect(valueIsContainerOfType(innerCommentsContainer, ":List"))
     expect(innerCommentsContainer.value.length).toBe(2);
 
     // Comment container should be a LoroMap
     const commentContainer = innerCommentsContainer.value[0];
-    expect(commentContainer.cid.endsWith(":Map"))
+    expect(valueIsContainerOfType(commentContainer, ":Map"))
 
     // Author in comment should be a regular string
     expect(commentContainer.value.author).toBe("Jane");
 
     // Comment text container should be a LoroText
     const commentTextContainer = commentContainer.value.text;
-    expect(commentTextContainer.cid.endsWith(":Text"))
+    expect(valueIsContainerOfType(commentTextContainer, ":Text"))
     expect(commentTextContainer.value).toBe("Great post!");
   });
+
+  it("handles recursive schemas", async () => {
+    const nodeSchema = schema.LoroMap({
+      name: schema.LoroText(),
+      children: schema.LoroList({} as any),
+    })
+
+    nodeSchema.definition.children.itemSchema = nodeSchema;
+
+    const recursiveSchema = schema({
+      root: nodeSchema,
+    });
+
+    const loroDoc = new LoroDoc();
+
+    const mirror = new Mirror({
+      doc: loroDoc,
+      schema: recursiveSchema,
+    });
+
+    await waitForSync();
+
+    mirror.setState({
+      root: {
+        name: "Root",
+        children: [
+          {
+            name: "Child 1",
+            children: [
+              {
+                name: "Grandchild 1",
+                children: [],
+              },
+              {
+                name: "Grandchild 2",
+                children: [],
+              },
+            ],
+          },
+          {
+            name: "Child 2",
+            children: [],
+          },
+        ],
+      },
+    });
+
+    await waitForSync();
+
+    let serialized = loroDoc.getDeepValueWithID();
+
+    assert(valueIsContainer(serialized.root));
+    assert(valueIsContainerOfType(serialized.root, ":Map"));
+
+    assert(valueIsContainer(serialized.root.value.name))
+    assert(valueIsContainerOfType(serialized.root.value.name, ":Text"));
+
+    assert(valueIsContainer(serialized.root.value.children))
+    assert(valueIsContainerOfType(serialized.root.value.children, ":List"));
+
+    assert(valueIsContainer(serialized.root.value.children.value[0]))
+    assert(valueIsContainerOfType(serialized.root.value.children.value[0], ":Map"));
+
+    assert(valueIsContainer(serialized.root.value.children.value[0].value.children))
+    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children, ":List"));
+
+    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0]))
+    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0], ":Map"));
+
+    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0].value.name))
+    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0].value.name, ":Text"));
+  })
 });
