@@ -374,8 +374,12 @@ export class Mirror<S extends SchemaType> {
 
             this.state = newState;
 
-            // Notify subscribers
-            this.notifySubscribers(SyncDirection.FROM_LORO);
+            // If the event was from an import, [handleLoroEvent]
+            // will handle notifying subscribers
+            if (event.by !== "import") {
+                // Notify subscribers
+                this.notifySubscribers(SyncDirection.FROM_LORO);
+            }
         } finally {
             this.syncing = false;
         }
@@ -1392,6 +1396,7 @@ export class Mirror<S extends SchemaType> {
         return changes;
     }
 
+
     private findDiffInArrayWithIdSelector(
         oldState: any[],
         newState: any[],
@@ -1403,6 +1408,7 @@ export class Mirror<S extends SchemaType> {
         if (this.options.debug) {
             console.log("Using idSelector for list diff");
         }
+
         const useContainer = !!(schema?.itemSchema.getContainerType() ?? true);
         // Compare arrays using the idSelector for identity
         const oldItemsById = new Map();
@@ -1443,8 +1449,12 @@ export class Mirror<S extends SchemaType> {
                 continue;
             }
 
-            const oldId = idSelector(oldItem);
-            const newId = idSelector(newItem);
+            const oldId = oldItem ? idSelector(oldItem) : null;
+            const newId = newItem ? idSelector(newItem): null;
+            if (oldId === null || newId === null) {
+                continue;
+            }
+
             if (oldId === newId) {
                 const item = list.get(index);
                 if (isContainer(item)) {
@@ -1474,7 +1484,7 @@ export class Mirror<S extends SchemaType> {
                 continue;
             }
 
-            if (!oldItemsById.has(newId)) {
+            if (newId && !oldItemsById.has(newId)) {
                 changes.push(tryUpdateToInsertContainer({
                     container: containerId,
                     key: index + offset,

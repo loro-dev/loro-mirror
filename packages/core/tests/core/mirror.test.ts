@@ -746,4 +746,73 @@ describe("Mirror - State Consistency", () => {
     assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0].value.name))
     assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0].value.name, ":Text"));
   })
+
+  it("subscribers get notified correct amounts for nested containers", async () => {
+    const nodeSchema = schema.LoroMap({
+      name: schema.LoroText(),
+      children: schema.LoroList({} as any),
+    })
+
+
+    nodeSchema.definition.children.itemSchema = nodeSchema;
+
+    const recursiveSchema = schema({
+      root: nodeSchema,
+    });
+    let initialState = {
+      root: {
+        name: "Root",
+        type: "root",
+        children: [
+          {
+            name: "Child 1",
+            children: [
+              {
+                name: "Grandchild 1",
+                children: [],
+              },
+              {
+                name: "Grandchild 2",
+                children: [],
+              },
+            ],
+          },
+          {
+            name: "Child 2",
+            children: [],
+          },
+        ],
+      },
+    };
+
+    const loroDoc = new LoroDoc();
+
+    const mirror = new Mirror({
+      doc: loroDoc,
+      schema: recursiveSchema,
+      initialState: initialState,
+    });
+
+    const snapshot = loroDoc.export({mode: "snapshot"});
+
+    let doc2 = new LoroDoc();
+    doc2.import(snapshot);
+    doc2.getMap("root").set("name", "Root2");
+
+    const update = doc2.export({mode: "update"});
+    let counter = 0;
+
+    mirror.subscribe((state) => {
+      console.log(state);
+      counter++;
+    });
+
+    loroDoc.import(update);
+
+    await waitForSync();
+
+    await new Promise(r => setTimeout(r, 300));
+
+    expect(counter).toBe(1);
+  })
 });
