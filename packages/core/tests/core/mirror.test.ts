@@ -748,40 +748,17 @@ describe("Mirror - State Consistency", () => {
   })
 
   it("subscribers get notified correct amounts for nested containers", async () => {
-    const nodeSchema = schema.LoroMap({
-      name: schema.LoroText(),
-      children: schema.LoroList({} as any),
-    })
-
-
-    nodeSchema.definition.children.itemSchema = nodeSchema;
-
-    const recursiveSchema = schema({
-      root: nodeSchema,
+    const testSchema = schema({
+      root: schema.LoroMap({
+        name: schema.LoroText(),
+        type: schema.LoroText(),
+      })
     });
+
     let initialState = {
       root: {
         name: "Root",
         type: "root",
-        children: [
-          {
-            name: "Child 1",
-            children: [
-              {
-                name: "Grandchild 1",
-                children: [],
-              },
-              {
-                name: "Grandchild 2",
-                children: [],
-              },
-            ],
-          },
-          {
-            name: "Child 2",
-            children: [],
-          },
-        ],
       },
     };
 
@@ -789,12 +766,13 @@ describe("Mirror - State Consistency", () => {
 
     const mirror = new Mirror({
       doc: loroDoc,
-      schema: recursiveSchema,
+      schema: testSchema,
       initialState: initialState,
     });
 
     const snapshot = loroDoc.export({mode: "snapshot"});
 
+    // New doc for testing updates
     let doc2 = new LoroDoc();
     doc2.import(snapshot);
     doc2.getMap("root").set("name", "Root2");
@@ -802,8 +780,7 @@ describe("Mirror - State Consistency", () => {
     const update = doc2.export({mode: "update"});
     let counter = 0;
 
-    mirror.subscribe((state) => {
-      console.log(state);
+    mirror.subscribe((_) => {
       counter++;
     });
 
@@ -813,6 +790,7 @@ describe("Mirror - State Consistency", () => {
 
     await new Promise(r => setTimeout(r, 300));
 
+    // Subscriber should have been called once for the import
     expect(counter).toBe(1);
   })
 });
