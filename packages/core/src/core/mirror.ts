@@ -11,6 +11,7 @@ import {
     LoroEventBatch,
     LoroList,
     LoroMap,
+    LoroMovableList,
     LoroText,
 } from "loro-crdt";
 import {
@@ -298,7 +299,6 @@ export class Mirror<S extends SchemaType> {
                 }
             } else if (container.kind() === "List") {
                 // For lists, check each item
-                const list = container as LoroList;
                 shallowValue.forEach((value: any) => {
                     if (typeof value === "string" && value.startsWith("cid:")) {
                         // This is a container reference
@@ -526,12 +526,12 @@ export class Mirror<S extends SchemaType> {
                         map.set(key as string, value);
                     } else if (kind === "insert-container") {
                         let schema = this.getSchemaForChildContainer(container.id, key);
-                        this.attachContainerToMap(
+                        this.insertContainerIntoMap(
                             map,
-                            this.createDetachedContainer(value, schema),
-                            key as string,
-                            schema,
-                        );
+              							schema,
+              							key as string,
+              							value
+                        )
                     } else if (kind === "delete") {
                         map.delete(key as string);
                     } else {
@@ -563,12 +563,12 @@ export class Mirror<S extends SchemaType> {
                         list.insert(index, value);
                     } else if (kind === "insert-container") {
                         const schema = this.getSchemaForChildContainer(container.id, key);
-                        this.attachContainerToList(
-                            list,
-                            this.createDetachedContainer(value, schema),
-                            index,
-                            schema,
-                        );
+            			this.insertContainerIntoList(
+            				list,
+            				schema,
+            				index,
+            				value
+            			)
                     } else {
                         assertNever(kind);
                     }
@@ -585,6 +585,8 @@ export class Mirror<S extends SchemaType> {
                     } else {
                         console.warn(
                             `Invalid Text change. Only 'value' property can be updated`,
+                            key,
+                            value,
                         );
                     }
                 }
@@ -867,12 +869,12 @@ export class Mirror<S extends SchemaType> {
         }
 
         if (isContainer && typeof item === "object" && item !== null) {
-            this.attachContainerToList(
-                list,
-                this.createDetachedContainer(item, containerSchema),
-                index,
-                containerSchema,
-            )
+      			this.insertContainerIntoList(
+      				list,
+      				containerSchema,
+      				index,
+      				item
+      			)
             return;
         }
 
@@ -1005,64 +1007,39 @@ export class Mirror<S extends SchemaType> {
      *
      * If the schema is provided, the container will be registered with the schema
      */
-    private attachContainerToMap(
+    private insertContainerIntoMap(
         map: LoroMap,
-        container: Container,
-        key: string,
         schema: ContainerSchemaType | undefined,
+        key: string,
+        value: any,
     ) {
-        let insertedContainer = map.setContainer(key, container);
+        const [detachedContainer, containerType] = this.createContainerFromSchema(schema, value);
+        let insertedContainer = map.setContainer(key, detachedContainer);
 
         if (!insertedContainer) {
             throw new Error("Failed to insert container into map");
         }
 
         if (schema) {
-            this.registerContainerSchema(insertedContainer.id, schema);
-        }
-    }
-    /** 
-     * Attaches a detached container to a list
-     *
-     * If the schema is provided, the container will be registered with the schema
-     */
-    private attachContainerToList(
-        list: LoroList,
-        container: Container,
-        index: number | undefined,
-        schema: ContainerSchemaType | undefined,
-    ) {
-        let insertedContainer: Container | undefined;
-
-        if (index === undefined) {
-            insertedContainer = list.pushContainer(container);
-        } else {
-            insertedContainer = list.insertContainer(index, container);
+            this.registerContainer(insertedContainer.id, schema);
         }
 
-        if (!insertedContainer) {
-            throw new Error("Failed to insert container into list");
-        }
-
-        if (schema) {
-            this.registerContainerSchema(insertedContainer.id, schema);
-        }
+        this.initializeContainer(insertedContainer, containerType, schema, value);
     }
 
     /**
-     * Find or create a container for a value based on its schema
+     * Once a container has been created, and attached to its parent
+     *
+     * We initialize the inner vaues using the schema that we previously registered.
      */
-    private createDetachedContainer(
-        value: any,
+    private initializeContainer(
+        container: Container,
+        containerType: ContainerType,
         schema: ContainerSchemaType | undefined,
-    ): Container {
-        const containerType = schema
-            ? schemaToContainerType(schema)
-            : tryInferContainerType(value);
-
+        value: any
+    ) {
         if (containerType === "Map") {
-            // Generate a unique ID for the map
-            const map = new LoroMap();
+            let map = container as LoroMap;
 
             // Map has no inner values
             if (!isObject(value)) {
@@ -1081,11 +1058,11 @@ export class Mirror<S extends SchemaType> {
                 if (isFieldContainer &&
                     isValueOfContainerType(schemaToContainerType(fieldSchema), val)
                 ) {
-                    this.attachContainerToMap(
+                    this.insertContainerIntoMap(
                         map,
-                        this.createDetachedContainer(val, fieldSchema),
-                        key,
                         fieldSchema,
+                        key,
+                        val,
                     );
 
                 } else {
@@ -1097,7 +1074,7 @@ export class Mirror<S extends SchemaType> {
             return map;
         } else if (containerType === "List") {
             // Generate a unique ID for the list
-            const list = new LoroList();
+            const list = container as LoroList;
             if (!Array.isArray(value)) {
                 return list;
             }
@@ -1111,14 +1088,14 @@ export class Mirror<S extends SchemaType> {
                 const item = value[i];
 
                 if (
-                    isListItemContainer && 
+                    isListItemContainer &&
                     isValueOfContainerType(schemaToContainerType(itemSchema), item)
                 ) {
-                    this.attachContainerToList(
+                    this.insertContainerIntoList(
                         list,
-                        this.createDetachedContainer(item, itemSchema),
-                        i,
                         itemSchema,
+                        i,
+                        item,
                     );
                 } else {
                     // Default to simple insert
@@ -1129,7 +1106,7 @@ export class Mirror<S extends SchemaType> {
             return list;
         } else if (containerType === "Text") {
             // Generate a unique ID for the text
-            const text = new LoroText();
+            const text = container as LoroText;
 
             // Set the text content
             if (typeof value === "string") {
@@ -1140,6 +1117,65 @@ export class Mirror<S extends SchemaType> {
         } else {
             throw new Error(`Unknown schema type: ${containerType}`);
         }
+    }
+
+
+    /**
+     * Create a new container based on a given schema.
+     *
+     * If the schema is undefined, we infer the container type from the value.
+     */
+    private createContainerFromSchema(
+        schema: ContainerSchemaType | undefined,
+        value: any,
+    ): [Container, ContainerType] {
+        const containerType = schema
+            ? schemaToContainerType(schema)
+            : tryInferContainerType(value);
+
+        switch (containerType) {
+            case "Map":
+                return [new LoroMap(), "Map"];
+            case "List":
+                return [new LoroList(), "List"];
+            case "MovableList":
+                return [new LoroMovableList(), "MovableList"];
+            case "Text":
+                return [new LoroText(), "Text"];
+            default:
+                throw new Error(`Unknown schema type: ${containerType}`);
+        }
+    }
+
+    /** 
+     * Attaches a detached container to a list
+     *
+     * If the schema is provided, the container will be registered with the schema
+     */
+    private insertContainerIntoList(
+        list: LoroList,
+        schema: ContainerSchemaType | undefined,
+        index: number,
+        value: any,
+    ) {
+        const [detachedContainer, containerType] = this.createContainerFromSchema(schema, value);
+        let insertedContainer: Container | undefined;
+
+        if (index === undefined) {
+            insertedContainer = list.pushContainer(detachedContainer);
+        } else {
+            insertedContainer = list.insertContainer(index, detachedContainer);
+        }
+
+        if (!insertedContainer) {
+            throw new Error("Failed to insert container into list");
+        }
+
+        if (schema) {
+            this.registerContainer(insertedContainer.id, schema);
+        }
+
+        this.initializeContainer(insertedContainer, containerType, schema, value);
     }
 
     /**
@@ -1450,7 +1486,7 @@ export class Mirror<S extends SchemaType> {
             }
 
             const oldId = oldItem ? idSelector(oldItem) : null;
-            const newId = newItem ? idSelector(newItem): null;
+            const newId = newItem ? idSelector(newItem) : null;
             if (oldId === null || newId === null) {
                 continue;
             }
@@ -1577,12 +1613,12 @@ export class Mirror<S extends SchemaType> {
                 if (
                     isContainer && typeof value === "object" && value !== null
                 ) {
-                    this.attachContainerToMap(
+                    this.insertContainerIntoMap(
                         map,
-                        this.createDetachedContainer(value, fieldSchema),
-                        key,
                         fieldSchema,
-                    );
+                        key,
+                        value
+                    )
                 }
             }
         }
@@ -1618,9 +1654,8 @@ export class Mirror<S extends SchemaType> {
             const validation = this.schema &&
                 validateSchema(this.schema, newState);
             if (validation && !validation.valid) {
-                const errorMessage = `State validation failed: ${
-                    validation.errors?.join(", ")
-                }`;
+                const errorMessage = `State validation failed: ${validation.errors?.join(", ")
+                    }`;
                 throw new Error(errorMessage);
             }
         }
@@ -1661,7 +1696,7 @@ export class Mirror<S extends SchemaType> {
 
         return containerSchema;
     }
-    
+
     private getSchemaForChild(
         containerId: ContainerID,
         childKey: string | number,
@@ -1751,14 +1786,14 @@ function inferContainerType(
     }
 }
 
-function schemaToContainerType<S extends SchemaType>(schema: S): 
-  S extends LoroMapSchema<any> ? "Map" :
-  S extends LoroListSchema<any> ? "List" :
-  S extends LoroTextSchemaType ? "Text" :
-  undefined {
-  
-  const containerType = schema.getContainerType();
-  return containerType as any;
+function schemaToContainerType<S extends SchemaType>(schema: S):
+    S extends LoroMapSchema<any> ? "Map" :
+    S extends LoroListSchema<any> ? "List" :
+    S extends LoroTextSchemaType ? "Text" :
+    undefined {
+
+    const containerType = schema.getContainerType();
+    return containerType as any;
 }
 
 function tryInferContainerType(value: unknown): ContainerType | undefined {

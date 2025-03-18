@@ -793,4 +793,90 @@ describe("Mirror - State Consistency", () => {
     // Subscriber should have been called once for the import
     expect(counter).toBe(1);
   })
+
+  it("initializes doc from mirror initial state correctly", async () => {
+    const testSchema = schema({
+      root: schema.LoroMap({
+        text: schema.LoroText(),
+        list: schema.LoroList(schema.LoroText()),
+      })
+    })
+
+    let initialState = {
+      root: {
+        text: "Hello World",
+        list: ["Hello", "World"],
+      }
+    }
+
+    const loroDoc = new LoroDoc();
+
+    const mirror = new Mirror({
+      doc: loroDoc,
+      schema: testSchema,
+      initialState: initialState,
+    });
+
+    const serialized = loroDoc.getDeepValueWithID();
+
+    assert(valueIsContainer(serialized.root));
+    assert(valueIsContainerOfType(serialized.root, ":Map"));
+    assert(valueIsContainer(serialized.root.value.text))
+    assert(valueIsContainerOfType(serialized.root.value.text, ":Text"));
+    expect(serialized.root.value.text.value).toBe("Hello World");
+
+    assert(valueIsContainer(serialized.root.value.list))
+    assert(valueIsContainerOfType(serialized.root.value.list, ":List"));
+    assert(valueIsContainer(serialized.root.value.list.value[0]))
+    assert(valueIsContainerOfType(serialized.root.value.list.value[0], ":Text"));
+    expect(serialized.root.value.list.value[0].value).toBe("Hello");
+    expect(serialized.root.value.list.value[1].value).toBe("World");
+  })
+
+  it("comparing text containers inside maps", async () => {
+    const testSchema = schema({
+      root: schema.LoroMap({
+        text: schema.LoroText(),
+      })
+    })
+
+    const loroDoc = new LoroDoc();
+    const mirror = new Mirror({
+      doc: loroDoc,
+      schema: testSchema,
+    });
+
+    mirror.setState({
+      root: {
+        text: "Hello World",
+      }
+    });
+
+    await waitForSync();
+    await Promise.resolve();
+
+    const serialized = loroDoc.getDeepValueWithID();
+
+    assert(valueIsContainer(serialized.root));
+    assert(valueIsContainerOfType(serialized.root, ":Map"));
+    assert(valueIsContainer(serialized.root.value.text))
+    assert(valueIsContainerOfType(serialized.root.value.text, ":Text"));
+    expect(serialized.root.value.text.value).toBe("Hello World");
+
+    mirror.setState({
+      root: {
+        text: "Hello World 2",
+      }
+    });
+
+    await waitForSync();
+
+    let serialized2 = loroDoc.getDeepValueWithID();
+
+    assert(valueIsContainer(serialized2.root));
+    assert(valueIsContainerOfType(serialized2.root, ":Map"));
+    assert(valueIsContainer(serialized2.root.value.text))
+    assert(valueIsContainerOfType(serialized2.root.value.text, ":Text"));
+    expect(serialized2.root.value.text.value).toBe("Hello World 2");
+  })
 });
