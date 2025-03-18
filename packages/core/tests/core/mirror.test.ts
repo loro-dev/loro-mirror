@@ -853,7 +853,6 @@ describe("Mirror - State Consistency", () => {
     });
 
     await waitForSync();
-    await Promise.resolve();
 
     const serialized = loroDoc.getDeepValueWithID();
 
@@ -871,9 +870,7 @@ describe("Mirror - State Consistency", () => {
       }
     });
 
-    mirror.syncFromLoro();
     await waitForSync();
-
 
     let serialized2 = loroDoc.getDeepValueWithID();
 
@@ -887,4 +884,57 @@ describe("Mirror - State Consistency", () => {
     // The text container should be the same, it should only have been updated
     expect(serialized2.root.value.text.id === initialTextContainerId);
   })
+
+  it("comparing text containers inside lists", async () => {
+    const testSchema = schema({
+      root: schema.LoroMap({
+        list: schema.LoroList(schema.LoroText()),
+      })
+    })
+
+    const loroDoc = new LoroDoc();
+    const mirror = new Mirror({
+      doc: loroDoc,
+      schema: testSchema,
+    });
+
+    mirror.setState({
+      root: {
+        list: ["Hello World"],
+      }
+    });
+
+    await waitForSync();
+
+    const serialized = loroDoc.getDeepValueWithID();
+
+    const initialTextContainerId = serialized.root.value.list.value[0].id;
+
+    expect(valueIsContainer(serialized.root));
+    expect(valueIsContainerOfType(serialized.root, ":Map"));
+    expect(valueIsContainer(serialized.root.value.list))
+    expect(valueIsContainerOfType(serialized.root.value.list, ":List"));
+    expect(valueIsContainer(serialized.root.value.list.value[0]))
+
+    mirror.setState({
+      root: {
+        list: ["Hello World 2"],
+      }
+    });
+    await waitForSync();
+
+    let serialized2 = loroDoc.getDeepValueWithID();
+
+    // Assert that the content in the text container has changed
+    // and that the container itself has remained the same instance
+    expect(valueIsContainer(serialized2.root));
+    expect(valueIsContainerOfType(serialized2.root, ":Map"));
+    expect(valueIsContainer(serialized2.root.value.list))
+    expect(valueIsContainerOfType(serialized2.root.value.list, ":List"));
+    expect(valueIsContainer(serialized2.root.value.list.value[0]))
+    expect(valueIsContainerOfType(serialized2.root.value.list.value[0], ":Text"));
+    expect(serialized2.root.value.list.value[0].value).toBe("Hello World 2");
+    // The text container should be the same, it should only have been updated
+    expect(serialized2.root.value.list.value[0].id === initialTextContainerId);
+  });
 });
