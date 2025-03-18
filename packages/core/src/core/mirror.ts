@@ -580,7 +580,7 @@ export class Mirror<S extends SchemaType> {
 
                 // Text containers only support direct value updates
                 for (const { key, value } of changes) {
-                    if (key === "value" && typeof value === "string") {
+                    if (typeof value === "string") {
                         text.update(value);
                     } else {
                         console.warn(
@@ -1229,6 +1229,18 @@ export class Mirror<S extends SchemaType> {
         );
     }
 
+    private getRootContainerIdByType(key: string, type: ContainerType): ContainerID {
+        if (type === "Text") {
+            return this.doc.getText(key).id;
+        } else if (type === "List") {
+            return this.doc.getList(key).id;
+        } else if (type === "Map") {
+            return this.doc.getMap(key).id;
+        } else {
+            throw new Error();
+        }
+    }
+
     private findChangesInLoroMap(
         oldState: unknown,
         newState: unknown,
@@ -1259,82 +1271,92 @@ export class Mirror<S extends SchemaType> {
 
         // Check for added or modified keys
         for (const key in newStateObj) {
-            if (!(key in oldStateObj)) {
-                const child = (schema as
-                    | LoroMapSchema<Record<string, SchemaType>>
-                    | undefined)
-                    ?.definition?.[key];
-                const t = child?.getContainerType() ??
-                    tryInferContainerType(newStateObj[key]);
-                if (t) {
+            const oldItem = oldStateObj[key];
+            const newItem = newStateObj[key];
+
+
+            // Figure out if the modified new value is a container
+            const childSchema = (schema as
+                | LoroMapSchema<Record<string, SchemaType>>
+                | undefined)
+                ?.definition?.[key];
+            const containerType = childSchema?.getContainerType() ??
+                tryInferContainerType(newItem);
+
+            // added new key
+            if (!oldItem) {
+                // Inserted a new container
+                if (containerType) {
                     changes.push({
                         container: containerId,
                         key,
-                        value: newStateObj[key],
+                        value: newItem,
                         kind: "insert-container",
-                        childContainerType: t,
+                        childContainerType: containerType,
                     });
+                // Inserted a new value
+                } else {
+                    changes.push({
+                        container: containerId,
+                        key,
+                        value: newItem,
+                        kind: "insert",
+                    });
+
                 }
-            } else if (oldStateObj[key] !== newStateObj[key]) {
-                if (
-                    (typeof oldStateObj[key] === "object") &&
-                    (typeof newStateObj[key] === "object")
+                continue;
+            } 
+
+            // Item inside map has changed
+            if (oldItem !== newItem) {
+                // The key was previously a container and new item is also a container
+                if (containerType &&
+                    isValueOfContainerType(containerType, newItem) &&
+                    isValueOfContainerType(containerType, oldItem)
                 ) {
-                    // Get the container for the nested property if it exists
-                    const childSchema: ContainerSchemaType | undefined =
-                        (schema as
-                            | RootSchemaType<
-                                Record<string, ContainerSchemaType>
-                            >
-                            | undefined)?.definition?.[key];
-                    const type = childSchema?.type ||
-                        inferContainerType(newStateObj[key]);
-                    let nestedContainerId: ContainerID;
-                    if (!containerId) {
-                        if (type === "loro-list") {
-                            nestedContainerId = this.doc.getList(key).id;
-                        } else if (type === "loro-map") {
-                            nestedContainerId = this.doc.getMap(key).id;
-                        } else if (type === "loro-text") {
-                            nestedContainerId = this.doc.getText(key).id;
-                        } else {
-                            throw new Error();
-                        }
+                    // the parent is the root container
+                    if (containerId === "") {
+                        this.getRootContainerIdByType(key, containerType);
                         changes.push(
                             ...this.findChangesForContainer(
                                 oldStateObj[key],
                                 newStateObj[key],
-                                nestedContainerId,
+                                this.getRootContainerIdByType(key, containerType),
                                 childSchema,
                             ),
                         );
-                    } else {
-                        const container = this.doc.getContainerById(
-                            containerId,
-                        );
-                        if (container?.kind() !== "Map") {
-                            throw new Error();
-                        }
-                        const map = container as LoroMap;
-                        const child = map.get(key) as Container | undefined;
-                        if (!child || !isContainer(child)) {
-                            changes.push(insertChildToMap(
-                                containerId,
-                                key,
-                                newStateObj[key],
-                            ));
-                        } else {
-                            nestedContainerId = child.id;
-                            changes.push(
-                                ...this.findChangesForContainer(
-                                    oldStateObj[key],
-                                    newStateObj[key],
-                                    nestedContainerId,
-                                    childSchema,
-                                ),
-                            );
-                        }
+                        continue;
                     }
+
+                    const container = this.doc.getContainerById(
+                        containerId,
+                    );
+
+                    if (container?.kind() !== "Map") {
+                        throw new Error("Expected map container");
+                    }
+
+                    const map = container as LoroMap;
+                    const child = map.get(key) as Container | undefined;
+                    if (!child || !isContainer(child)) {
+                        changes.push(insertChildToMap(
+                            containerId,
+                            key,
+                            newStateObj[key],
+                        ));
+                    } else {
+                        changes.push(
+                            ...this.findChangesForContainer(
+                                oldStateObj[key],
+                                newStateObj[key],
+                                child.id,
+                                childSchema,
+                            ),
+                        );
+                    }
+                // The type of the child has changed
+                // Either it was previously a container and now it's not
+                // or it was not a container and now it is
                 } else {
                     changes.push(insertChildToMap(
                         containerId,
