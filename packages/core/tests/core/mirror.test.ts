@@ -201,13 +201,13 @@ describe("Mirror - State Consistency", () => {
       schema: blogSchema,
     });
 
-    // Wait for sync to complete
-    await waitForSync();
-    await waitForSync();
-
-    // Force a sync to ensure state is updated
-    mirror.sync();
-    await waitForSync();
+    // // Wait for sync to complete
+    // await waitForSync();
+    // await waitForSync();
+    //
+    // // Force a sync to ensure state is updated
+    // mirror.sync();
+    // await waitForSync();
 
     // Get the initial state
     const initialState = mirror.getState();
@@ -219,13 +219,15 @@ describe("Mirror - State Consistency", () => {
     // This is a conditional assertion because Loro Mirror might present
     // the posts in either blog.posts or in root-level posts depending on the schema
     if (
-      initialState.blog.posts && Array.isArray(initialState.blog.posts) &&
+      initialState.blog.posts &&
+      Array.isArray(initialState.blog.posts) &&
       initialState.blog.posts.length > 0
     ) {
       expect(initialState.blog.posts[0].id).toBe("1");
       expect(initialState.blog.posts[0].title).toBe("First Post");
     } else if (
-      (initialState as any).posts && Array.isArray((initialState as any).posts)
+      (initialState as any).posts &&
+      Array.isArray((initialState as any).posts)
     ) {
       // Alternatively check if posts are at the root level
       expect((initialState as any).posts.length).toBeGreaterThan(0);
@@ -262,11 +264,12 @@ describe("Mirror - State Consistency", () => {
         expect(updatedState.blog.posts[1].title).toBe("Second Post");
       }
     } else if (
-      (updatedState as any).posts && Array.isArray((updatedState as any).posts)
+      (updatedState as any).posts &&
+      Array.isArray((updatedState as any).posts)
     ) {
       // If posts are at root level, find post2 by id
-      const foundPost = (updatedState as any).posts.find((post: any) =>
-        post.id === "2"
+      const foundPost = (updatedState as any).posts.find(
+        (post: any) => post.id === "2",
       );
       expect(foundPost).toBeDefined();
       if (foundPost) {
@@ -565,7 +568,7 @@ describe("Mirror - State Consistency", () => {
     // Unsubscribe should still work (even though dispose already cleaned up)
     unsubscribe();
   });
-  
+
   it("correctly initializes nested containers with schemas", async () => {
     const nestedSchema = schema({
       users: schema.LoroMap({
@@ -582,9 +585,9 @@ describe("Mirror - State Consistency", () => {
               schema.LoroMap({
                 author: schema.String(),
                 text: schema.LoroText(),
-              })
+              }),
             ),
-          })
+          }),
         ),
       }),
     });
@@ -627,14 +630,14 @@ describe("Mirror - State Consistency", () => {
     const serialized: any = doc.getDeepValueWithID();
 
     const userContainer = serialized.users;
-    expect(valueIsContainerOfType(userContainer, ":Map"))
+    expect(valueIsContainerOfType(userContainer, ":Map"));
 
     const profileContainer = userContainer.value.profile;
     // Profile container should be a LoroMap
-    expect(valueIsContainerOfType(profileContainer, ":Map"))
+    expect(valueIsContainerOfType(profileContainer, ":Map"));
 
     // Name in profile container should be a LoroText
-    expect(valueIsContainerOfType(profileContainer.value.name, ":Text"))
+    expect(valueIsContainerOfType(profileContainer.value.name, ":Text"));
     expect(profileContainer.value.name.value).toBe("John");
 
     // Age in profile should be a regular number
@@ -642,36 +645,35 @@ describe("Mirror - State Consistency", () => {
 
     // Tags in profile should be a LoroList
     const tagsList = profileContainer.value.tags;
-    expect(valueIsContainerOfType(tagsList, ":List"))
+    expect(valueIsContainerOfType(tagsList, ":List"));
     expect(tagsList.value).toEqual(["developer", "typescript"]);
 
     // Posts container should be a LoroList
     const postsContainer = userContainer.value.posts;
-    expect(valueIsContainerOfType(postsContainer, ":List"))
+    expect(valueIsContainerOfType(postsContainer, ":List"));
     expect(postsContainer.value.length).toBe(1);
 
     // First post container should be a LoroMap
     const postContainer = postsContainer.value[0];
-    expect(valueIsContainerOfType(postContainer, ":Map"))
+    expect(valueIsContainerOfType(postContainer, ":Map"));
     expect(postContainer.value.title).toBe("First Post");
     expect(postContainer.value.content).toBe("Hello World");
 
-
     // Comments container should be a LoroList
     const innerCommentsContainer = postContainer.value.comments;
-    expect(valueIsContainerOfType(innerCommentsContainer, ":List"))
+    expect(valueIsContainerOfType(innerCommentsContainer, ":List"));
     expect(innerCommentsContainer.value.length).toBe(2);
 
     // Comment container should be a LoroMap
     const commentContainer = innerCommentsContainer.value[0];
-    expect(valueIsContainerOfType(commentContainer, ":Map"))
+    expect(valueIsContainerOfType(commentContainer, ":Map"));
 
     // Author in comment should be a regular string
     expect(commentContainer.value.author).toBe("Jane");
 
     // Comment text container should be a LoroText
     const commentTextContainer = commentContainer.value.text;
-    expect(valueIsContainerOfType(commentTextContainer, ":Text"))
+    expect(valueIsContainerOfType(commentTextContainer, ":Text"));
     expect(commentTextContainer.value).toBe("Great post!");
   });
 
@@ -679,7 +681,7 @@ describe("Mirror - State Consistency", () => {
     const nodeSchema = schema.LoroMap({
       name: schema.LoroText(),
       children: schema.LoroList({} as any),
-    })
+    });
 
     nodeSchema.definition.children.itemSchema = nodeSchema;
 
@@ -728,31 +730,60 @@ describe("Mirror - State Consistency", () => {
     assert(valueIsContainer(serialized.root));
     assert(valueIsContainerOfType(serialized.root, ":Map"));
 
-    assert(valueIsContainer(serialized.root.value.name))
+    assert(valueIsContainer(serialized.root.value.name));
     assert(valueIsContainerOfType(serialized.root.value.name, ":Text"));
 
-    assert(valueIsContainer(serialized.root.value.children))
+    assert(valueIsContainer(serialized.root.value.children));
     assert(valueIsContainerOfType(serialized.root.value.children, ":List"));
 
-    assert(valueIsContainer(serialized.root.value.children.value[0]))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0], ":Map"));
+    assert(valueIsContainer(serialized.root.value.children.value[0]));
+    assert(
+      valueIsContainerOfType(serialized.root.value.children.value[0], ":Map"),
+    );
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children, ":List"));
+    assert(
+      valueIsContainer(serialized.root.value.children.value[0].value.children),
+    );
+    assert(
+      valueIsContainerOfType(
+        serialized.root.value.children.value[0].value.children,
+        ":List",
+      ),
+    );
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0]))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0], ":Map"));
+    assert(
+      valueIsContainer(
+        serialized.root.value.children.value[0].value.children.value[0],
+      ),
+    );
+    assert(
+      valueIsContainerOfType(
+        serialized.root.value.children.value[0].value.children.value[0],
+        ":Map",
+      ),
+    );
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0].value.name))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0].value.name, ":Text"));
-  })
+    assert(
+      valueIsContainer(
+        serialized.root.value.children.value[0].value.children.value[0].value
+          .name,
+      ),
+    );
+    assert(
+      valueIsContainerOfType(
+        serialized.root.value.children.value[0].value.children.value[0].value
+          .name,
+        ":Text",
+      ),
+    );
+  });
 
   it("subscribers get notified correct amounts for nested containers", async () => {
     const testSchema = schema({
       root: schema.LoroMap({
         name: schema.LoroText(),
         type: schema.LoroText(),
-      })
+      }),
     });
 
     let initialState = {
@@ -770,14 +801,14 @@ describe("Mirror - State Consistency", () => {
       initialState: initialState,
     });
 
-    const snapshot = loroDoc.export({mode: "snapshot"});
+    const snapshot = loroDoc.export({ mode: "snapshot" });
 
     // New doc for testing updates
     let doc2 = new LoroDoc();
     doc2.import(snapshot);
     doc2.getMap("root").set("name", "Root2");
 
-    const update = doc2.export({mode: "update"});
+    const update = doc2.export({ mode: "update" });
     let counter = 0;
 
     mirror.subscribe((_) => {
@@ -788,57 +819,18 @@ describe("Mirror - State Consistency", () => {
 
     await waitForSync();
 
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 300));
 
     // Subscriber should have been called once for the import
     expect(counter).toBe(1);
-  })
-
-  // it("initializes doc from mirror initial state correctly", async () => {
-  //   const testSchema = schema({
-  //     root: schema.LoroMap({
-  //       text: schema.LoroText(),
-  //       list: schema.LoroList(schema.LoroText()),
-  //     })
-  //   })
-  //
-  //   let initialState = {
-  //     root: {
-  //       text: "Hello World",
-  //       list: ["Hello", "World"],
-  //     }
-  //   }
-  //
-  //   const loroDoc = new LoroDoc();
-  //
-  //   const mirror = new Mirror({
-  //     doc: loroDoc,
-  //     schema: testSchema,
-  //     initialState: initialState,
-  //   });
-  //
-  //   const serialized = loroDoc.getDeepValueWithID();
-  //
-  //   assert(valueIsContainer(serialized.root));
-  //   assert(valueIsContainerOfType(serialized.root, ":Map"));
-  //   assert(valueIsContainer(serialized.root.value.text))
-  //   assert(valueIsContainerOfType(serialized.root.value.text, ":Text"));
-  //   expect(serialized.root.value.text.value).toBe("Hello World");
-  //
-  //   assert(valueIsContainer(serialized.root.value.list))
-  //   assert(valueIsContainerOfType(serialized.root.value.list, ":List"));
-  //   assert(valueIsContainer(serialized.root.value.list.value[0]))
-  //   assert(valueIsContainerOfType(serialized.root.value.list.value[0], ":Text"));
-  //   expect(serialized.root.value.list.value[0].value).toBe("Hello");
-  //   expect(serialized.root.value.list.value[1].value).toBe("World");
-  // })
+  });
 
   it("comparing text containers inside maps", async () => {
     const testSchema = schema({
       root: schema.LoroMap({
         text: schema.LoroText(),
-      })
-    })
+      }),
+    });
 
     const loroDoc = new LoroDoc();
     const mirror = new Mirror({
@@ -849,7 +841,7 @@ describe("Mirror - State Consistency", () => {
     mirror.setState({
       root: {
         text: "Hello World",
-      }
+      },
     });
 
     await waitForSync();
@@ -867,7 +859,7 @@ describe("Mirror - State Consistency", () => {
     mirror.setState({
       root: {
         text: "Hello World 2",
-      }
+      },
     });
 
     await waitForSync();
@@ -878,19 +870,19 @@ describe("Mirror - State Consistency", () => {
     // and that the container itself has remained the same instance
     expect(valueIsContainer(serialized2.root));
     expect(valueIsContainerOfType(serialized2.root, ":Map"));
-    expect(valueIsContainer(serialized2.root.value.text))
+    expect(valueIsContainer(serialized2.root.value.text));
     expect(valueIsContainerOfType(serialized2.root.value.text, ":Text"));
     expect(serialized2.root.value.text.value).toBe("Hello World 2");
     // The text container should be the same, it should only have been updated
     expect(serialized2.root.value.text.id === initialTextContainerId);
-  })
+  });
 
   it("comparing text containers inside lists", async () => {
     const testSchema = schema({
       root: schema.LoroMap({
         list: schema.LoroList(schema.LoroText()),
-      })
-    })
+      }),
+    });
 
     const loroDoc = new LoroDoc();
     const mirror = new Mirror({
@@ -901,7 +893,7 @@ describe("Mirror - State Consistency", () => {
     mirror.setState({
       root: {
         list: ["Hello World"],
-      }
+      },
     });
 
     await waitForSync();
@@ -912,14 +904,14 @@ describe("Mirror - State Consistency", () => {
 
     expect(valueIsContainer(serialized.root));
     expect(valueIsContainerOfType(serialized.root, ":Map"));
-    expect(valueIsContainer(serialized.root.value.list))
+    expect(valueIsContainer(serialized.root.value.list));
     expect(valueIsContainerOfType(serialized.root.value.list, ":List"));
-    expect(valueIsContainer(serialized.root.value.list.value[0]))
+    expect(valueIsContainer(serialized.root.value.list.value[0]));
 
     mirror.setState({
       root: {
         list: ["Hello World 2"],
-      }
+      },
     });
     await waitForSync();
 
@@ -929,10 +921,12 @@ describe("Mirror - State Consistency", () => {
     // and that the container itself has remained the same instance
     expect(valueIsContainer(serialized2.root));
     expect(valueIsContainerOfType(serialized2.root, ":Map"));
-    expect(valueIsContainer(serialized2.root.value.list))
+    expect(valueIsContainer(serialized2.root.value.list));
     expect(valueIsContainerOfType(serialized2.root.value.list, ":List"));
-    expect(valueIsContainer(serialized2.root.value.list.value[0]))
-    expect(valueIsContainerOfType(serialized2.root.value.list.value[0], ":Text"));
+    expect(valueIsContainer(serialized2.root.value.list.value[0]));
+    expect(
+      valueIsContainerOfType(serialized2.root.value.list.value[0], ":Text"),
+    );
     expect(serialized2.root.value.list.value[0].value).toBe("Hello World 2");
     // The text container should be the same, it should only have been updated
     expect(serialized2.root.value.list.value[0].id === initialTextContainerId);

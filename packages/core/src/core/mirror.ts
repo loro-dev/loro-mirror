@@ -143,6 +143,7 @@ export class Mirror<S extends SchemaType> {
             ...this.options.initialState,
         } as InferType<S>;
 
+
         // Initialize Loro containers and setup subscriptions
         this.initializeContainers();
 
@@ -184,7 +185,12 @@ export class Mirror<S extends SchemaType> {
                             fieldSchema.type,
                         )
                     ) {
-                        this.registerContainer(key, fieldSchema);
+                        const containerType = schemaToContainerType(fieldSchema);
+                        const container = this.getRootContainerByType(
+                            key,
+                            containerType
+                        );
+                        this.registerContainer(container.id, fieldSchema);
                     }
                 }
             }
@@ -194,49 +200,10 @@ export class Mirror<S extends SchemaType> {
     /**
      * Register a container with the Mirror
      */
-    private registerContainer(name: string, schemaType: ContainerSchemaType | undefined) {
+    private registerContainer(containerID: ContainerID, schemaType: ContainerSchemaType | undefined) {
         try {
             let container: Container;
-
-            // Get the container based on name
-            if (name.includes("cid:")) {
-                // Direct container ID reference
-                container = this.doc.getContainerById(name as ContainerID)!;
-            } else {
-                // Root container by name
-                const schema = this.schema?.type === "schema"
-                    ? this.schema.definition[name]
-                    : null;
-
-                if (!schema) {
-                    if (this.options.debug) {
-                        console.warn(
-                            `No schema found for container: ${name}`,
-                        );
-                    }
-                    return;
-                }
-
-                switch (schema.type as string) {
-                    case "loro-map":
-                        container = this.doc.getMap(name);
-                        break;
-                    case "loro-list":
-                        container = this.doc.getList(name);
-                        break;
-                    case "loro-text":
-                        container = this.doc.getText(name);
-                        break;
-                    default:
-                        if (this.options.debug) {
-                            console.warn(
-                                `Unsupported container type: ${schema
-                                    .type as string}`,
-                            );
-                        }
-                        return;
-                }
-            }
+            container = this.doc.getContainerById(containerID)!;
 
             if (!container) {
                 return;
@@ -461,6 +428,7 @@ export class Mirror<S extends SchemaType> {
                 const container = this.doc.getContainerById(
                     containerId as ContainerID,
                 );
+                console.log("changes for container", containerId, containerChanges)
                 if (container) {
                     this.applyContainerChanges(container, containerChanges);
                 } else {
@@ -1157,8 +1125,7 @@ export class Mirror<S extends SchemaType> {
         schema: ContainerSchemaType | undefined,
         index: number,
         value: any,
-    ) {
-        const [detachedContainer, containerType] = this.createContainerFromSchema(schema, value);
+    ) { const [detachedContainer, containerType] = this.createContainerFromSchema(schema, value);
         let insertedContainer: Container | undefined;
 
         if (index === undefined) {
@@ -1229,13 +1196,13 @@ export class Mirror<S extends SchemaType> {
         );
     }
 
-    private getRootContainerIdByType(key: string, type: ContainerType): ContainerID {
+    private getRootContainerByType(key: string, type: ContainerType): Container {
         if (type === "Text") {
-            return this.doc.getText(key).id;
+            return this.doc.getText(key);
         } else if (type === "List") {
-            return this.doc.getList(key).id;
+            return this.doc.getList(key);
         } else if (type === "Map") {
-            return this.doc.getMap(key).id;
+            return this.doc.getMap(key);
         } else {
             throw new Error();
         }
@@ -1316,12 +1283,12 @@ export class Mirror<S extends SchemaType> {
                 ) {
                     // the parent is the root container
                     if (containerId === "") {
-                        this.getRootContainerIdByType(key, containerType);
+                        let container = this.getRootContainerByType(key, containerType);
                         changes.push(
                             ...this.findChangesForContainer(
                                 oldStateObj[key],
                                 newStateObj[key],
-                                this.getRootContainerIdByType(key, containerType),
+                                container.id,
                                 childSchema,
                             ),
                         );
@@ -1413,7 +1380,7 @@ export class Mirror<S extends SchemaType> {
                     key: i,
                     value: newState[i],
                     kind: "insert",
-                }, true));
+                }, true, schema?.itemSchema));
             } else if (i >= newState.length) {
                 // Item removed
                 changes.push({
@@ -1446,7 +1413,7 @@ export class Mirror<S extends SchemaType> {
                         key: i,
                         value: newState[i],
                         kind: "insert",
-                    }, true));
+                    }, true, schema?.itemSchema));
                 }
             }
         }
@@ -1509,6 +1476,7 @@ export class Mirror<S extends SchemaType> {
 
             const oldId = oldItem ? idSelector(oldItem) : null;
             const newId = newItem ? idSelector(newItem) : null;
+
             if (oldId === null || newId === null) {
                 continue;
             }
@@ -1536,7 +1504,7 @@ export class Mirror<S extends SchemaType> {
                         key: index + offset,
                         value: newItem,
                         kind: "insert",
-                    }, useContainer));
+                    }, useContainer, schema?.itemSchema));
                 }
                 newIndex++;
                 continue;
@@ -1548,7 +1516,7 @@ export class Mirror<S extends SchemaType> {
                     key: index + offset,
                     value: newItem,
                     kind: "insert",
-                }, useContainer));
+                }, useContainer, schema?.itemSchema));
                 index--;
                 offset++;
                 newIndex++;
@@ -1573,7 +1541,7 @@ export class Mirror<S extends SchemaType> {
                 key: index + offset,
                 value: newItem,
                 kind: "insert",
-            }, useContainer));
+            }, useContainer, schema?.itemSchema));
             offset++;
         }
 
@@ -1770,7 +1738,7 @@ function insertChildToMap(
     }
 }
 
-function tryUpdateToInsertContainer(change: Change, toUpdate: boolean): Change {
+function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, schema: SchemaType | undefined): Change {
     if (!toUpdate) {
         return change;
     }
@@ -1779,13 +1747,29 @@ function tryUpdateToInsertContainer(change: Change, toUpdate: boolean): Change {
         return change;
     }
 
-    if (isObject(change.value)) {
-        change.kind = "insert-container";
-        change.childContainerType = "Map";
-    } else if (Array.isArray(change.value)) {
-        change.kind = "insert-container";
-        change.childContainerType = "List";
+    let containerType = schema ? 
+        schemaToContainerType(schema) ?? 
+            tryInferContainerType(change.value) : undefined;
+
+    switch (containerType) {
+        case "Map":
+            change.kind = "insert-container";
+            change.childContainerType = "Map";
+            break;
+        case "List":
+            change.kind = "insert-container";
+            change.childContainerType = "List";
+            break;
+        case "Text":
+            change.kind = "insert-container";
+            change.childContainerType = "Text";
+            break;
+        case "Counter":
+            change.kind = "insert-container";
+            change.childContainerType = "Counter";
+            break;
     }
+
     return change;
 }
 
