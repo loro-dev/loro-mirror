@@ -21,8 +21,10 @@ import {
     isContainerSchema,
     isLoroListSchema,
     isLoroMapSchema,
+    isLoroMovableListSchema,
     LoroListSchema,
     LoroMapSchema,
+    LoroMovableListSchema,
     LoroTextSchemaType,
     RootSchemaType,
     SchemaType,
@@ -94,7 +96,15 @@ type Change = {
     value: any;
     kind: "insert" | "delete" | "insert-container";
     childContainerType?: ContainerType;
-};
+} | {
+    container: ContainerID;
+    key: number;
+    value: any;
+    kind: "move";
+    fromIndex: number;
+    toIndex: number;
+    childContainerType?: ContainerType;
+}
 
 /**
  * Callback type for subscribers
@@ -363,8 +373,7 @@ export class Mirror<S extends SchemaType> {
             // Find the differences between current Loro state and new state
             const currentDocState = this.state;
             if (this.options.debug) {
-                console.log(
-                    "currentDocState:",
+                console.log( "currentDocState:",
                     JSON.stringify(currentDocState, null, 2),
                 );
                 console.log("newState:", JSON.stringify(newState, null, 2));
@@ -377,10 +386,11 @@ export class Mirror<S extends SchemaType> {
                 this.schema,
             );
 
-            if (this.options.debug) {
-                console.log("changes:", JSON.stringify(changes, null, 2));
-            }
+            console.log("updateLoro changes", changes);
 
+            // if (this.options.debug) {
+                console.log("changes:", JSON.stringify(changes, null, 2));
+            // }
             // Apply the changes to the Loro document
             this.applyChangesToLoro(changes);
 
@@ -462,9 +472,16 @@ export class Mirror<S extends SchemaType> {
                 container = this.doc.getList(keyStr);
             } else if (type === "loro-text") {
                 container = this.doc.getText(keyStr);
+            } else if (type === "loro-movable-list") {
+                container = this.doc.getMovableList(keyStr);
             } else {
                 throw new Error();
             }
+
+            this.registerContainerSchema(
+                container.id,
+                fieldSchema,
+            )
 
             // Apply direct changes to the container
             this.updateTopLevelContainer(container, value);
@@ -494,11 +511,12 @@ export class Mirror<S extends SchemaType> {
                         map.set(key as string, value);
                     } else if (kind === "insert-container") {
                         let schema = this.getSchemaForChildContainer(container.id, key);
+                        console.log('schema', schema)
                         this.insertContainerIntoMap(
                             map,
-              							schema,
-              							key as string,
-              							value
+              				schema,
+              				key as string,
+              				value
                         )
                     } else if (kind === "delete") {
                         map.delete(key as string);
@@ -543,6 +561,45 @@ export class Mirror<S extends SchemaType> {
                 }
                 break;
             }
+            case "MovableList": {
+                const list = container as LoroMovableList;
+
+                console.log("applyContainerChanges", "map", container.id, changes)
+
+                for (
+                    const { key, value, kind } of changes
+                ) {
+                    if (typeof key !== "number") {
+                        throw new Error(`Invalid list index: ${key}`);
+                    }
+
+                    const index = key;
+                    if (index < 0) {
+                        console.warn(`Invalid list index: ${index}`);
+                        continue;
+                    }
+
+                    if (kind === "delete") {
+                        list.delete(index, 1);
+                    } else if (kind === "insert") {
+                        list.insert(index, value);
+                    } else if (kind === "insert-container") {
+                        const schema = this.getSchemaForChildContainer(container.id, key);
+                        console.log('schema', schema)
+            			this.insertContainerIntoList(
+            				list,
+            				schema,
+            				index,
+            				value
+            			)
+                    } else if (kind === "move") {
+                        const fromIndex = value.fromIndex;
+                        const toIndex = value.toIndex;
+                        list.move(fromIndex, toIndex);
+                    }
+                }
+
+            }
             case "Text": {
                 const text = container as LoroText;
 
@@ -580,6 +637,9 @@ export class Mirror<S extends SchemaType> {
                 break;
             case "Map":
                 this.updateMapContainer(container as LoroMap, value);
+                break;
+            case "MovableList":
+                this.updateMovableListContainer(container as LoroMovableList, value);
                 break;
             default:
                 throw new Error(
@@ -636,6 +696,46 @@ export class Mirror<S extends SchemaType> {
             throw new Error("List value must be an array");
         }
     }
+
+    /**
+     * Update a List container
+     */
+    private updateMovableListContainer(list: LoroMovableList, value: any) {
+        // Replace entire list
+        if (Array.isArray(value)) {
+            // Find the schema for this container path
+            const schema = this.getContainerSchema(list.id);
+            // Get the idSelector function from the schema
+            const idSelector =
+                (schema as LoroListSchema<SchemaType> | undefined)?.idSelector;
+            const itemSchema =
+                (schema as LoroListSchema<SchemaType> | undefined)?.itemSchema;
+
+            if (this.options.debug) {
+                console.log(
+                    `Updating list container, idSelector: ${!!idSelector}, current length: ${list.length}`,
+                );
+            }
+
+            // Clear out the list first to avoid duplicate items
+            // Instead of clearing the entire list, which can leave it empty if there's an error,
+            // we'll replace items one by one and only remove items that aren't in the new list
+            if (idSelector) {
+                // If we have an ID selector, we can use it for more intelligent updates
+                this.updateListWithIdSelector(
+                    list,
+                    value,
+                    idSelector,
+                    itemSchema!,
+                );
+            } else {
+                this.updateListByIndex(list, value, itemSchema);
+            }
+        } else {
+            throw new Error("List value must be an array");
+        }
+    }
+
 
     /**
      * Update a list using ID selector for efficient updates
@@ -981,6 +1081,7 @@ export class Mirror<S extends SchemaType> {
         key: string,
         value: any,
     ) {
+        console.trace('insertContainerIntoMap', map.id, schema, key, value)
         const [detachedContainer, containerType] = this.createContainerFromSchema(schema, value);
         let insertedContainer = map.setContainer(key, detachedContainer);
 
@@ -1040,7 +1141,7 @@ export class Mirror<S extends SchemaType> {
             }
 
             return map;
-        } else if (containerType === "List") {
+        } else if (containerType === "List" || containerType === "MovableList") {
             // Generate a unique ID for the list
             const list = container as LoroList;
             if (!Array.isArray(value)) {
@@ -1121,7 +1222,7 @@ export class Mirror<S extends SchemaType> {
      * If the schema is provided, the container will be registered with the schema
      */
     private insertContainerIntoList(
-        list: LoroList,
+        list: LoroList | LoroMovableList,
         schema: ContainerSchemaType | undefined,
         index: number,
         value: any,
@@ -1154,6 +1255,7 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID | "",
         schema: SchemaType | undefined,
     ): Change[] {
+        console.log("findChangesForContainer", containerId, oldState, newState, schema)
         const changes: Change[] = [];
         if (containerId.endsWith("Text")) {
             if (oldState !== newState) {
@@ -1172,7 +1274,10 @@ export class Mirror<S extends SchemaType> {
             if (!containerId.endsWith("List")) {
                 throw new Error("");
             }
-            if (schema && schema.type !== "loro-list") {
+            if (
+                schema && 
+                !["loro-list", "loro-movable-list"].includes(schema.type)
+            ) {
                 throw new Error("");
             }
 
@@ -1201,6 +1306,8 @@ export class Mirror<S extends SchemaType> {
             return this.doc.getText(key);
         } else if (type === "List") {
             return this.doc.getList(key);
+        } else if (type === "MovableList") {
+            return this.doc.getMovableList(key);
         } else if (type === "Map") {
             return this.doc.getMap(key);
         } else {
@@ -1214,6 +1321,7 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID | "",
         schema: SchemaType | undefined,
     ): Change[] {
+        console.log("findChangesInLoroMap", containerId, oldState, newState, schema)
         if (containerId) {
             if (!containerId.endsWith("Map")) {
                 throw new Error();
@@ -1341,7 +1449,7 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         oldState: any[],
         newState: any[],
-        schema: LoroListSchema<SchemaType> | undefined,
+        schema: LoroListSchema<SchemaType> |LoroMovableListSchema<SchemaType> | undefined,
     ): Change[] {
         const changes: Change[] = [];
         if (!containerId.endsWith("List")) {
@@ -1358,13 +1466,27 @@ export class Mirror<S extends SchemaType> {
         // Find the schema for this list
         let idSelector = listIdSelector;
         if (idSelector) {
-            const ans = this.findDiffInArrayWithIdSelector(
-                oldState,
-                newState,
-                idSelector,
-                containerId,
-                schema,
-            );
+
+            let ans: Change[] | undefined;
+
+            if (schema && schema.type === "loro-movable-list") {
+                ans = this.findDiffInMoveableList(
+                    oldState,
+                    newState,
+                    idSelector,
+                    containerId,
+                    schema as LoroMovableListSchema<SchemaType>,
+                );
+            } else {
+                ans = this.findDiffInArrayWithIdSelector(
+                    oldState,
+                    newState,
+                    idSelector,
+                    containerId,
+                    schema as LoroListSchema<SchemaType>,
+                );
+            }
+
             if (ans) {
                 return ans;
             }
@@ -1421,6 +1543,166 @@ export class Mirror<S extends SchemaType> {
         return changes;
     }
 
+    /** 
+     * Find changes in a movable list
+     */
+    private findDiffInMoveableList(
+        oldState: any[],
+        newState: any[],
+        idSelector: (item: any) => string,
+        containerId: ContainerID,
+        schema: LoroMovableListSchema<SchemaType> | undefined,
+    ) : Change[] {
+        const changes: Change[] = [];
+
+        // Maps id -> { item, index }
+        const oldItemsById = new Map();
+        const newItemsById = new Map();
+
+
+        // Populate maps for old items
+        oldState.forEach((item: any, index: number) => {
+            const id = idSelector(item);
+            if (id) {
+                oldItemsById.set(id, { item, index });
+            } else {
+                console.warn(
+                    `No ID found for item at index ${index}`,
+                );
+            }
+        });
+
+        // Populate maps for new items
+        newState.forEach((item: any, index: number) => {
+            const id = idSelector(item);
+            if (id) {
+                newItemsById.set(id, { item, index });
+            } else {
+                console.warn(
+                    `No ID found for item at index ${index}`,
+                );
+            }
+        });
+
+        const movableList = this.doc.getMovableList(containerId);
+
+        // Check for deletes/updates/moves
+        for (const [id, { index }] of oldItemsById.entries()) {
+            // Item has been deleted
+            if (!newItemsById.has(id)) {
+                changes.push({
+                    container: containerId,
+                    key: index,
+                    value: undefined,
+                    kind: "delete",
+                });
+                continue;
+            }
+
+            if (!newState.at(index)) {
+                continue;
+            }
+
+            // Item has been updated
+            if (
+                // check that the id of the two items is the same
+                newState[index]?.id === id &&
+                !deepEqual(oldState[index], newState[index])
+            ) {
+                const oldItem = oldState[index];
+                const newItem = newState[index];
+
+                const itemContainer = movableList.get(index);
+
+                if (isContainer(itemContainer)) {
+                    changes.push(...this.findChangesForContainer(
+                        oldItem,
+                        newItem,
+                        itemContainer.id,
+                        schema?.itemSchema,
+                    ));
+                } else {
+                    // delete and re-insert the item with the new value
+                    changes.push({
+                        container: containerId,
+                        key: index,
+                        value: undefined,
+                        kind: "delete",
+                    });
+                    changes.push({
+                        container: containerId,
+                        key: index,
+                        value: newItem,
+                        kind: "insert",
+                    });
+                }
+
+                continue;
+            }
+
+            // Item has been moved
+            if (
+                newState[index].id !== id
+            ) {
+                const newIndex = newItemsById.get(id)!.index;
+
+                changes.push({
+                    container: containerId,
+                    key: index,
+                    value: newState[index],
+                    kind: "move",
+                    fromIndex: index,
+                    toIndex: newIndex,
+                })
+
+                // The item has been moved and updated
+                if (!deepEqual(oldState[index], newState[index])) {
+                    const oldContainer = movableList.get(index);
+
+                    if (isContainer(oldContainer)) {
+
+                        // treat it as a normal update on the old container first
+                        changes.push(...this.findChangesForContainer(
+                            oldState[index],
+                            newState[index],
+                            oldContainer.id,
+                            schema?.itemSchema,
+                        ));
+                    } else {
+                        // delete and re-insert the item with the new value
+                        changes.push({
+                            container: containerId,
+                            key: index,
+                            value: undefined,
+                            kind: "delete",
+                        });
+                        changes.push({
+                            container: containerId,
+                            key: index,
+                            value: newState[index],
+                            kind: "insert",
+                        });
+                    }
+                }
+                continue;
+            }
+        }
+
+        for (const [id, {index, item}] of newItemsById.entries()) {
+            if (!oldItemsById.has(id)) {
+                const change = tryUpdateToInsertContainer({
+                    container: containerId,
+                    key: index,
+                    value: item,
+                    kind: "insert",
+                }, true, schema?.itemSchema);
+
+                changes.push(change);
+            }
+        }
+
+        return changes
+    }
 
     private findDiffInArrayWithIdSelector(
         oldState: any[],
@@ -1678,7 +1960,9 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         childKey: string | number,
     ): ContainerSchemaType | undefined {
+        console.log("all schemas", this.containerToSchemaMap, childKey)
         const containerSchema = this.getSchemaForChild(containerId, childKey);
+        console.log("containerSchema", containerSchema)
 
         if (!containerSchema || !isContainerSchema(containerSchema)) {
             return undefined;
@@ -1699,7 +1983,10 @@ export class Mirror<S extends SchemaType> {
 
         if (isLoroMapSchema(containerSchema)) {
             return containerSchema.definition[childKey];
-        } else if (isLoroListSchema(containerSchema)) {
+        } else if (
+            isLoroListSchema(containerSchema) ||
+            isLoroMovableListSchema(containerSchema)
+        ) {
             return containerSchema.itemSchema;
         }
 
@@ -1712,6 +1999,7 @@ function insertChildToMap(
     key: string,
     value: unknown,
 ): Change {
+    console.log("insertChildToMap", containerId, key, value);
     if (isObject(value)) {
         return {
             container: containerId,
@@ -1780,7 +2068,7 @@ function assertNever(value: never): never {
 
 function inferContainerType(
     value: unknown,
-): "loro-map" | "loro-list" | "loro-text" | undefined {
+): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined {
     if (isObject(value)) {
         return "loro-map";
     } else if (Array.isArray(value)) {
@@ -1795,6 +2083,7 @@ function inferContainerType(
 function schemaToContainerType<S extends SchemaType>(schema: S):
     S extends LoroMapSchema<any> ? "Map" :
     S extends LoroListSchema<any> ? "List" :
+    S extends LoroMovableListSchema<any> ? "MovableList" :
     S extends LoroTextSchemaType ? "Text" :
     undefined {
 
@@ -1819,12 +2108,12 @@ function isValueOfContainerType(
     value: any,
 ): boolean {
     switch (containerType) {
+        case "MovableList":
         case "List":
         case "Map":
             return typeof value === "object" && value !== null;
         case "Text":
             return typeof value === "string" && value !== null;
         default:
-            return false;
-    }
+            return false; }
 }

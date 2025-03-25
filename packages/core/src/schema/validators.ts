@@ -7,6 +7,7 @@ import {
     InferType,
     LoroListSchema,
     LoroMapSchema,
+    LoroMovableListSchema,
     RootSchemaType,
     SchemaType,
 } from "./types";
@@ -21,6 +22,7 @@ export function isLoroMapSchema<T extends Record<string, SchemaType>>(
     return (schema as BaseSchemaType).type === "loro-map";
 }
 
+
 /**
  * Type guard for LoroListSchema
  */
@@ -29,6 +31,13 @@ export function isLoroListSchema<T extends SchemaType>(
 ): schema is LoroListSchema<T> {
     return (schema as BaseSchemaType).type === "loro-list";
 }
+
+export function isLoroMovableListSchema<T extends SchemaType>(
+    schema: SchemaType,
+): schema is LoroMovableListSchema<T> {
+    return (schema as BaseSchemaType).type === "loro-movable-list";
+}
+
 
 /**
  * Type guard for RootSchemaType
@@ -46,7 +55,8 @@ export function isContainerSchema(schema?: SchemaType): schema is ContainerSchem
   return !!schema && (
     schema.type === "loro-map" || 
     schema.type === "loro-list" || 
-    schema.type === "loro-text"
+    schema.type === "loro-text" ||
+    schema.type === "loro-movable-list"
   );
 }
 
@@ -128,7 +138,7 @@ export function validateSchema<S extends SchemaType>(
                 }
             }
             break;
-
+        case "loro-movable-list":
         case "loro-list":
             if (!Array.isArray(value)) {
                 errors.push("Value must be an array");

@@ -9,6 +9,7 @@ import {
     ContainerSchemaType,
     LoroListSchema,
     LoroMapSchema,
+    LoroMovableListSchema,
     LoroTextSchemaType,
     RootSchemaDefinition,
     RootSchemaType,
@@ -121,6 +122,22 @@ schema.LoroList = function <T extends SchemaType>(
         options: options || {},
         getContainerType() {
             return "List";
+        },
+    };
+};
+
+schema.LoroMovableList = function <T extends SchemaType>(
+    itemSchema: T,
+    idSelector?: (item: any) => string,
+    options?: SchemaOptions,
+): LoroMovableListSchema<T> {
+    return {
+        type: "loro-movable-list" as const,
+        itemSchema,
+        idSelector,
+        options: options || {},
+        getContainerType() {
+            return "MovableList";
         },
     };
 };
