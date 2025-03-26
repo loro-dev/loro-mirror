@@ -31,6 +31,7 @@ import {
     validateSchema,
 } from "../schema";
 import { deepEqual, isObject } from "./utils";
+import { VirtualMovableList } from "./virtual-movable";
 
 /**
  * Sync direction for handling updates
@@ -386,11 +387,10 @@ export class Mirror<S extends SchemaType> {
                 this.schema,
             );
 
-            console.log("updateLoro changes", changes);
 
-            // if (this.options.debug) {
+            if (this.options.debug) {
                 console.log("changes:", JSON.stringify(changes, null, 2));
-            // }
+            }
             // Apply the changes to the Loro document
             this.applyChangesToLoro(changes);
 
@@ -438,7 +438,6 @@ export class Mirror<S extends SchemaType> {
                 const container = this.doc.getContainerById(
                     containerId as ContainerID,
                 );
-                console.log("changes for container", containerId, containerChanges)
                 if (container) {
                     this.applyContainerChanges(container, containerChanges);
                 } else {
@@ -511,7 +510,6 @@ export class Mirror<S extends SchemaType> {
                         map.set(key as string, value);
                     } else if (kind === "insert-container") {
                         let schema = this.getSchemaForChildContainer(container.id, key);
-                        console.log('schema', schema)
                         this.insertContainerIntoMap(
                             map,
               				schema,
@@ -564,11 +562,11 @@ export class Mirror<S extends SchemaType> {
             case "MovableList": {
                 const list = container as LoroMovableList;
 
-                console.log("applyContainerChanges", "map", container.id, changes)
 
                 for (
-                    const { key, value, kind } of changes
+                    const change of changes
                 ) {
+                    const { key, value, kind} = change;
                     if (typeof key !== "number") {
                         throw new Error(`Invalid list index: ${key}`);
                     }
@@ -585,7 +583,6 @@ export class Mirror<S extends SchemaType> {
                         list.insert(index, value);
                     } else if (kind === "insert-container") {
                         const schema = this.getSchemaForChildContainer(container.id, key);
-                        console.log('schema', schema)
             			this.insertContainerIntoList(
             				list,
             				schema,
@@ -593,16 +590,16 @@ export class Mirror<S extends SchemaType> {
             				value
             			)
                     } else if (kind === "move") {
-                        const fromIndex = value.fromIndex;
-                        const toIndex = value.toIndex;
+                        const fromIndex = change.fromIndex;
+                        const toIndex = change.toIndex;
                         list.move(fromIndex, toIndex);
                     }
                 }
 
+                break;
             }
             case "Text": {
                 const text = container as LoroText;
-
                 // Text containers only support direct value updates
                 for (const { key, value } of changes) {
                     if (typeof value === "string") {
@@ -1081,7 +1078,6 @@ export class Mirror<S extends SchemaType> {
         key: string,
         value: any,
     ) {
-        console.trace('insertContainerIntoMap', map.id, schema, key, value)
         const [detachedContainer, containerType] = this.createContainerFromSchema(schema, value);
         let insertedContainer = map.setContainer(key, detachedContainer);
 
@@ -1255,7 +1251,6 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID | "",
         schema: SchemaType | undefined,
     ): Change[] {
-        console.log("findChangesForContainer", containerId, oldState, newState, schema)
         const changes: Change[] = [];
         if (containerId.endsWith("Text")) {
             if (oldState !== newState) {
@@ -1321,7 +1316,6 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID | "",
         schema: SchemaType | undefined,
     ): Change[] {
-        console.log("findChangesInLoroMap", containerId, oldState, newState, schema)
         if (containerId) {
             if (!containerId.endsWith("Map")) {
                 throw new Error();
@@ -1585,6 +1579,28 @@ export class Mirror<S extends SchemaType> {
         });
 
         const movableList = this.doc.getMovableList(containerId);
+        const indexesInserted = new Set<number>();
+        const virtualList = new VirtualMovableList(oldState);
+
+        const idsToUpdate = new Set<string | number>();
+
+
+        for (const [id, {index, item}] of newItemsById.entries()) {
+            if (!oldItemsById.has(id)) {
+
+                const change = tryUpdateToInsertContainer({
+                    container: containerId,
+                    key: index,
+                    value: item,
+                    kind: "insert",
+                }, true, schema?.itemSchema);
+                indexesInserted.add(index);
+
+                virtualList.insert(index, item);
+
+                changes.push(change);
+            }
+        }
 
         // Check for deletes/updates/moves
         for (const [id, { index }] of oldItemsById.entries()) {
@@ -1596,10 +1612,7 @@ export class Mirror<S extends SchemaType> {
                     value: undefined,
                     kind: "delete",
                 });
-                continue;
-            }
-
-            if (!newState.at(index)) {
+                virtualList.delete(index);
                 continue;
             }
 
@@ -1609,95 +1622,71 @@ export class Mirror<S extends SchemaType> {
                 newState[index]?.id === id &&
                 !deepEqual(oldState[index], newState[index])
             ) {
-                const oldItem = oldState[index];
-                const newItem = newState[index];
-
-                const itemContainer = movableList.get(index);
-
-                if (isContainer(itemContainer)) {
-                    changes.push(...this.findChangesForContainer(
-                        oldItem,
-                        newItem,
-                        itemContainer.id,
-                        schema?.itemSchema,
-                    ));
-                } else {
-                    // delete and re-insert the item with the new value
-                    changes.push({
-                        container: containerId,
-                        key: index,
-                        value: undefined,
-                        kind: "delete",
-                    });
-                    changes.push({
-                        container: containerId,
-                        key: index,
-                        value: newItem,
-                        kind: "insert",
-                    });
-                }
-
+                idsToUpdate.add(id);
                 continue;
+            }
+
+            const virtualItem = virtualList.getById(id);
+            const currentIndex = virtualItem?.index;
+            const desiredIndex = newItemsById.get(id)!.index;
+
+            // The item has maybe been moved, but it has been updated
+            if (virtualItem && !deepEqual(virtualItem.item, newItemsById.get(id)!.item)) {
+                idsToUpdate.add(id);
             }
 
             // Item has been moved
             if (
-                newState[index].id !== id
+                virtualItem &&
+                currentIndex &&
+                currentIndex !== desiredIndex
             ) {
-                const newIndex = newItemsById.get(id)!.index;
-
                 changes.push({
                     container: containerId,
-                    key: index,
-                    value: newState[index],
+                    key: currentIndex!,
+                    value: virtualItem.item,
                     kind: "move",
-                    fromIndex: index,
-                    toIndex: newIndex,
+                    fromIndex: currentIndex,
+                    toIndex: desiredIndex,
                 })
 
-                // The item has been moved and updated
-                if (!deepEqual(oldState[index], newState[index])) {
-                    const oldContainer = movableList.get(index);
+                virtualList.move(currentIndex, desiredIndex);
 
-                    if (isContainer(oldContainer)) {
-
-                        // treat it as a normal update on the old container first
-                        changes.push(...this.findChangesForContainer(
-                            oldState[index],
-                            newState[index],
-                            oldContainer.id,
-                            schema?.itemSchema,
-                        ));
-                    } else {
-                        // delete and re-insert the item with the new value
-                        changes.push({
-                            container: containerId,
-                            key: index,
-                            value: undefined,
-                            kind: "delete",
-                        });
-                        changes.push({
-                            container: containerId,
-                            key: index,
-                            value: newState[index],
-                            kind: "insert",
-                        });
-                    }
-                }
                 continue;
             }
         }
 
-        for (const [id, {index, item}] of newItemsById.entries()) {
-            if (!oldItemsById.has(id)) {
-                const change = tryUpdateToInsertContainer({
-                    container: containerId,
-                    key: index,
-                    value: item,
-                    kind: "insert",
-                }, true, schema?.itemSchema);
+        // Handle updates
+        for (const id of idsToUpdate) {
+            const oldItem = oldItemsById.get(id);
+            const newItem = newItemsById.get(id);
+            const oldIndex = oldItem?.index;
 
-                changes.push(change);
+            const item = movableList.get(oldIndex);
+
+            if (isContainer(item)) {
+                changes.push(
+                    ...this.findChangesForContainer(
+                        oldItem.item,
+                        newItem.item,
+                        item.id,
+                        schema?.itemSchema,
+                    )
+                )
+            } else{
+                const currentIndex = virtualList.getById(id)!.index;
+                changes.push({
+                    container: containerId,
+                    key: currentIndex,
+                    value: undefined,
+                    kind: "delete",
+                });
+                changes.push({
+                    container: containerId,
+                    key: currentIndex,
+                    value: newItem.item,
+                    kind: "insert",
+                });
             }
         }
 
@@ -1960,9 +1949,7 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         childKey: string | number,
     ): ContainerSchemaType | undefined {
-        console.log("all schemas", this.containerToSchemaMap, childKey)
         const containerSchema = this.getSchemaForChild(containerId, childKey);
-        console.log("containerSchema", containerSchema)
 
         if (!containerSchema || !isContainerSchema(containerSchema)) {
             return undefined;
@@ -1999,7 +1986,6 @@ function insertChildToMap(
     key: string,
     value: unknown,
 ): Change {
-    console.log("insertChildToMap", containerId, key, value);
     if (isObject(value)) {
         return {
             container: containerId,

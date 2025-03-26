@@ -138,3 +138,12 @@ export function valueIsContainerOfType(
 ): value is ContainerValue {
     return valueIsContainer(value) && value.cid.endsWith(containerType);
 }
+
+/** should extract only id from idx:5, id:cid:28@10033875429761443547:Map should be cid:28@10033875429761443547:Map */
+export function containerIdWithoutIndex(containerId: string): string {
+    const index = containerId.indexOf(":");
+    if (index === -1) {
+        return containerId;
+    }
+    return containerId.substring(0, index);
+}

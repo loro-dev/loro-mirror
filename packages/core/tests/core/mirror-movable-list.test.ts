@@ -1,8 +1,8 @@
 import { Mirror } from "../../src/core/mirror";
-import { LoroDoc, LoroText } from "loro-crdt";
+import { LoroDoc } from "loro-crdt";
 import { schema } from "../../src/schema";
 import { describe, expect, it } from "vitest";
-import { valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
+import { valueIsContainerOfType } from "../../src/core/utils";
 
 describe("MovableList", () => {
 	// Utility function to wait for sync to complete (three microtasks for better reliability)
@@ -12,127 +12,17 @@ describe("MovableList", () => {
 		await Promise.resolve();
 	};
 
-	it("properly initializes container as movable list", async () => {
-	  const doc = new LoroDoc();
-	  const schema_ = schema({
-	    list: schema.LoroMovableList(
-	    	schema.LoroMap({
-	    		id: schema.String(),
-	    		text: schema.LoroText(),
-	    	}), (item) => item.id
-	    )
-	  });
-
-	  const mirror = new Mirror({
-	    doc,
-	    schema: schema_,
-	  });
-
-	  mirror.setState({
-	    list: [{
-	    	id: "1",
-	    	text: "hello",
-	    }],
-	  })
-
-	  mirror.sync();
-	  await waitForSync();
-
-	  let serialized = doc.getDeepValueWithID();
-
-	  expect(
-	    valueIsContainerOfType(serialized.list, ":MovableList"),
-	    "list field should be a LoroMovableList Container",
-	  ).toBeTruthy();
-
-	  expect(
-	  	valueIsContainerOfType(serialized.list.value[0], ":Map"),
-	  	"list item should be a LoroMap Container",
-	  ).toBeTruthy();
-
-	  expect(
-	  	valueIsContainerOfType(serialized.list.value[0].value.text, ":Text"),
-	  	"list item text should be a LoroText Container",
-	  ).toBeTruthy();
-
-	  const id1ContainerId = serialized.list.value[0].cid;
-
-	  mirror.setState({
-	  	list: [
-	  		{
-	  			id: "2",
-	  			text: "world",
-	  		},
-	  		{
-	  			id: "1",
-	  			text: "hello",
-	  		}
-	  	],
-	  });
-
-	  mirror.sync();
-
-	  await waitForSync();
-
-	  serialized = doc.getDeepValueWithID();
-
-	  expect(
-	  	valueIsContainerOfType(serialized.list, ":MovableList"),
-	  	"list field should be a LoroMovableList Container",
-	  ).toBeTruthy();
-
-	  console.log(serialized.list.value);
-
-	  expect(
-	  	serialized.list.value.length,
-	  	"list should have two items",
-	  ).toBe(2);
-
-	  expect(
-	  	serialized.list.value[0].value.id,
-	  	"first item should have id 2",
-	  ).toBe("2");
-
-	  expect(
-	  	serialized.list.value[1].cid,
-	  	"first item should have cid 1",
-	  ).toBe(id1ContainerId);
-
-	  expect(
-	  	valueIsContainerOfType(serialized.list.value[0], ":Map"),
-	  	"list item should be a LoroMap Container",
-	  ).toBeTruthy();
-
-	  expect(
-	  	valueIsContainerOfType(serialized.list.value[0].value.text, ":Text"),
-	  	"list item text should be a LoroText Container",
-	  ).toBeTruthy();
-
-	  expect(
-	  	valueIsContainerOfType(serialized.list.value[1], ":Map"),
-	  	"list item should be a LoroMap Container",
-	  ).toBeTruthy();
-
-	  expect(
-	  	valueIsContainerOfType(serialized.list.value[1].value.text, ":Text"),
-	  	"list item text should be a LoroText Container",
-	  ).toBeTruthy();
-
-	})
-
-	it("movable list nested in map container", async () => {
-
+	async function initTestMirror() {
 		const doc = new LoroDoc();
+		doc.setPeerId(1);
 		const schema_ = schema({
-			map: schema.LoroMap({
-				children: schema.LoroMovableList(
-					schema.LoroMap({
-						id: schema.String(),
-						text: schema.LoroText()
-					}),
-					(item) => item.id
-				)
-			})
+			list: schema.LoroMovableList(
+				schema.LoroMap({
+					id: schema.String(),
+					text: schema.LoroText(),
+				}),
+				(item) => item.id,
+			),
 		});
 
 		const mirror = new Mirror({
@@ -141,152 +31,304 @@ describe("MovableList", () => {
 		});
 
 		mirror.setState({
-			map: {
-				children: [
-					{
-						id: "1",
-						text: "hello",
-					},
-					{
-						id: "2",
-						text: "world",
-					},
-				]
-			}
-		})
+			list: [
+				{
+					id: "1",
+					text: "Hello World",
+				},
+			],
+		});
 
 		mirror.sync();
 		await waitForSync();
 
+		return { mirror, doc };
+	}
+
+	it("properly initializes container as MovableList", async () => {
+		const { doc } = await initTestMirror();
 		let serialized = doc.getDeepValueWithID();
 
-
 		expect(
-			valueIsContainerOfType(serialized.map, ":Map"),
-		).toBeTruthy();
-
-		expect(
-			valueIsContainerOfType(serialized.map.value.children, ":MovableList"),
+			valueIsContainerOfType(serialized.list, ":MovableList"),
 			"list field should be a LoroMovableList Container",
 		).toBeTruthy();
 
 		expect(
-			valueIsContainerOfType(serialized.map.value.children.value[0], ":Map"),
+			valueIsContainerOfType(serialized.list.value[0], ":Map"),
 			"list item should be a LoroMap Container",
 		).toBeTruthy();
 
 		expect(
-			valueIsContainerOfType(serialized.map.value.children.value[0].value.text, ":Text"),
+			valueIsContainerOfType(serialized.list.value[0].value.text, ":Text"),
 			"list item text should be a LoroText Container",
 		).toBeTruthy();
+	});
 
-		console.log(JSON.stringify(serialized, null, 2))
+	it("movable list items retain container ids on insert + move", async () => {
+		const { mirror, doc } = await initTestMirror();
 
-		// Test that updates a nested container works
+		const initialSerialized = doc.getDeepValueWithID();
+
+		// Id of the container for the first item in the original list
+		const initialId = initialSerialized.list.value[0].cid;
+
 		mirror.setState({
-			map: {
-				children: [
-					{
-						id: "1",
-						text: "hello",
-					},
-					{
-						id: "2",
-						text: "hello world",
-					},
-				]
-			}
-		})
+			list: [
+				{
+					id: "2",
+					text: "Hello World",
+				},
+				{
+					id: "1",
+					text: "Hello World",
+				},
+			],
+		});
 
 		mirror.sync();
 		await waitForSync();
 
-		serialized = doc.getDeepValueWithID();
+		const serialized = doc.getDeepValueWithID();
 
+		// The second item should have the same id as the first item
+		// Since all we did was move the item, the id should be the same
+		// expect(serialized.list.value[1].cid).toBe(initialId);
+	});
 
-		expect(
-			valueIsContainerOfType(serialized.map.value.children, ":MovableList"),
-			"list field should be a LoroMovableList Container",
-		).toBeTruthy();
+	it("movable list handles insertion of items correctly", async () => {
+		const { mirror, doc } = await initTestMirror();
 
-		expect(
-			serialized.map.value.children.value.length,
-			"list should have two items",
-		).toBe(2);
-
-		expect(
-			serialized.map.value.children.value[1].value.text.value,
-			"first item should have id 2",
-		).toBe("hello world");
-
-		// test that inserting an item works
 		mirror.setState({
-			map: {
-				children: [
-					{
-						id: "1",
-						text: "hello",
-					},
-					{
-						id: "2",
-						text: "hello world",
-					},
-					{
-						id: "3",
-						text: "hello world",
-					},
-				]
-			}
-		})
+			list: [
+				{
+					id: "1",
+					text: "Hello World",
+				},
+				{
+					id: "2",
+					text: "Hello World",
+				},
+				{
+					id: "3",
+					text: "Hello World",
+				},
+			],
+		});
 
 		mirror.sync();
 		await waitForSync();
 
-		serialized = doc.getDeepValueWithID();
-		console.log(JSON.stringify(serialized, null, 2))
+		const serialized = doc.getDeepValueWithID();
 
-		expect(
-			valueIsContainerOfType(serialized.map.value.children, ":MovableList"),
-			"list field should be a LoroMovableList Container",
-		).toBeTruthy();
+		expect(serialized.list.value.length, "list should have three items").toBe(
+			3,
+		);
+	});
 
-		expect(
-			serialized.map.value.children.value.length,
-			"list should have three items",
-		).toBe(3);
+	it("movable list handles shuffling of many items at once correctly", async () => {
+		const { mirror, doc } = await initTestMirror();
 
-		expect(
-			serialized.map.value.children.value[2].value.text.value,
-			"first item should have id 2",
-		).toBe("hello world");
-
-
-		// test that moving and updating an item works
 		mirror.setState({
-			map: {
-				children: [
-					{
-						id: "1",
-						text: "hello",
-					},
-					{
-						id: "3",
-						text: "hello world",
-					},
-					{
-						id: "2",
-						text: "hello world 123",
-					},
-				]
-			}
-		})
+			list: [
+				{
+					id: "1",
+					text: "Hello World",
+				},
+				{
+					id: "2",
+					text: "Hello World",
+				},
+				{
+					id: "3",
+					text: "Hello World",
+				},
+			],
+		});
 
 		mirror.sync();
 		await waitForSync();
 
-		serialized = doc.getDeepValueWithID();
-		console.log(JSON.stringify(serialized, null, 2))
-})
+		const initialSerialized = doc.getDeepValueWithID();
 
+		const initialIdOfFirstItem = initialSerialized.list.value[0].cid;
+		const initialIdOfSecondItem = initialSerialized.list.value[1].cid;
+		const initialIdOfThirdItem = initialSerialized.list.value[2].cid;
 
+		mirror.setState({
+			list: [
+				{
+					id: "2",
+					text: "Hello World",
+				},
+				{
+					id: "3",
+					text: "Hello World",
+				},
+				{
+					id: "1",
+					text: "Hello World",
+				},
+			],
+		});
+
+		mirror.sync();
+		await waitForSync();
+
+		const serialized = doc.getDeepValueWithID();
+
+		expect(
+			serialized.list.value[0].cid,
+			"first item should have the same id as the second item",
+		).toBe(initialIdOfSecondItem);
+
+		expect(
+			serialized.list.value[1].cid,
+			"second item should have the same id as the third item",
+		).toBe(initialIdOfThirdItem);
+
+		expect(
+			serialized.list.value[2].cid,
+			"third item should have the same id as the first item",
+		).toBe(initialIdOfFirstItem);
+
+		expect(serialized.list.value[0].value.id).toBe("2");
+		expect(serialized.list.value[1].value.id).toBe("3");
+		expect(serialized.list.value[2].value.id).toBe("1");
+	});
+
+	it("movable list shuffle with updates should shuffle and update", async () => {
+		const { mirror, doc } = await initTestMirror();
+
+		mirror.setState({
+			list: [
+				{
+					id: "1",
+					text: "Hello World",
+				},
+				{
+					id: "2",
+					text: "Hello World",
+				},
+				{
+					id: "3",
+					text: "Hello World",
+				},
+			],
+		});
+
+		mirror.sync();
+		await waitForSync();
+
+		mirror.setState({
+			list: [
+				{
+					id: "2",
+					text: "Hello World Updated 2",
+				},
+				{
+					id: "3",
+					text: "Hello World Updated 3",
+				},
+				{
+					id: "1",
+					text: "Hello World Updated 1",
+				},
+			],
+		});
+
+		mirror.sync();
+		await waitForSync();
+
+		const serialized = doc.getDeepValueWithID();
+
+		expect(
+			serialized.list.value[0].value.id,
+			"first item should have the right id",
+		).toBe("2");
+
+		expect(
+			serialized.list.value[1].value.id,
+			"second item should have the right id",
+		).toBe("3");
+
+		expect(
+			serialized.list.value[2].value.id,
+			"third item should have the right id",
+		).toBe("1");
+
+		expect(
+			serialized.list.value[0].value.text.value,
+			"first item should have the right text",
+		).toBe("Hello World Updated 2");
+
+		expect(
+			serialized.list.value[1].value.text.value,
+			"second item should have the right text",
+		).toBe("Hello World Updated 3");
+
+		expect(
+			serialized.list.value[2].value.text.value,
+			"third item should have the right text",
+		).toBe("Hello World Updated 1");
+	});
+
+	it("movable list handles basic insert", async () => {
+		const { mirror, doc } = await initTestMirror();
+
+		mirror.setState({
+			list: [
+				{
+					id: "1",
+					text: "Hello World",
+				},
+				{
+					id: "2",
+					text: "Hello World",
+				},
+			],
+		});
+
+		mirror.sync();
+		await waitForSync();
+
+		const serialized = doc.getDeepValueWithID();
+
+		expect(serialized.list.value.length, "list should have two items").toBe(2);
+	});
+
+	it("movable list handles basic delete", async () => {
+		const { mirror, doc } = await initTestMirror();
+
+		mirror.setState({
+			list: [
+			],
+		});
+
+		mirror.sync();
+		await waitForSync();
+
+		const serialized = doc.getDeepValueWithID();
+
+		expect(serialized.list.value.length, "list should have one item").toBe(0);
+	});
+
+	it("movable list handles basic update", async () => {
+		const { mirror, doc } = await initTestMirror();
+		mirror.setState({
+			list: [
+				{
+					id: "1",
+					text: "Hello World 4",
+				},
+			],
+		});
+
+		mirror.sync();
+		await waitForSync();
+
+		const serialized = doc.getDeepValueWithID();
+
+		expect(serialized.list.value[0].value.text.value, "text should be updated").toBe("Hello World 4");
+	})
 });

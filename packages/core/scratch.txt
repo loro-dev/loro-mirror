@@ -1,0 +1,69 @@
+// base
+{
+  list: [
+    { id: '1', text: 'Hello World' },
+    { id: '2', text: 'Hello World' },
+    { id: '3', text: 'Hello World' }
+  ]
+}
+
+
+// cummulative moves
+
+// move 0 -> 2
+{
+  list: [
+    { id: '2', text: 'Hello World' },
+    { id: '3', text: 'Hello World' }
+    { id: '1', text: 'Hello World' },
+  ]
+}
+
+// move 1 -> 0 
+{
+  list: [
+    { id: '3', text: 'Hello World' }
+    { id: '2', text: 'Hello World' },
+    { id: '1', text: 'Hello World' },
+  ]
+}
+
+// move 2 -> 1
+{
+  list: [
+    { id: '3', text: 'Hello World' }
+    { id: '1', text: 'Hello World' },
+    { id: '2', text: 'Hello World' },
+  ]
+}
+
+
+// fresh moves
+
+// move 0 -> 2
+{
+  list: [
+    ...
+    ...
+    { id: '1', text: 'Hello World' },
+  ]
+}
+
+// move 1 -> 0
+{
+  list: [
+    { id: '2', text: 'Hello World' },
+    ...
+    ...
+
+  ]
+}
+
+// move 2 -> 1
+{
+  list: [
+    ...
+    { id: '3', text: 'Hello World' }
+    ...
+  ]
+}
