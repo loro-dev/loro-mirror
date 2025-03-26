@@ -1541,18 +1541,26 @@ export class Mirror<S extends SchemaType> {
      * Find changes in a movable list
      */
     private findDiffInMoveableList(
-        oldState: any[],
-        newState: any[],
-        idSelector: (item: any) => string,
+        oldState: unknown[],
+        newState: unknown[],
+        idSelector: (item: unknown) => string,
         containerId: ContainerID,
         schema: LoroMovableListSchema<SchemaType> | undefined,
     ) : Change[] {
         const changes: Change[] = [];
 
-        // Maps id -> { item, index }
-        const oldItemsById = new Map();
-        const newItemsById = new Map();
+        const oldItemsById: Map<string, { item: unknown, index: number}> = new Map();
+        const newItemsById: Map<string, { item: unknown, index: number}> = new Map();
 
+        if (oldState.filter(item => item === undefined ).length > 0) {
+            console.error("OLD STATE HAS UNDEFINED", oldState);
+            throw new Error("OLD STATE HAS UNDEFINED");
+        }
+
+        if (newState.filter(item => item === undefined ).length > 0) {
+            console.error("NEW STATE HAS UNDEFINED");
+            throw new Error("NEW STATE HAS UNDEFINED");
+        }
 
         // Populate maps for old items
         oldState.forEach((item: any, index: number) => {
@@ -1580,11 +1588,24 @@ export class Mirror<S extends SchemaType> {
 
         const movableList = this.doc.getMovableList(containerId);
         const indexesInserted = new Set<number>();
-        const virtualList = new VirtualMovableList(oldState);
-
-        const idsToUpdate = new Set<string | number>();
+        const virtualList = new VirtualMovableList(oldItemsById);
 
 
+        for (const [id, { index }] of oldItemsById.entries()) {
+            // Item has been deleted
+            if (!newItemsById.has(id)) {
+                changes.push({
+                    container: containerId,
+                    key: index,
+                    value: undefined,
+                    kind: "delete",
+                });
+                virtualList.deleteById(id);
+                continue;
+            }
+        }
+
+        // Check for Insertions
         for (const [id, {index, item}] of newItemsById.entries()) {
             if (!oldItemsById.has(id)) {
 
@@ -1595,45 +1616,22 @@ export class Mirror<S extends SchemaType> {
                     kind: "insert",
                 }, true, schema?.itemSchema);
                 indexesInserted.add(index);
-
-                virtualList.insert(index, item);
-
+                virtualList.insert(index, { id, item });
                 changes.push(change);
             }
         }
 
-        // Check for deletes/updates/moves
+        // Check for moves
         for (const [id, { index }] of oldItemsById.entries()) {
-            // Item has been deleted
-            if (!newItemsById.has(id)) {
-                changes.push({
-                    container: containerId,
-                    key: index,
-                    value: undefined,
-                    kind: "delete",
-                });
-                virtualList.delete(index);
-                continue;
-            }
-
-            // Item has been updated
-            if (
-                // check that the id of the two items is the same
-                newState[index]?.id === id &&
-                !deepEqual(oldState[index], newState[index])
-            ) {
-                idsToUpdate.add(id);
-                continue;
-            }
-
             const virtualItem = virtualList.getById(id);
+
+            // Item has been deleted
+            if (!virtualItem) {
+                continue;
+            }
+
             const currentIndex = virtualItem?.index;
             const desiredIndex = newItemsById.get(id)!.index;
-
-            // The item has maybe been moved, but it has been updated
-            if (virtualItem && !deepEqual(virtualItem.item, newItemsById.get(id)!.item)) {
-                idsToUpdate.add(id);
-            }
 
             // Item has been moved
             if (
@@ -1657,24 +1655,34 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Handle updates
-        for (const id of idsToUpdate) {
+        for (const id of newItemsById.keys()) {
             const oldItem = oldItemsById.get(id);
+            const currentItem = virtualList.getById(id);
             const newItem = newItemsById.get(id);
-            const oldIndex = oldItem?.index;
 
+            if (!oldItem) {
+                continue;
+            }
+            if (!currentItem || !newItem) {
+                throw new Error("Failed to find item in virtual list");
+            };
+
+            if (deepEqual(oldItem.item, newItem.item)) continue;
+
+            const oldIndex = oldItem.index;
             const item = movableList.get(oldIndex);
+            const currentIndex = currentItem.index;
 
             if (isContainer(item)) {
                 changes.push(
                     ...this.findChangesForContainer(
-                        oldItem.item,
+                        currentItem.item,
                         newItem.item,
                         item.id,
                         schema?.itemSchema,
                     )
                 )
             } else{
-                const currentIndex = virtualList.getById(id)!.index;
                 changes.push({
                     container: containerId,
                     key: currentIndex,

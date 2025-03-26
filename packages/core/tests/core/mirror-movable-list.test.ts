@@ -45,7 +45,7 @@ describe("MovableList", () => {
 		return { mirror, doc };
 	}
 
-	it("properly initializes container as MovableList", async () => {
+	it("movable list properly initializes containers", async () => {
 		const { doc } = await initTestMirror();
 		let serialized = doc.getDeepValueWithID();
 
@@ -93,11 +93,12 @@ describe("MovableList", () => {
 
 		// The second item should have the same id as the first item
 		// Since all we did was move the item, the id should be the same
-		// expect(serialized.list.value[1].cid).toBe(initialId);
+		expect(serialized.list.value[1].cid).toBe(initialId);
 	});
 
 	it("movable list handles insertion of items correctly", async () => {
 		const { mirror, doc } = await initTestMirror();
+
 
 		mirror.setState({
 			list: [
@@ -155,7 +156,7 @@ describe("MovableList", () => {
 		const initialIdOfSecondItem = initialSerialized.list.value[1].cid;
 		const initialIdOfThirdItem = initialSerialized.list.value[2].cid;
 
-		mirror.setState({
+		const deriredState = {
 			list: [
 				{
 					id: "2",
@@ -170,7 +171,9 @@ describe("MovableList", () => {
 					text: "Hello World",
 				},
 			],
-		});
+		};
+
+		mirror.setState(deriredState);
 
 		mirror.sync();
 		await waitForSync();
@@ -195,6 +198,8 @@ describe("MovableList", () => {
 		expect(serialized.list.value[0].value.id).toBe("2");
 		expect(serialized.list.value[1].value.id).toBe("3");
 		expect(serialized.list.value[2].value.id).toBe("1");
+
+		expect(mirror.getState()).toEqual(deriredState);
 	});
 
 	it("movable list shuffle with updates should shuffle and update", async () => {
@@ -220,7 +225,7 @@ describe("MovableList", () => {
 		mirror.sync();
 		await waitForSync();
 
-		mirror.setState({
+		const desiredState = {
 			list: [
 				{
 					id: "2",
@@ -235,7 +240,9 @@ describe("MovableList", () => {
 					text: "Hello World Updated 1",
 				},
 			],
-		});
+		};
+
+		mirror.setState(desiredState);
 
 		mirror.sync();
 		await waitForSync();
@@ -271,12 +278,14 @@ describe("MovableList", () => {
 			serialized.list.value[2].value.text.value,
 			"third item should have the right text",
 		).toBe("Hello World Updated 1");
+
+		expect(mirror.getState()).toEqual(desiredState);
 	});
 
 	it("movable list handles basic insert", async () => {
 		const { mirror, doc } = await initTestMirror();
 
-		mirror.setState({
+		const desiredState = {
 			list: [
 				{
 					id: "1",
@@ -287,7 +296,9 @@ describe("MovableList", () => {
 					text: "Hello World",
 				},
 			],
-		});
+		};
+
+		mirror.setState(desiredState);
 
 		mirror.sync();
 		await waitForSync();
@@ -295,14 +306,15 @@ describe("MovableList", () => {
 		const serialized = doc.getDeepValueWithID();
 
 		expect(serialized.list.value.length, "list should have two items").toBe(2);
+
+		expect(mirror.getState()).toEqual(desiredState);
 	});
 
 	it("movable list handles basic delete", async () => {
 		const { mirror, doc } = await initTestMirror();
 
 		mirror.setState({
-			list: [
-			],
+			list: [],
 		});
 
 		mirror.sync();
@@ -315,20 +327,28 @@ describe("MovableList", () => {
 
 	it("movable list handles basic update", async () => {
 		const { mirror, doc } = await initTestMirror();
-		mirror.setState({
+
+		const desiredState = {
 			list: [
 				{
 					id: "1",
 					text: "Hello World 4",
 				},
 			],
-		});
+		}
+
+		mirror.setState(desiredState);
 
 		mirror.sync();
 		await waitForSync();
 
 		const serialized = doc.getDeepValueWithID();
 
-		expect(serialized.list.value[0].value.text.value, "text should be updated").toBe("Hello World 4");
-	})
+		expect(
+			serialized.list.value[0].value.text.value,
+			"text should be updated",
+		).toBe("Hello World 4");
+
+		expect(mirror.getState()).toEqual(desiredState);
+	});
 });

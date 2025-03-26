@@ -1,79 +1,69 @@
-type ItemWithId = { id: string | number; [key: string]: any };
+type ItemWithId = { id: string | number; item: any };
 type ItemWithIndex = { index: number; item: any };
+type ItemWithIdAndIndex = { id: string | number; index: number; item: any };
 
+/** 
+ * Virtual list is supposed to mimic the behavior of a Loro MovableList
+ * Helps with figuring out the dynamic order of operations for moves when diffing state
+ */
 export class VirtualMovableList {
-  private list: Array<ItemWithId>;
+	private list: ItemWithId[];
 
-  constructor(list: Array<ItemWithId>) {
-    this.list = [...list];
-  }
+	constructor(list: Map<string | number, ItemWithIndex> = new Map()) {
+		this.list = Array.from(list.entries(), ([id, { item }]) => ({ id, item }));
+	}
 
-  getById(id: string | number): ItemWithIndex | undefined {
-    const index = this.list.findIndex((item) => item.id === id);
-    if (index === -1) {
-      return undefined;
-    }
-    return { index, item: this.list[index] };
-  }
+	getById(id: string | number): ItemWithIdAndIndex | undefined {
+		const index = this.list.findIndex((item) => item.id === id);
+		if (index === -1) {
+			return undefined;
+		}
 
-  get(index: number): ItemWithId | undefined {
-    return index >= 0 && index < this.list.length ? this.list[index] : undefined;
-  }
+		return { id, index, item: this.list[index].item };
+	}
 
-  delete(index: number): boolean {
-    if (index < 0 || index >= this.list.length) {
-      return false;
-    }
-    
-    this.list = [...this.list.slice(0, index), ...this.list.slice(index + 1)];
-    return true;
-  }
+	move(fromIndex: number, toIndex: number) {
+		if (fromIndex < 0 || fromIndex >= this.list.length) {
+			throw new Error(
+				`Failed to move item in virtual list, invalid fromIndex: ${fromIndex}`,
+			);
+		}
 
-  toArray(): Array<ItemWithId> {
-    return [...this.list];
-  }
+		if (toIndex < 0 || toIndex > this.list.length) {
+			throw new Error(
+				`Failed to move item in virtual list, invalid toIndex: ${toIndex}`,
+			);
+		}
 
-  insert(index: number, value: ItemWithId): boolean {
-    if (index < 0 || index > this.list.length) {
-      return false;
-    }
-    
-    this.list = [
-      ...this.list.slice(0, index),
-      value,
-      ...this.list.slice(index)
-    ];
-    return true;
-  }
+		if (fromIndex === toIndex) return;
 
-  move(fromIndex: number, toIndex: number): boolean {
-    if (
-      fromIndex < 0 || 
-      fromIndex >= this.list.length || 
-      toIndex < 0 || 
-      toIndex >= this.list.length
-    ) {
-      return false;
-    }
-    
-    const item = this.list[fromIndex];
-    
-    if (fromIndex < toIndex) {
-      this.list = [
-        ...this.list.slice(0, fromIndex),
-        ...this.list.slice(fromIndex + 1, toIndex + 1),
-        item,
-        ...this.list.slice(toIndex + 1)
-      ];
-    } else {
-      this.list = [
-        ...this.list.slice(0, toIndex),
-        item,
-        ...this.list.slice(toIndex, fromIndex),
-        ...this.list.slice(fromIndex + 1)
-      ];
-    }
-    
-    return true;
-  }
+		const [element] = this.list.splice(fromIndex, 1);
+		this.list.splice(toIndex, 0, element);
+	}
+
+	insert(index: number, item: ItemWithId) {
+		if (index < 0) {
+			throw new Error("Failed to insert into virtual list, invalid index");
+		}
+
+		this.list.splice(index, 0, item);
+	}
+
+	deleteByIndex(index: number, count: number = 1) {
+		if (index < 0 || index >= this.list.length || count < 1) {
+			throw new Error("Failed to delete from virtual list, invalid index");
+		}
+
+		count = Math.min(count, this.list.length - index);
+		this.list.splice(index, count);
+	}
+
+	deleteById(id: string | number) {
+		const index = this.list.findIndex((item) => item.id === id);
+		if (index === -1) {
+			throw new Error("Failed to delete from virtual list, invalid id");
+		}
+
+		this.deleteByIndex(index);
+	}
 }
