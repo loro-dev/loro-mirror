@@ -167,8 +167,6 @@ describe("Text Container Behave correctly", () => {
 
 		let serialized = doc.getDeepValueWithID();
 
-		console.log("serialized", serialized);
-
 		expect(
 			valueIsContainerOfType(serialized.list, ":List"),
 			"list field should be a LoroList Container",

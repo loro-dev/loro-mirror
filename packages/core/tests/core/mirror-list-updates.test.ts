@@ -7,7 +7,7 @@
 import { Mirror } from "../../src/core/mirror";
 import { LoroDoc, LoroMap } from "loro-crdt";
 import { schema } from "../../src/schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("Mirror List Update Optimization", () => {
     // Utility function to wait for sync to complete (three microtasks for better reliability)
@@ -38,7 +38,7 @@ describe("Mirror List Update Optimization", () => {
         const doc = new LoroDoc();
 
         // Set up the container structure properly before creating the mirror
-        const todosList = doc.getList("todos");
+        doc.getList("todos");
         doc.commit();
 
         const mirror = new Mirror({
@@ -210,9 +210,6 @@ describe("Mirror List Update Optimization", () => {
 
         await waitForSync();
 
-        // Add debug logging to help understand what's happening
-        console.log("Initial state after syncs:", mirror.getState());
-
         // Verify initial state
         expect(mirror.getState().items).toHaveLength(3);
         expect(mirror.getState().items[0].value).toBe("Item 1");
@@ -290,7 +287,7 @@ describe("Mirror List Update Optimization", () => {
         const doc = new LoroDoc();
 
         // Set up the container structure properly before creating the mirror
-        const categoriesList = doc.getList("categories");
+        doc.getList("categories");
         doc.commit();
 
         const mirror = new Mirror({
@@ -441,7 +438,7 @@ describe("Mirror List Update Optimization", () => {
         // Create mirrors for both schemas
         const docWithId = new LoroDoc();
         // Set up container for docWithId
-        const itemsListWithId = docWithId.getList("items");
+        docWithId.getList("items");
         docWithId.commit();
 
         const mirrorWithId = new Mirror({
@@ -451,7 +448,7 @@ describe("Mirror List Update Optimization", () => {
 
         const docWithoutId = new LoroDoc();
         // Set up container for docWithoutId
-        const itemsListWithoutId = docWithoutId.getList("items");
+        docWithoutId.getList("items");
         docWithoutId.commit();
 
         const mirrorWithoutId = new Mirror({
@@ -461,7 +458,7 @@ describe("Mirror List Update Optimization", () => {
 
         const docMovable = new LoroDoc();
         // Set up container for docWithoutId
-        const itemsMovableList = docMovable.getMovableList("items");
+        docMovable.getMovableList("items");
         docMovable.commit();
 
         const mirrorMovable = new Mirror({

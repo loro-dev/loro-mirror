@@ -467,7 +467,6 @@ describe("Core State Management", () => {
       // Test increment action
       dispatch("increment", 5);
       await waitForSync();
-      console.dir(store.getLoro().toJSON(), { depth: 100 });
       expect(store.getState().meta.count).toBe(5);
 
       // Test setText action

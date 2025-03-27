@@ -1,6 +1,5 @@
 import {
-	Container,
-	ContainerID,
+	Container, ContainerID,
 	isContainer,
 	LoroDoc,
 	LoroMap,
@@ -21,15 +20,16 @@ import {
 } from "../schema";
 import {
 	Change,
-	insertChildToMap,
-	isValueOfContainerType,
-	tryInferContainerType,
-	tryUpdateToInsertContainer,
 } from "./mirror";
+
 import {
 	containerIdToContainerType,
 	deepEqual,
 	getRootContainerByType,
+	insertChildToMap,
+	isValueOfContainerType,
+	tryInferContainerType,
+	tryUpdateToInsertContainer,
 } from "./utils";
 
 type ObjectLike = Record<string, unknown>;
@@ -159,6 +159,7 @@ export function diffContainer(
 					LoroMapSchema<Record<string, SchemaType>>
 				>(stateAndSchema, isObjectLike, isLoroMapSchema)
 			) {
+				console.log("stateAndSchema:", stateAndSchema);
 				throw new Error(
 					"Failed to diff container(map). Old and new state must be objects",
 				);
@@ -640,7 +641,10 @@ export function diffMap<D extends ObjectLike>(
 	oldState: D,
 	newState: D,
 	containerId: ContainerID | "",
-	schema: LoroMapSchema<Record<string, SchemaType>> | RootSchemaType<Record<string, ContainerSchemaType>> | undefined,
+	schema:
+		| LoroMapSchema<Record<string, SchemaType>>
+		| RootSchemaType<Record<string, ContainerSchemaType>>
+		| undefined,
 ): Change[] {
 	const changes: Change[] = [];
 	const oldStateObj = oldState as Record<string, any>;

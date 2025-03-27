@@ -3,8 +3,6 @@
  *
  * This module provides utilities to define schemas that map between JavaScript types and Loro CRDT types.
  */
-
-import type { ContainerType as LoroContainerType } from "loro-crdt";
 import {
     ContainerSchemaType,
     LoroListSchema,

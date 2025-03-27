@@ -3,6 +3,8 @@
  */
 
 import { Container, ContainerID, ContainerType, LoroDoc } from "loro-crdt";
+import { LoroListSchema, LoroMapSchema, LoroMovableListSchema, LoroTextSchemaType, SchemaType } from "../schema";
+import { Change } from "./mirror";
 
 /**
  * Check if a value is an object
@@ -140,17 +142,7 @@ export function valueIsContainerOfType(
     return valueIsContainer(value) && value.cid.endsWith(containerType);
 }
 
-/** should extract only id from idx:5, id:cid:28@10033875429761443547:Map should be cid:28@10033875429761443547:Map */
-export function containerIdWithoutIndex(containerId: string): string {
-    const index = containerId.indexOf(":");
-    if (index === -1) {
-        return containerId;
-    }
-    return containerId.substring(0, index);
-}
-
 export function containerIdToContainerType(containerId: ContainerID): ContainerType | undefined {
-
     if (containerId.endsWith(":Map")) {
         return "Map";
     } else if (containerId.endsWith(":List")) {
@@ -175,5 +167,129 @@ export function getRootContainerByType(doc: LoroDoc, key: string, type: Containe
         return doc.getMap(key);
     } else {
         throw new Error();
+    }
+}
+
+/* Insert a child change to a map */
+export function insertChildToMap(
+    containerId: ContainerID | "",
+    key: string,
+    value: unknown,
+): Change {
+    if (isObject(value)) {
+        return {
+            container: containerId,
+            key,
+            value: value,
+            kind: "insert-container",
+            childContainerType: "Map",
+        };
+    } else if (Array.isArray(value)) {
+        return {
+            container: containerId,
+            key,
+            value: value,
+            kind: "insert-container",
+            childContainerType: "List",
+        };
+    } else {
+        return {
+            container: containerId,
+            key,
+            value: value,
+            kind: "insert",
+        };
+    }
+}
+
+/* Try to update a change to insert a container */
+export function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, schema: SchemaType | undefined): Change {
+    if (!toUpdate) {
+        return change;
+    }
+
+    if (change.kind !== "insert") {
+        return change;
+    }
+
+    let containerType = schema ? 
+        schemaToContainerType(schema) ?? 
+            tryInferContainerType(change.value) : undefined;
+
+    switch (containerType) {
+        case "Map":
+            change.kind = "insert-container";
+            change.childContainerType = "Map";
+            break;
+        case "List":
+            change.kind = "insert-container";
+            change.childContainerType = "List";
+            break;
+        case "Text":
+            change.kind = "insert-container";
+            change.childContainerType = "Text";
+            break;
+        case "Counter":
+            change.kind = "insert-container";
+            change.childContainerType = "Counter";
+            break;
+    }
+
+    return change;
+}
+
+/* Get container type from schema */
+export function schemaToContainerType<S extends SchemaType>(schema: S):
+    S extends LoroMapSchema<any> ? "Map" :
+    S extends LoroListSchema<any> ? "List" :
+    S extends LoroMovableListSchema<any> ? "MovableList" :
+    S extends LoroTextSchemaType ? "Text" :
+    undefined {
+
+    const containerType = schema.getContainerType();
+    return containerType as any;
+}
+
+/* Try to infer container type from value */
+export function tryInferContainerType(value: unknown): ContainerType | undefined {
+    if (isObject(value)) {
+        return "Map";
+    } else if (Array.isArray(value)) {
+        return "List";
+    } else if (typeof value === "string") {
+        return "Text";
+    } else {
+        return;
+    }
+}
+
+/* Check if value is of a given container type */
+export function isValueOfContainerType(
+    containerType: ContainerType,
+    value: any,
+): boolean {
+    switch (containerType) {
+        case "MovableList":
+        case "List":
+        case "Map":
+            return typeof value === "object" && value !== null;
+        case "Text":
+            return typeof value === "string" && value !== null;
+        default:
+            return false; }
+}
+
+/* Infer container type from value */
+export function inferContainerType(
+    value: unknown,
+): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined {
+    if (isObject(value)) {
+        return "loro-map";
+    } else if (Array.isArray(value)) {
+        return "loro-list";
+    } else if (typeof value === "string") {
+        return "loro-text";
+    } else {
+        return;
     }
 }

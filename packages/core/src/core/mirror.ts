@@ -6,7 +6,6 @@ import {
     Container,
     ContainerID,
     ContainerType,
-    isContainer,
     LoroDoc,
     LoroEventBatch,
     LoroList,
@@ -24,13 +23,11 @@ import {
     isLoroMovableListSchema,
     LoroListSchema,
     LoroMapSchema,
-    LoroMovableListSchema,
-    LoroTextSchemaType,
     RootSchemaType,
     SchemaType,
     validateSchema,
 } from "../schema";
-import { deepEqual, isObject } from "./utils";
+import { deepEqual, inferContainerType, isObject, isValueOfContainerType, schemaToContainerType, tryInferContainerType } from "./utils";
 import { diffContainer } from "./diff";
 
 /**
@@ -91,9 +88,9 @@ export interface MirrorOptions<S extends SchemaType> {
     debug?: boolean;
 }
 
-export type Change = {
+export type Change<K extends string | number = string | number> = {
     container: ContainerID | "";
-    key: string | number;
+    key: K;
     value: any;
     kind: "insert" | "delete" | "insert-container";
     childContainerType?: ContainerType;
@@ -235,7 +232,7 @@ export class Mirror<S extends SchemaType> {
         } catch (error) {
             if (this.options.debug) {
                 console.error(
-                    `Error registering container: ${name}`,
+                    `Error registering container: ${containerID}`,
                     error,
                 );
             }
@@ -443,7 +440,8 @@ export class Mirror<S extends SchemaType> {
                     this.applyContainerChanges(container, containerChanges);
                 } else {
                     throw new Error(
-                        `Container not found for ID: ${containerId}. This is likely due to a stale reference or a synchronization issue.`,
+                        `Container not found for ID: ${containerId}. 
+                        This is likely due to a stale reference or a synchronization issue.`,
                     );
                 }
             }
@@ -520,7 +518,7 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "delete") {
                         map.delete(key as string);
                     } else {
-                        assertNever(kind);
+                        throw new Error(`Unsupported change kind for map: ${kind}`);
                     }
                 }
                 break;
@@ -555,7 +553,7 @@ export class Mirror<S extends SchemaType> {
             				value
             			)
                     } else {
-                        assertNever(kind);
+                        throw new Error(`Unsupported change kind for list: ${kind}`);
                     }
                 }
                 break;
@@ -739,7 +737,7 @@ export class Mirror<S extends SchemaType> {
      * Update a list using ID selector for efficient updates
      */
     private updateListWithIdSelector(
-        list: LoroList,
+        list: LoroList | LoroMovableList,
         newItems: any[],
         idSelector: (item: any) => string | null,
         itemSchema: SchemaType,
@@ -884,7 +882,7 @@ export class Mirror<S extends SchemaType> {
      * Update a list by index (for lists without an ID selector)
      */
     private updateListByIndex(
-        list: LoroList,
+        list: LoroList | LoroMovableList,
         newItems: any[],
         itemSchema: SchemaType | undefined,
     ) {
@@ -919,7 +917,7 @@ export class Mirror<S extends SchemaType> {
      * Helper to insert an item into a list, handling containers appropriately
      */
     private insertItemIntoList(
-        list: LoroList,
+        list: LoroList | LoroMovableList,
         index: number,
         item: any,
         itemSchema: SchemaType | undefined,
@@ -1389,127 +1387,4 @@ export class Mirror<S extends SchemaType> {
 
         return undefined;
     }
-}
-
-export function insertChildToMap(
-    containerId: ContainerID | "",
-    key: string,
-    value: unknown,
-): Change {
-    if (isObject(value)) {
-        return {
-            container: containerId,
-            key,
-            value: value,
-            kind: "insert-container",
-            childContainerType: "Map",
-        };
-    } else if (Array.isArray(value)) {
-        return {
-            container: containerId,
-            key,
-            value: value,
-            kind: "insert-container",
-            childContainerType: "List",
-        };
-    } else {
-        return {
-            container: containerId,
-            key,
-            value: value,
-            kind: "insert",
-        };
-    }
-}
-
-export function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, schema: SchemaType | undefined): Change {
-    if (!toUpdate) {
-        return change;
-    }
-
-    if (change.kind !== "insert") {
-        return change;
-    }
-
-    let containerType = schema ? 
-        schemaToContainerType(schema) ?? 
-            tryInferContainerType(change.value) : undefined;
-
-    switch (containerType) {
-        case "Map":
-            change.kind = "insert-container";
-            change.childContainerType = "Map";
-            break;
-        case "List":
-            change.kind = "insert-container";
-            change.childContainerType = "List";
-            break;
-        case "Text":
-            change.kind = "insert-container";
-            change.childContainerType = "Text";
-            break;
-        case "Counter":
-            change.kind = "insert-container";
-            change.childContainerType = "Counter";
-            break;
-    }
-
-    return change;
-}
-
-function assertNever(value: never): never {
-    throw new Error(`Unexpected value: ${value}`);
-}
-
-
-export function inferContainerType(
-    value: unknown,
-): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined {
-    if (isObject(value)) {
-        return "loro-map";
-    } else if (Array.isArray(value)) {
-        return "loro-list";
-    } else if (typeof value === "string") {
-        return "loro-text";
-    } else {
-        return;
-    }
-}
-
-export function schemaToContainerType<S extends SchemaType>(schema: S):
-    S extends LoroMapSchema<any> ? "Map" :
-    S extends LoroListSchema<any> ? "List" :
-    S extends LoroMovableListSchema<any> ? "MovableList" :
-    S extends LoroTextSchemaType ? "Text" :
-    undefined {
-
-    const containerType = schema.getContainerType();
-    return containerType as any;
-}
-
-export function tryInferContainerType(value: unknown): ContainerType | undefined {
-    if (isObject(value)) {
-        return "Map";
-    } else if (Array.isArray(value)) {
-        return "List";
-    } else if (typeof value === "string") {
-        return "Text";
-    } else {
-        return;
-    }
-}
-
-export function isValueOfContainerType(
-    containerType: ContainerType,
-    value: any,
-): boolean {
-    switch (containerType) {
-        case "MovableList":
-        case "List":
-        case "Map":
-            return typeof value === "object" && value !== null;
-        case "Text":
-            return typeof value === "string" && value !== null;
-        default:
-            return false; }
 }
