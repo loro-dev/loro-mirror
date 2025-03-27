@@ -31,8 +31,7 @@ import {
     validateSchema,
 } from "../schema";
 import { deepEqual, isObject } from "./utils";
-import { VirtualMovableList } from "./virtual-movable";
-import { diffContainer, diffList, diffListWithIdSelector, diffMap, diffMovableList } from "./diff";
+import { diffContainer } from "./diff";
 
 /**
  * Sync direction for handling updates

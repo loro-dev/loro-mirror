@@ -1,22 +1,28 @@
 import {
 	Container,
 	ContainerID,
-	ContainerType,
 	isContainer,
 	LoroDoc,
 	LoroMap,
 } from "loro-crdt";
 import {
+	ContainerSchemaType,
+	isLoroListSchema,
+	isLoroMapSchema,
+	isLoroMovableListSchema,
+	isLoroTextSchema,
+	isRootSchemaType,
 	LoroListSchema,
 	LoroMapSchema,
 	LoroMovableListSchema,
+	LoroTextSchemaType,
+	RootSchemaType,
 	SchemaType,
 } from "../schema";
 import {
 	Change,
 	insertChildToMap,
 	isValueOfContainerType,
-	schemaToContainerType,
 	tryInferContainerType,
 	tryUpdateToInsertContainer,
 } from "./mirror";
@@ -25,6 +31,40 @@ import {
 	deepEqual,
 	getRootContainerByType,
 } from "./utils";
+
+type ObjectLike = Record<string, unknown>;
+type ArrayLike = Array<unknown>;
+
+export function isObjectLike(value: unknown): value is ObjectLike {
+	return typeof value === "object";
+}
+
+export function isArrayLike(value: unknown): value is ArrayLike {
+	return Array.isArray(value);
+}
+
+export function isStringLike(value: unknown): value is string {
+	return typeof value === "string";
+}
+
+export function isStateAndSchemaOfType<
+	S extends ObjectLike | ArrayLike | string,
+	T extends SchemaType,
+>(
+	values: {
+		oldState: unknown;
+		newState: unknown;
+		schema: SchemaType | undefined;
+	},
+	stateGuard: (value: unknown) => value is S,
+	schemaGuard: (schema: SchemaType) => schema is T,
+): values is { oldState: S; newState: S; schema: T | undefined } {
+	return (
+		stateGuard(values.oldState) &&
+		stateGuard(values.newState) &&
+		(!values.schema || schemaGuard(values.schema))
+	);
+}
 
 /**
  * Finds the longest increasing subsequence of a sequence of numbers
@@ -82,24 +122,30 @@ export function diffContainer(
 	containerId: ContainerID | "",
 	schema: SchemaType | undefined,
 ): Change[] {
+	const stateAndSchema = { oldState, newState, schema };
 	if (containerId === "") {
+		if (
+			!isStateAndSchemaOfType<
+				ObjectLike,
+				RootSchemaType<Record<string, ContainerSchemaType>>
+			>(stateAndSchema, isObjectLike, isRootSchemaType)
+		) {
+			console.log("stateAndSchema:", stateAndSchema);
+			throw new Error(
+				"Failed to diff container. Old and new state must be objects",
+			);
+		}
+
 		return diffMap(
 			doc,
-			oldState as Record<string, unknown>,
-			newState as Record<string, unknown>,
+			stateAndSchema.oldState,
+			stateAndSchema.newState,
 			containerId,
-			schema as LoroMapSchema<Record<string, SchemaType>>,
+			stateAndSchema.schema,
 		);
 	}
 
 	const containerType = containerIdToContainerType(containerId);
-
-	if (schema) {
-		const schemaContainerType = schemaToContainerType(schema);
-		if (schemaContainerType && schemaContainerType !== containerType) {
-			throw new Error("Schema container type does not match container type");
-		}
-	}
 
 	let changes: Change[] = [];
 
@@ -107,25 +153,47 @@ export function diffContainer(
 
 	switch (containerType) {
 		case "Map":
+			if (
+				!isStateAndSchemaOfType<
+					ObjectLike,
+					LoroMapSchema<Record<string, SchemaType>>
+				>(stateAndSchema, isObjectLike, isLoroMapSchema)
+			) {
+				throw new Error(
+					"Failed to diff container(map). Old and new state must be objects",
+				);
+			}
+
 			changes = diffMap(
 				doc,
-				oldState as Record<string, unknown>,
-				newState as Record<string, unknown>,
+				stateAndSchema.oldState,
+				stateAndSchema.newState,
 				containerId,
-				schema as LoroMapSchema<Record<string, SchemaType>>,
+				stateAndSchema.schema,
 			);
 			break;
 		case "List":
-			idSelector = (schema as LoroListSchema<SchemaType> | undefined)
-				?.idSelector;
+			if (
+				!isStateAndSchemaOfType<ArrayLike, LoroListSchema<SchemaType>>(
+					stateAndSchema,
+					isArrayLike,
+					isLoroListSchema,
+				)
+			) {
+				throw new Error(
+					"Failed to diff container(list). Old and new state must be arrays",
+				);
+			}
+
+			idSelector = stateAndSchema.schema?.idSelector;
 
 			if (idSelector) {
 				changes = diffListWithIdSelector(
 					doc,
-					oldState as Array<unknown>,
-					newState as Array<unknown>,
+					stateAndSchema.oldState,
+					stateAndSchema.newState,
 					containerId,
-					schema as LoroListSchema<SchemaType>,
+					stateAndSchema.schema,
 					idSelector,
 				);
 			} else {
@@ -139,10 +207,19 @@ export function diffContainer(
 			}
 			break;
 		case "MovableList":
-			if (!schema) {
-				throw new Error("Movable list schema is required");
+			if (
+				!isStateAndSchemaOfType<ArrayLike, LoroMovableListSchema<SchemaType>>(
+					stateAndSchema,
+					isArrayLike,
+					isLoroMovableListSchema,
+				)
+			) {
+				throw new Error(
+					"Failed to diff container(movable list). Old and new state must be arrays",
+				);
 			}
-			idSelector = (schema as LoroMovableListSchema<SchemaType>).idSelector;
+
+			idSelector = stateAndSchema.schema?.idSelector;
 
 			if (!idSelector) {
 				throw new Error("Movable list schema must have an idSelector");
@@ -150,15 +227,30 @@ export function diffContainer(
 
 			changes = diffMovableList(
 				doc,
-				oldState as Array<unknown>,
-				newState as Array<unknown>,
+				stateAndSchema.oldState,
+				stateAndSchema.newState,
 				containerId,
-				schema as LoroMovableListSchema<SchemaType>,
+				stateAndSchema.schema,
 				idSelector,
 			);
 			break;
 		case "Text":
-			changes = diffText(oldState as string, newState as string, containerId);
+			if (
+				!isStateAndSchemaOfType<string, LoroTextSchemaType>(
+					stateAndSchema,
+					isStringLike,
+					isLoroTextSchema,
+				)
+			) {
+				throw new Error(
+					"Failed to diff container(text). Old and new state must be strings",
+				);
+			}
+			changes = diffText(
+				stateAndSchema.oldState,
+				stateAndSchema.newState,
+				containerId,
+			);
 			break;
 	}
 
@@ -166,8 +258,8 @@ export function diffContainer(
 }
 
 export function diffText(
-	oldState: unknown,
-	newState: unknown,
+	oldState: string,
+	newState: string,
 	containerId: ContainerID | "",
 ): Change[] {
 	if (newState === oldState) {
@@ -193,11 +285,10 @@ export function diffText(
  * @param containerId The container ID
  * @param schema The schema for the container
  * @param idSelector The idSelector function
- * @param supportMoves Whether to support moves, if true Change[] will include Change.kind === "move"
  * @returns The list of changes
  */
 export function diffMovableList<
-	D extends Array<unknown>,
+	D extends ArrayLike,
 	S extends
 	| LoroListSchema<SchemaType>
 	| LoroMovableListSchema<SchemaType>
@@ -344,10 +435,10 @@ export function diffMovableList<
 	return changes;
 }
 
-export function diffListWithIdSelector(
+export function diffListWithIdSelector<D extends ArrayLike>(
 	doc: LoroDoc,
-	oldState: unknown[],
-	newState: unknown[],
+	oldState: D,
+	newState: D,
 	containerId: ContainerID,
 	schema: LoroListSchema<SchemaType> | undefined,
 	idSelector: IdSelector<unknown>,
@@ -469,10 +560,10 @@ export function diffListWithIdSelector(
 	return changes;
 }
 
-export function diffList(
+export function diffList<D extends ArrayLike>(
 	doc: LoroDoc,
-	oldState: unknown[],
-	newState: unknown[],
+	oldState: D,
+	newState: D,
 	containerId: ContainerID,
 	schema: LoroListSchema<SchemaType> | undefined,
 ): Change[] {
@@ -544,12 +635,12 @@ export function diffList(
 	return changes;
 }
 
-export function diffMap<D extends Record<string, unknown>>(
+export function diffMap<D extends ObjectLike>(
 	doc: LoroDoc,
 	oldState: D,
 	newState: D,
 	containerId: ContainerID | "",
-	schema: LoroMapSchema<Record<string, SchemaType>> | undefined,
+	schema: LoroMapSchema<Record<string, SchemaType>> | RootSchemaType<Record<string, ContainerSchemaType>> | undefined,
 ): Change[] {
 	const changes: Change[] = [];
 	const oldStateObj = oldState as Record<string, any>;
