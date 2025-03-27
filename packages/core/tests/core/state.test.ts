@@ -6,7 +6,6 @@ import {
   LoroMapSchema,
   LoroTextSchemaType,
   NumberSchemaType,
-  RootSchemaDefinition,
   RootSchemaType,
   schema,
   StringSchemaType,

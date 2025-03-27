@@ -293,3 +293,41 @@ export function inferContainerType(
         return;
     }
 }
+
+export type ObjectLike = Record<string, unknown>;
+export type ArrayLike = Array<unknown>;
+
+/* Check if value is an object */
+export function isObjectLike(value: unknown): value is ObjectLike {
+	return typeof value === "object";
+}
+
+/* Check if value is an array */
+export function isArrayLike(value: unknown): value is ArrayLike {
+	return Array.isArray(value);
+}
+
+/* Check if value is a string */
+export function isStringLike(value: unknown): value is string {
+	return typeof value === "string";
+}
+
+/* Type guard to ensure state and schema are of the correct type */
+export function isStateAndSchemaOfType<
+	S extends ObjectLike | ArrayLike | string,
+	T extends SchemaType,
+>(
+	values: {
+		oldState: unknown;
+		newState: unknown;
+		schema: SchemaType | undefined;
+	},
+	stateGuard: (value: unknown) => value is S,
+	schemaGuard: (schema: SchemaType) => schema is T,
+): values is { oldState: S; newState: S; schema: T | undefined } {
+	return (
+		stateGuard(values.oldState) &&
+		stateGuard(values.newState) &&
+		(!values.schema || schemaGuard(values.schema))
+	);
+}
