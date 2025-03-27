@@ -2,7 +2,7 @@
  * Utility functions for Loro Mirror core
  */
 
-import { ContainerID, ContainerType } from "loro-crdt";
+import { Container, ContainerID, ContainerType, LoroDoc } from "loro-crdt";
 
 /**
  * Check if a value is an object
@@ -38,7 +38,6 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 
         return true;
     }
-
     // Handle Date objects
     if (a instanceof Date && b instanceof Date) {
         return a.getTime() === b.getTime();
@@ -162,5 +161,19 @@ export function containerIdToContainerType(containerId: ContainerID): ContainerT
         return "MovableList";
     } else {
         return undefined;
+    }
+}
+
+export function getRootContainerByType(doc: LoroDoc, key: string, type: ContainerType): Container {
+    if (type === "Text") {
+        return doc.getText(key);
+    } else if (type === "List") {
+        return doc.getList(key);
+    } else if (type === "MovableList") {
+        return doc.getMovableList(key);
+    } else if (type === "Map") {
+        return doc.getMap(key);
+    } else {
+        throw new Error();
     }
 }

@@ -32,7 +32,7 @@ import {
 } from "../schema";
 import { deepEqual, isObject } from "./utils";
 import { VirtualMovableList } from "./virtual-movable";
-import { diffMovableList } from "./diff";
+import { diffContainer, diffList, diffListWithIdSelector, diffMap, diffMovableList } from "./diff";
 
 /**
  * Sync direction for handling updates
@@ -381,7 +381,8 @@ export class Mirror<S extends SchemaType> {
                 console.log("newState:", JSON.stringify(newState, null, 2));
             }
 
-            const changes = this.findChangesForContainer(
+            const changes = diffContainer(
+                this.doc,
                 currentDocState,
                 newState,
                 "",
@@ -949,34 +950,6 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Update a specific item in a list by index
-     */
-    private updateListItemByIndex(
-        list: LoroList,
-        indexStr: string,
-        value: any,
-    ) {
-        const index = parseInt(indexStr, 10);
-        if (isNaN(index) || index < 0 || index >= list.length) {
-            return;
-        }
-
-        // Replace the item with new value
-        list.delete(index, 1);
-
-        // Get the schema for this list
-        const schema = this.getContainerSchema(list.id);
-        if (schema && schema.type === "loro-list") {
-            const itemSchema = schema.itemSchema;
-            this.insertItemIntoList(list, index, value, itemSchema);
-            return;
-        }
-
-        // Default to simple insert
-        list.insert(index, value);
-    }
-
-    /**
      * Subscribe to state changes
      */
     subscribe(callback: SubscriberCallback<InferType<S>>): () => void {
@@ -1243,60 +1216,6 @@ export class Mirror<S extends SchemaType> {
         this.initializeContainer(insertedContainer, containerType, schema, value);
     }
 
-    /**
-     * Find changes between old and new state
-     */
-    private findChangesForContainer(
-        oldState: unknown,
-        newState: unknown,
-        containerId: ContainerID | "",
-        schema: SchemaType | undefined,
-    ): Change[] {
-        const changes: Change[] = [];
-        if (containerId.endsWith("Text")) {
-            if (oldState !== newState) {
-                changes.push({
-                    container: containerId,
-                    key: "",
-                    value: newState,
-                    kind: "insert",
-                });
-            }
-            return changes;
-        }
-
-        // Handle Array (List) differently
-        if (Array.isArray(oldState) && Array.isArray(newState)) {
-            if (!containerId.endsWith("List")) {
-                throw new Error("");
-            }
-            if (
-                schema && 
-                !["loro-list", "loro-movable-list"].includes(schema.type)
-            ) {
-                throw new Error("");
-            }
-
-            changes.push(
-                ...this.findDiffInArray(
-                    containerId as ContainerID,
-                    oldState,
-                    newState,
-                    schema,
-                ),
-            );
-            return changes;
-        }
-
-        // Handle Object (Map) changes
-        return this.findChangesInLoroMap(
-            oldState,
-            newState,
-            containerId,
-            schema,
-        );
-    }
-
     private getRootContainerByType(key: string, type: ContainerType): Container {
         if (type === "Text") {
             return this.doc.getText(key);
@@ -1309,371 +1228,6 @@ export class Mirror<S extends SchemaType> {
         } else {
             throw new Error();
         }
-    }
-
-    private findChangesInLoroMap(
-        oldState: unknown,
-        newState: unknown,
-        containerId: ContainerID | "",
-        schema: SchemaType | undefined,
-    ): Change[] {
-        if (containerId) {
-            if (!containerId.endsWith("Map")) {
-                throw new Error();
-            }
-        }
-
-        const changes: Change[] = [];
-        const oldStateObj = oldState as Record<string, any>;
-        const newStateObj = newState as Record<string, any>;
-
-        // Check for removed keys
-        for (const key in oldStateObj) {
-            if (!(key in newStateObj)) {
-                changes.push({
-                    container: containerId,
-                    key,
-                    value: undefined,
-                    kind: "delete",
-                });
-            }
-        }
-
-        // Check for added or modified keys
-        for (const key in newStateObj) {
-            const oldItem = oldStateObj[key];
-            const newItem = newStateObj[key];
-
-
-            // Figure out if the modified new value is a container
-            const childSchema = (schema as
-                | LoroMapSchema<Record<string, SchemaType>>
-                | undefined)
-                ?.definition?.[key];
-            const containerType = childSchema?.getContainerType() ??
-                tryInferContainerType(newItem);
-
-            // added new key
-            if (!oldItem) {
-                // Inserted a new container
-                if (containerType) {
-                    changes.push({
-                        container: containerId,
-                        key,
-                        value: newItem,
-                        kind: "insert-container",
-                        childContainerType: containerType,
-                    });
-                // Inserted a new value
-                } else {
-                    changes.push({
-                        container: containerId,
-                        key,
-                        value: newItem,
-                        kind: "insert",
-                    });
-
-                }
-                continue;
-            } 
-
-            // Item inside map has changed
-            if (oldItem !== newItem) {
-                // The key was previously a container and new item is also a container
-                if (containerType &&
-                    isValueOfContainerType(containerType, newItem) &&
-                    isValueOfContainerType(containerType, oldItem)
-                ) {
-                    // the parent is the root container
-                    if (containerId === "") {
-                        let container = this.getRootContainerByType(key, containerType);
-                        changes.push(
-                            ...this.findChangesForContainer(
-                                oldStateObj[key],
-                                newStateObj[key],
-                                container.id,
-                                childSchema,
-                            ),
-                        );
-                        continue;
-                    }
-
-                    const container = this.doc.getContainerById(
-                        containerId,
-                    );
-
-                    if (container?.kind() !== "Map") {
-                        throw new Error("Expected map container");
-                    }
-
-                    const map = container as LoroMap;
-                    const child = map.get(key) as Container | undefined;
-                    if (!child || !isContainer(child)) {
-                        changes.push(insertChildToMap(
-                            containerId,
-                            key,
-                            newStateObj[key],
-                        ));
-                    } else {
-                        changes.push(
-                            ...this.findChangesForContainer(
-                                oldStateObj[key],
-                                newStateObj[key],
-                                child.id,
-                                childSchema,
-                            ),
-                        );
-                    }
-                // The type of the child has changed
-                // Either it was previously a container and now it's not
-                // or it was not a container and now it is
-                } else {
-                    changes.push(insertChildToMap(
-                        containerId,
-                        key,
-                        newStateObj[key],
-                    ));
-                }
-            }
-        }
-
-        return changes;
-    }
-
-    private findDiffInArray(
-        containerId: ContainerID,
-        oldState: any[],
-        newState: any[],
-        schema: LoroListSchema<SchemaType> |LoroMovableListSchema<SchemaType> | undefined,
-    ): Change[] {
-        const changes: Change[] = [];
-        if (!containerId.endsWith("List")) {
-            throw new Error();
-        }
-        // For root level lists, we need to check if this is a container
-
-        // This is a nested list, we already have the container ID
-        const container = this.doc.getContainerById(containerId);
-        const listContainer = container as LoroList;
-        const listIdSelector =
-            (schema as LoroListSchema<SchemaType> | undefined)?.idSelector;
-
-        // Find the schema for this list
-        let idSelector = listIdSelector;
-        if (idSelector) {
-
-            let ans: Change[] | undefined;
-
-            if (schema && schema.type === "loro-movable-list") {
-                ans = diffMovableList(
-                    this.doc,
-                    oldState,
-                    newState,
-                    containerId,
-                    schema,
-                    idSelector,
-                    (...args) => this.findChangesForContainer(...args),
-                );
-            } else {
-                // ans = diffListWithSelector(
-                //     this.doc,
-                //     oldState,
-                //     newState,
-                //     containerId,
-                //     schema,
-                //     idSelector,
-                //     (...args) => this.findChangesForContainer(...args),
-                //     false,
-                // );
-                ans = this.findDiffInArrayWithIdSelector(
-                    oldState,
-                    newState,
-                    idSelector,
-                    containerId,
-                    schema as LoroListSchema<SchemaType>,
-                );
-            }
-
-            if (ans) {
-                return ans;
-            }
-        }
-
-        // Fallback to index-based comparison for arrays without idSelector
-        const maxLength = Math.max(oldState.length, newState.length);
-        for (let i = 0; i < maxLength; i++) {
-            if (i >= oldState.length) {
-                // New item added
-                changes.push(tryUpdateToInsertContainer({
-                    container: containerId,
-                    key: i,
-                    value: newState[i],
-                    kind: "insert",
-                }, true, schema?.itemSchema));
-            } else if (i >= newState.length) {
-                // Item removed
-                changes.push({
-                    container: containerId,
-                    key: i,
-                    value: undefined,
-                    kind: "delete",
-                });
-            } else if (oldState[i] !== newState[i]) {
-                // Get the container for the nested item if it exists
-                const itemOnLoro = listContainer.get(i);
-                if (isContainer(itemOnLoro)) {
-                    changes.push(
-                        ...this.findChangesForContainer(
-                            oldState[i],
-                            newState[i],
-                            itemOnLoro.id,
-                            schema?.itemSchema,
-                        ),
-                    );
-                } else if (!deepEqual(oldState[i], newState[i])) {
-                    changes.push({
-                        container: containerId,
-                        key: i,
-                        value: undefined,
-                        kind: "delete",
-                    });
-                    changes.push(tryUpdateToInsertContainer({
-                        container: containerId,
-                        key: i,
-                        value: newState[i],
-                        kind: "insert",
-                    }, true, schema?.itemSchema));
-                }
-            }
-        }
-
-        return changes;
-    }
-
-    private findDiffInArrayWithIdSelector(
-        oldState: any[],
-        newState: any[],
-        idSelector: (item: any) => string,
-        containerId: ContainerID,
-        schema: LoroListSchema<SchemaType> | undefined,
-    ): Change[] | undefined {
-        const changes: Change[] = [];
-        if (this.options.debug) {
-            console.log("Using idSelector for list diff");
-        }
-
-        const useContainer = !!(schema?.itemSchema.getContainerType() ?? true);
-        // Compare arrays using the idSelector for identity
-        const oldItemsById = new Map();
-        const newItemsById = new Map();
-
-        // Map items by ID
-        oldState.forEach((item: any, index: number) => {
-            const id = idSelector(item);
-            if (id) {
-                oldItemsById.set(id, { item, index });
-            } else {
-                console.warn(
-                    `No ID found for item at index ${index}`,
-                );
-            }
-        });
-
-        newState.forEach((item: any, index: number) => {
-            const id = idSelector(item);
-            if (id) {
-                newItemsById.set(id, { item, index });
-            } else {
-                console.warn(
-                    `No ID found for item at index ${index}`,
-                );
-            }
-        });
-
-        const list = this.doc.getList(containerId);
-        let newIndex = 0;
-        let offset = 0;
-        let index = 0;
-        for (; index < oldState.length; index++) {
-            const oldItem = oldState[index];
-            const newItem = newState[newIndex];
-            if (oldItem === newItem) {
-                newIndex++;
-                continue;
-            }
-
-            const oldId = oldItem ? idSelector(oldItem) : null;
-            const newId = newItem ? idSelector(newItem) : null;
-
-            if (oldId === null || newId === null) {
-                continue;
-            }
-
-            if (oldId === newId) {
-                const item = list.get(index);
-                if (isContainer(item)) {
-                    changes.push(
-                        ...this.findChangesForContainer(
-                            oldItem,
-                            newItem,
-                            item.id,
-                            schema?.itemSchema,
-                        ),
-                    );
-                } else if (!deepEqual(oldItem, newItem)) {
-                    changes.push({
-                        container: containerId,
-                        key: index + offset,
-                        value: undefined,
-                        kind: "delete",
-                    });
-                    changes.push(tryUpdateToInsertContainer({
-                        container: containerId,
-                        key: index + offset,
-                        value: newItem,
-                        kind: "insert",
-                    }, useContainer, schema?.itemSchema));
-                }
-                newIndex++;
-                continue;
-            }
-
-            if (newId && !oldItemsById.has(newId)) {
-                changes.push(tryUpdateToInsertContainer({
-                    container: containerId,
-                    key: index + offset,
-                    value: newItem,
-                    kind: "insert",
-                }, useContainer, schema?.itemSchema));
-                index--;
-                offset++;
-                newIndex++;
-                continue;
-            }
-
-            changes.push(
-                {
-                    container: containerId,
-                    key: index + offset,
-                    value: undefined,
-                    kind: "delete",
-                },
-            );
-            offset--;
-        }
-
-        for (; newIndex < newState.length; newIndex++) {
-            const newItem = newState[newIndex];
-            changes.push(tryUpdateToInsertContainer({
-                container: containerId,
-                key: index + offset,
-                value: newItem,
-                kind: "insert",
-            }, useContainer, schema?.itemSchema));
-            offset++;
-        }
-
-        return changes;
     }
 
     /**
@@ -1838,7 +1392,7 @@ export class Mirror<S extends SchemaType> {
     }
 }
 
-function insertChildToMap(
+export function insertChildToMap(
     containerId: ContainerID | "",
     key: string,
     value: unknown,
@@ -1934,7 +1488,7 @@ export function schemaToContainerType<S extends SchemaType>(schema: S):
     return containerType as any;
 }
 
-function tryInferContainerType(value: unknown): ContainerType | undefined {
+export function tryInferContainerType(value: unknown): ContainerType | undefined {
     if (isObject(value)) {
         return "Map";
     } else if (Array.isArray(value)) {
@@ -1946,7 +1500,7 @@ function tryInferContainerType(value: unknown): ContainerType | undefined {
     }
 }
 
-function isValueOfContainerType(
+export function isValueOfContainerType(
     containerType: ContainerType,
     value: any,
 ): boolean {
