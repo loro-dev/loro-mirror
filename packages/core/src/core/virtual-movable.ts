@@ -1,19 +1,19 @@
-type ItemWithId = { id: string | number; item: any };
+type ItemWithId = { id: string; item: any };
 type ItemWithIndex = { index: number; item: any };
-type ItemWithIdAndIndex = { id: string | number; index: number; item: any };
+type ItemWithIdAndIndex = { id: string; index: number; item: any };
 
 /** 
  * Virtual list is supposed to mimic the behavior of a Loro MovableList
  * Helps with figuring out the dynamic order of operations for moves when diffing state
  */
 export class VirtualMovableList {
-	private list: ItemWithId[];
+	list: ItemWithId[];
 
-	constructor(list: Map<string | number, ItemWithIndex> = new Map()) {
+	constructor(list: Map<string, ItemWithIndex> = new Map()) {
 		this.list = Array.from(list.entries(), ([id, { item }]) => ({ id, item }));
 	}
 
-	getById(id: string | number): ItemWithIdAndIndex | undefined {
+	getById(id: string): ItemWithIdAndIndex | undefined {
 		const index = this.list.findIndex((item) => item.id === id);
 		if (index === -1) {
 			return undefined;

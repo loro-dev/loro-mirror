@@ -2,6 +2,8 @@
  * Utility functions for Loro Mirror core
  */
 
+import { ContainerID, ContainerType } from "loro-crdt";
+
 /**
  * Check if a value is an object
  */
@@ -146,4 +148,19 @@ export function containerIdWithoutIndex(containerId: string): string {
         return containerId;
     }
     return containerId.substring(0, index);
+}
+
+export function containerIdToContainerType(containerId: ContainerID): ContainerType | undefined {
+
+    if (containerId.endsWith(":Map")) {
+        return "Map";
+    } else if (containerId.endsWith(":List")) {
+        return "List";
+    } else if (containerId.endsWith(":Text")) {
+        return "Text";
+    } else if (containerId.endsWith(":MovableList")) {
+        return "MovableList";
+    } else {
+        return undefined;
+    }
 }

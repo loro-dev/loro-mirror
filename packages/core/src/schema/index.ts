@@ -128,7 +128,7 @@ schema.LoroList = function <T extends SchemaType>(
 
 schema.LoroMovableList = function <T extends SchemaType>(
     itemSchema: T,
-    idSelector?: (item: any) => string,
+    idSelector: (item: any) => string,
     options?: SchemaOptions,
 ): LoroMovableListSchema<T> {
     return {

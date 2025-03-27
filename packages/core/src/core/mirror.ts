@@ -32,6 +32,7 @@ import {
 } from "../schema";
 import { deepEqual, isObject } from "./utils";
 import { VirtualMovableList } from "./virtual-movable";
+import { diffMovableList } from "./diff";
 
 /**
  * Sync direction for handling updates
@@ -91,7 +92,7 @@ export interface MirrorOptions<S extends SchemaType> {
     debug?: boolean;
 }
 
-type Change = {
+export type Change = {
     container: ContainerID | "";
     key: string | number;
     value: any;
@@ -1464,14 +1465,26 @@ export class Mirror<S extends SchemaType> {
             let ans: Change[] | undefined;
 
             if (schema && schema.type === "loro-movable-list") {
-                ans = this.findDiffInMoveableList(
+                ans = diffMovableList(
+                    this.doc,
                     oldState,
                     newState,
-                    idSelector,
                     containerId,
-                    schema as LoroMovableListSchema<SchemaType>,
+                    schema,
+                    idSelector,
+                    (...args) => this.findChangesForContainer(...args),
                 );
             } else {
+                // ans = diffListWithSelector(
+                //     this.doc,
+                //     oldState,
+                //     newState,
+                //     containerId,
+                //     schema,
+                //     idSelector,
+                //     (...args) => this.findChangesForContainer(...args),
+                //     false,
+                // );
                 ans = this.findDiffInArrayWithIdSelector(
                     oldState,
                     newState,
@@ -1535,170 +1548,6 @@ export class Mirror<S extends SchemaType> {
         }
 
         return changes;
-    }
-
-    /** 
-     * Find changes in a movable list
-     */
-    private findDiffInMoveableList(
-        oldState: unknown[],
-        newState: unknown[],
-        idSelector: (item: unknown) => string,
-        containerId: ContainerID,
-        schema: LoroMovableListSchema<SchemaType> | undefined,
-    ) : Change[] {
-        const changes: Change[] = [];
-
-        const oldItemsById: Map<string, { item: unknown, index: number}> = new Map();
-        const newItemsById: Map<string, { item: unknown, index: number}> = new Map();
-
-        if (oldState.filter(item => item === undefined ).length > 0) {
-            console.error("OLD STATE HAS UNDEFINED", oldState);
-            throw new Error("OLD STATE HAS UNDEFINED");
-        }
-
-        if (newState.filter(item => item === undefined ).length > 0) {
-            console.error("NEW STATE HAS UNDEFINED");
-            throw new Error("NEW STATE HAS UNDEFINED");
-        }
-
-        // Populate maps for old items
-        oldState.forEach((item: any, index: number) => {
-            const id = idSelector(item);
-            if (id) {
-                oldItemsById.set(id, { item, index });
-            } else {
-                console.warn(
-                    `No ID found for item at index ${index}`,
-                );
-            }
-        });
-
-        // Populate maps for new items
-        newState.forEach((item: any, index: number) => {
-            const id = idSelector(item);
-            if (id) {
-                newItemsById.set(id, { item, index });
-            } else {
-                console.warn(
-                    `No ID found for item at index ${index}`,
-                );
-            }
-        });
-
-        const movableList = this.doc.getMovableList(containerId);
-        const indexesInserted = new Set<number>();
-        const virtualList = new VirtualMovableList(oldItemsById);
-
-
-        for (const [id, { index }] of oldItemsById.entries()) {
-            // Item has been deleted
-            if (!newItemsById.has(id)) {
-                changes.push({
-                    container: containerId,
-                    key: index,
-                    value: undefined,
-                    kind: "delete",
-                });
-                virtualList.deleteById(id);
-                continue;
-            }
-        }
-
-        // Check for Insertions
-        for (const [id, {index, item}] of newItemsById.entries()) {
-            if (!oldItemsById.has(id)) {
-
-                const change = tryUpdateToInsertContainer({
-                    container: containerId,
-                    key: index,
-                    value: item,
-                    kind: "insert",
-                }, true, schema?.itemSchema);
-                indexesInserted.add(index);
-                virtualList.insert(index, { id, item });
-                changes.push(change);
-            }
-        }
-
-        // Check for moves
-        for (const [id, { index }] of oldItemsById.entries()) {
-            const virtualItem = virtualList.getById(id);
-
-            // Item has been deleted
-            if (!virtualItem) {
-                continue;
-            }
-
-            const currentIndex = virtualItem?.index;
-            const desiredIndex = newItemsById.get(id)!.index;
-
-            // Item has been moved
-            if (
-                virtualItem &&
-                currentIndex &&
-                currentIndex !== desiredIndex
-            ) {
-                changes.push({
-                    container: containerId,
-                    key: currentIndex!,
-                    value: virtualItem.item,
-                    kind: "move",
-                    fromIndex: currentIndex,
-                    toIndex: desiredIndex,
-                })
-
-                virtualList.move(currentIndex, desiredIndex);
-
-                continue;
-            }
-        }
-
-        // Handle updates
-        for (const id of newItemsById.keys()) {
-            const oldItem = oldItemsById.get(id);
-            const currentItem = virtualList.getById(id);
-            const newItem = newItemsById.get(id);
-
-            if (!oldItem) {
-                continue;
-            }
-            if (!currentItem || !newItem) {
-                throw new Error("Failed to find item in virtual list");
-            };
-
-            if (deepEqual(oldItem.item, newItem.item)) continue;
-
-            const oldIndex = oldItem.index;
-            const item = movableList.get(oldIndex);
-            const currentIndex = currentItem.index;
-
-            if (isContainer(item)) {
-                changes.push(
-                    ...this.findChangesForContainer(
-                        currentItem.item,
-                        newItem.item,
-                        item.id,
-                        schema?.itemSchema,
-                    )
-                )
-            } else{
-                changes.push({
-                    container: containerId,
-                    key: currentIndex,
-                    value: undefined,
-                    kind: "delete",
-                });
-                changes.push({
-                    container: containerId,
-                    key: currentIndex,
-                    value: newItem.item,
-                    kind: "insert",
-                });
-            }
-        }
-
-        return changes
     }
 
     private findDiffInArrayWithIdSelector(
@@ -2020,7 +1869,7 @@ function insertChildToMap(
     }
 }
 
-function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, schema: SchemaType | undefined): Change {
+export function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, schema: SchemaType | undefined): Change {
     if (!toUpdate) {
         return change;
     }
@@ -2060,7 +1909,7 @@ function assertNever(value: never): never {
 }
 
 
-function inferContainerType(
+export function inferContainerType(
     value: unknown,
 ): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined {
     if (isObject(value)) {
@@ -2074,7 +1923,7 @@ function inferContainerType(
     }
 }
 
-function schemaToContainerType<S extends SchemaType>(schema: S):
+export function schemaToContainerType<S extends SchemaType>(schema: S):
     S extends LoroMapSchema<any> ? "Map" :
     S extends LoroListSchema<any> ? "List" :
     S extends LoroMovableListSchema<any> ? "MovableList" :
