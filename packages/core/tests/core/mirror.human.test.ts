@@ -89,7 +89,6 @@ it("works without schema", async () => {
     ]);
 
     let f = doc.frontiers();
-    console.log("SetState");
     mirror.setState((state) => {
         return {
             todos: state.todos.map((todo) => ({

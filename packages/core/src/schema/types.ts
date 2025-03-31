@@ -75,6 +75,15 @@ export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
 }
 
 /**
+ * Loro Movable List schema type
+ */
+export interface LoroMovableListSchema<T extends SchemaType> extends BaseSchemaType {
+    type: "loro-movable-list";
+    itemSchema: T;
+    idSelector?: (item: any) => string;
+}
+
+/**
  * Loro Text schema type
  */
 export interface LoroTextSchemaType extends BaseSchemaType {
@@ -100,12 +109,14 @@ export type SchemaType =
     | IgnoreSchemaType
     | LoroMapSchema<Record<string, SchemaType>>
     | LoroListSchema<SchemaType>
+    | LoroMovableListSchema<SchemaType>
     | LoroTextSchemaType
     | RootSchemaType<Record<string, ContainerSchemaType>>;
 
 export type ContainerSchemaType =
     | LoroMapSchema<Record<string, SchemaType>>
     | LoroListSchema<SchemaType>
+    | LoroMovableListSchema<SchemaType>
     | LoroTextSchemaType;
 
 /**
@@ -135,6 +146,7 @@ export type InferType<S extends SchemaType> = S extends StringSchemaType
     : S extends LoroTextSchemaType ? string
     : S extends LoroMapSchema<infer M> ? { [K in keyof M]: InferType<M[K]> }
     : S extends LoroListSchema<infer I> ? Array<InferType<I>>
+    : S extends LoroMovableListSchema<infer I> ? Array<InferType<I>>
     : S extends RootSchemaType<infer R> ? { [K in keyof R]: InferType<R[K]> }
     : never;
 

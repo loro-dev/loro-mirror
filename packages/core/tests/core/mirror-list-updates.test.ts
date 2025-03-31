@@ -7,7 +7,7 @@
 import { Mirror } from "../../src/core/mirror";
 import { LoroDoc, LoroMap } from "loro-crdt";
 import { schema } from "../../src/schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("Mirror List Update Optimization", () => {
     // Utility function to wait for sync to complete (three microtasks for better reliability)
@@ -38,7 +38,7 @@ describe("Mirror List Update Optimization", () => {
         const doc = new LoroDoc();
 
         // Set up the container structure properly before creating the mirror
-        const todosList = doc.getList("todos");
+        doc.getList("todos");
         doc.commit();
 
         const mirror = new Mirror({
@@ -210,9 +210,6 @@ describe("Mirror List Update Optimization", () => {
 
         await waitForSync();
 
-        // Add debug logging to help understand what's happening
-        console.log("Initial state after syncs:", mirror.getState());
-
         // Verify initial state
         expect(mirror.getState().items).toHaveLength(3);
         expect(mirror.getState().items[0].value).toBe("Item 1");
@@ -290,7 +287,7 @@ describe("Mirror List Update Optimization", () => {
         const doc = new LoroDoc();
 
         // Set up the container structure properly before creating the mirror
-        const categoriesList = doc.getList("categories");
+        doc.getList("categories");
         doc.commit();
 
         const mirror = new Mirror({
@@ -428,10 +425,20 @@ describe("Mirror List Update Optimization", () => {
             ),
         });
 
+        const movableListSchema = schema({
+            items: schema.LoroMovableList(
+                schema.LoroMap({
+                    id: schema.String({ required: true }),
+                    value: schema.String({ required: true }),
+                }),
+                (item) => item.id,
+            ),
+        });
+
         // Create mirrors for both schemas
         const docWithId = new LoroDoc();
         // Set up container for docWithId
-        const itemsListWithId = docWithId.getList("items");
+        docWithId.getList("items");
         docWithId.commit();
 
         const mirrorWithId = new Mirror({
@@ -441,13 +448,24 @@ describe("Mirror List Update Optimization", () => {
 
         const docWithoutId = new LoroDoc();
         // Set up container for docWithoutId
-        const itemsListWithoutId = docWithoutId.getList("items");
+        docWithoutId.getList("items");
         docWithoutId.commit();
 
         const mirrorWithoutId = new Mirror({
             doc: docWithoutId,
             schema: withoutIdSchema,
         });
+
+        const docMovable = new LoroDoc();
+        // Set up container for docWithoutId
+        docMovable.getMovableList("items");
+        docMovable.commit();
+
+        const mirrorMovable = new Mirror({
+            doc: docMovable,
+            schema: movableListSchema,
+        });
+
 
         // Generate 10 items
         const items = Array.from({ length: 10 }, (_, i) => ({
@@ -458,18 +476,22 @@ describe("Mirror List Update Optimization", () => {
         // Set initial state for both
         mirrorWithId.setState({ items });
         mirrorWithoutId.setState({ items });
+        mirrorMovable.setState({ items });
         docWithId.commit();
         docWithoutId.commit();
+        docMovable.commit();
 
         // Wait for sync to complete
         await waitForSync();
         mirrorWithId.sync();
         mirrorWithoutId.sync();
+        mirrorMovable.sync();
         await waitForSync();
 
         // Verify initial state
         expect(mirrorWithId.getState().items).toHaveLength(10);
         expect(mirrorWithoutId.getState().items).toHaveLength(10);
+        expect(mirrorMovable.getState().items).toHaveLength(10);
 
         // Reorder the items (reverse them)
         const reversedItems = [...items].reverse();
@@ -477,6 +499,7 @@ describe("Mirror List Update Optimization", () => {
         // Update both mirrors
         mirrorWithId.setState({ items: reversedItems });
         mirrorWithoutId.setState({ items: reversedItems });
+        mirrorMovable.setState({ items: reversedItems });
         docWithId.commit();
         docWithoutId.commit();
 
@@ -490,11 +513,18 @@ describe("Mirror List Update Optimization", () => {
         for (let i = 0; i < 10; i++) {
             expect(mirrorWithId.getState().items[i].id).toBe(`id-${9 - i}`);
             expect(mirrorWithoutId.getState().items[i].id).toBe(`id-${9 - i}`);
+            expect(mirrorMovable.getState().items[i].id).toBe(`id-${9 - i}`);
         }
 
         // Only compare the items arrays, not the full state objects with temp maps
         expect(mirrorWithId.getState().items).toEqual(
             mirrorWithoutId.getState().items,
         );
+
+        expect(mirrorWithoutId.getState().items).toEqual(
+            mirrorMovable.getState().items,
+        );
+
     });
+
 });
