@@ -113,17 +113,43 @@ export type Change<K extends string | number = string | number> =
         childContainerType?: ContainerType;
     };
 
+/**
+ * Options for setState and sync operations
+ */
+export interface SetStateOptions {
+    /**
+     * Tags to attach to this state update
+     * Tags can be used for tracking the source of changes or grouping related changes
+     */
+    tags?: string[] | string;
+}
+
 type ContainerRegistry = Map<ContainerID, {
     schema: ContainerSchemaType | undefined;
     registered: boolean;
 }>;
 
 /**
+ * Additional metadata for state updates
+ */
+export interface UpdateMetadata {
+    /**
+     * Direction of the sync operation
+     */
+    direction: SyncDirection;
+    
+    /**
+     * Tags associated with this update, if any
+     */
+    tags?: string[];
+}
+
+/**
  * Callback type for subscribers
  */
 export type SubscriberCallback<T> = (
     state: T,
-    direction: SyncDirection,
+    metadata: UpdateMetadata,
 ) => void;
 
 /**
@@ -958,10 +984,17 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Notify all subscribers of state change
+     * @param direction The direction of the sync operation
+     * @param tags Optional tags associated with this update
      */
-    private notifySubscribers(direction: SyncDirection) {
+    private notifySubscribers(direction: SyncDirection, tags?: string[]) {
+        const metadata: UpdateMetadata = {
+            direction,
+            tags
+        };
+        
         for (const subscriber of this.subscribers) {
-            subscriber(this.state, direction);
+            subscriber(this.state, metadata);
         }
     }
 
@@ -1311,11 +1344,14 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Update state and propagate changes to Loro
+     * @param updater Function or object to update state
+     * @param options Optional settings including tags
      */
     setState(
         updater:
             | ((state: InferType<S>) => InferType<S>)
             | Partial<InferType<S>>,
+        options?: SetStateOptions,
     ) {
         if (this.syncing) return; // Prevent recursive updates
 
@@ -1337,6 +1373,11 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
+        // Extract tags for this update
+        const tags = options?.tags 
+            ? (Array.isArray(options.tags) ? options.tags : [options.tags])
+            : undefined;
+
         // Update Loro based on new state
         this.updateLoro(newState);
 
@@ -1344,7 +1385,7 @@ export class Mirror<S extends SchemaType> {
         this.state = newState;
 
         // Notify subscribers
-        this.notifySubscribers(SyncDirection.TO_LORO);
+        this.notifySubscribers(SyncDirection.TO_LORO, tags);
     }
 
     /**
