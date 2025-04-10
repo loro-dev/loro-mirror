@@ -256,9 +256,7 @@ export function tryInferContainerType(value: unknown): ContainerType | undefined
         return "Map";
     } else if (Array.isArray(value)) {
         return "List";
-    } else if (typeof value === "string") {
-        return "Text";
-    } else {
+    }  else {
         return;
     }
 }
@@ -287,8 +285,6 @@ export function inferContainerType(
         return "loro-map";
     } else if (Array.isArray(value)) {
         return "loro-list";
-    } else if (typeof value === "string") {
-        return "loro-text";
     } else {
         return;
     }

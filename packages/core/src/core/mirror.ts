@@ -6,6 +6,8 @@ import {
     Container,
     ContainerID,
     ContainerType,
+    Delta,
+    isContainer,
     LoroDoc,
     LoroEventBatch,
     LoroList,
@@ -97,21 +99,21 @@ export interface MirrorOptions<S extends SchemaType> {
 
 export type Change<K extends string | number = string | number> =
     | {
-        container: ContainerID | "";
-        key: K;
-        value: any;
-        kind: "insert" | "delete" | "insert-container";
-        childContainerType?: ContainerType;
-    }
+          container: ContainerID | "";
+          key: K;
+          value: any;
+          kind: "insert" | "delete" | "insert-container";
+          childContainerType?: ContainerType;
+      }
     | {
-        container: ContainerID;
-        key: number;
-        value: any;
-        kind: "move";
-        fromIndex: number;
-        toIndex: number;
-        childContainerType?: ContainerType;
-    };
+          container: ContainerID;
+          key: number;
+          value: any;
+          kind: "move";
+          fromIndex: number;
+          toIndex: number;
+          childContainerType?: ContainerType;
+      };
 
 /**
  * Options for setState and sync operations
@@ -124,10 +126,13 @@ export interface SetStateOptions {
     tags?: string[] | string;
 }
 
-type ContainerRegistry = Map<ContainerID, {
-    schema: ContainerSchemaType | undefined;
-    registered: boolean;
-}>;
+type ContainerRegistry = Map<
+    ContainerID,
+    {
+        schema: ContainerSchemaType | undefined;
+        registered: boolean;
+    }
+>;
 
 /**
  * Additional metadata for state updates
@@ -137,7 +142,7 @@ export interface UpdateMetadata {
      * Direction of the sync operation
      */
     direction: SyncDirection;
-    
+
     /**
      * Tags associated with this update, if any
      */
@@ -387,12 +392,61 @@ export class Mirror<S extends SchemaType> {
 
             this.state = newState;
 
+            this.registerContainersFromLoroEvent(event);
+
             // Notify subscribers of the update
             this.notifySubscribers(SyncDirection.FROM_LORO);
         } finally {
             this.syncing = false;
         }
     };
+
+    /**
+     * Processes container additions/removals from the LoroDoc
+     * and ensures the containers are reflected in the container registry.
+     */
+    private registerContainersFromLoroEvent(batch: LoroEventBatch) {
+        for (const event of batch.events) {
+            if (event.diff.type === "list") {
+                const diff = event.diff.diff;
+
+                for (const change of diff) {
+                    if (!change.insert) continue;
+                    // TODO: handle removals
+                    for (const item of change.insert) {
+                        if (isContainer(item)) {
+                            const container = item;
+                            const schema = this.getContainerSchema(
+                                event.target,
+                            );
+
+                            const containerSchema =
+                                schema && isLoroListSchema(schema)
+                                    ? (schema.itemSchema as ContainerSchemaType)
+                                    : undefined;
+
+                            this.registerContainer(
+                                container.id,
+                                containerSchema,
+                            );
+                        }
+                    }
+                }
+            } else if (event.diff.type === "map") {
+                const diff = event.diff.updated;
+
+                for (const [key, change] of Object.entries(diff)) {
+                    const schema = this.getSchemaForChild(event.target, key);
+                    if (isContainer(change)) {
+                        const containerSchema = isContainerSchema(schema)
+                            ? schema
+                            : undefined;
+                        this.registerContainer(change.id, containerSchema);
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * Handle events from individual containers
@@ -990,9 +1044,9 @@ export class Mirror<S extends SchemaType> {
     private notifySubscribers(direction: SyncDirection, tags?: string[]) {
         const metadata: UpdateMetadata = {
             direction,
-            tags
+            tags,
         };
-        
+
         for (const subscriber of this.subscribers) {
             subscriber(this.state, metadata);
         }
@@ -1088,9 +1142,7 @@ export class Mirror<S extends SchemaType> {
             throw new Error("Failed to insert container into map");
         }
 
-        if (schema) {
-            this.registerContainer(insertedContainer.id, schema);
-        }
+        this.registerContainer(insertedContainer.id, schema);
 
         this.initializeContainer(
             insertedContainer,
@@ -1241,9 +1293,7 @@ export class Mirror<S extends SchemaType> {
             throw new Error("Failed to insert container into list");
         }
 
-        if (schema) {
-            this.registerContainer(insertedContainer.id, schema);
-        }
+        this.registerContainer(insertedContainer.id, schema);
 
         this.initializeContainer(
             insertedContainer,
@@ -1374,8 +1424,10 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Extract tags for this update
-        const tags = options?.tags 
-            ? (Array.isArray(options.tags) ? options.tags : [options.tags])
+        const tags = options?.tags
+            ? Array.isArray(options.tags)
+                ? options.tags
+                : [options.tags]
             : undefined;
 
         // Update Loro based on new state
