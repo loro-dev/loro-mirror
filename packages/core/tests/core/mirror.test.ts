@@ -1,5 +1,5 @@
 import { Mirror, SyncDirection } from "../../src/core/mirror";
-import { valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
+import { isValueOfContainerType, valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
 import { schema } from "../../src/schema";
 import { Container, isContainer, LoroDoc, LoroList, LoroMap } from "loro-crdt";
 import { assert, beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,9 +91,9 @@ describe("Mirror - State Consistency", () => {
     const stateChanges: Array<{ meta: { counter: unknown } }> = [];
     const directions: SyncDirection[] = [];
 
-    mirror.subscribe((state, direction) => {
+    mirror.subscribe((state, meta) => {
       stateChanges.push({ ...state }); // Clone to avoid reference issues
-      directions.push(direction);
+      directions.push(meta.direction);
     });
 
     // Update LoroDoc
@@ -565,7 +565,7 @@ describe("Mirror - State Consistency", () => {
     // Unsubscribe should still work (even though dispose already cleaned up)
     unsubscribe();
   });
-  
+
   it("correctly initializes nested containers with schemas", async () => {
     const nestedSchema = schema({
       users: schema.LoroMap({
@@ -770,14 +770,14 @@ describe("Mirror - State Consistency", () => {
       initialState: initialState,
     });
 
-    const snapshot = loroDoc.export({mode: "snapshot"});
+    const snapshot = loroDoc.export({ mode: "snapshot" });
 
     // New doc for testing updates
     let doc2 = new LoroDoc();
     doc2.import(snapshot);
     doc2.getMap("root").set("name", "Root2");
 
-    const update = doc2.export({mode: "update"});
+    const update = doc2.export({ mode: "update" });
     let counter = 0;
 
     mirror.subscribe((_) => {
@@ -792,5 +792,30 @@ describe("Mirror - State Consistency", () => {
 
     // Subscriber should have been called once for the import
     expect(counter).toBe(1);
+  })
+
+  it("should respect the infer options that are passed to it", async () => {
+    const someState = {
+      list: [
+        {}
+      ],
+      text: "some string",
+    };
+
+    const doc = new LoroDoc();
+    const mirror = new Mirror({
+      doc,
+      inferOptions: {
+        defaultLoroText: true,
+        defaultMovableList: true,
+      }
+    })
+
+    mirror.setState(someState);
+    await waitForSync();
+
+    const state = doc.getDeepValueWithID();
+
+    expect(valueIsContainerOfType(state.list, "MovableList")).toBe(true); expect(valueIsContainerOfType(state.text, "Text")).toBe(true);
   })
 });

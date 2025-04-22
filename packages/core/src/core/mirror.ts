@@ -6,7 +6,6 @@ import {
     Container,
     ContainerID,
     ContainerType,
-    Delta,
     isContainer,
     LoroDoc,
     LoroEventBatch,
@@ -31,7 +30,7 @@ import {
 } from "../schema";
 import {
     deepEqual,
-    inferContainerType,
+    inferContainerTypeFromValue,
     isObject,
     isValueOfContainerType,
     schemaToContainerType,
@@ -95,6 +94,16 @@ export interface MirrorOptions<S extends SchemaType> {
      * @default false
      */
     debug?: boolean;
+
+    /**
+     * Default values for new containers
+     */
+    inferOptions?: InferContainerOptions;
+}
+
+export type InferContainerOptions = {
+    defaultLoroText?: boolean;
+    defaultMovableList?: boolean;
 }
 
 export type Change<K extends string | number = string | number> =
@@ -192,6 +201,7 @@ export class Mirror<S extends SchemaType> {
             validateUpdates: options.validateUpdates !== false,
             throwOnValidationError: options.throwOnValidationError || false,
             debug: options.debug || false,
+            inferOptions: options.inferOptions || {},
         };
 
         // Initialize state with defaults and initial state
@@ -502,6 +512,7 @@ export class Mirror<S extends SchemaType> {
                 newState,
                 "",
                 this.schema,
+                this.options?.inferOptions,
             );
 
             if (this.options.debug) {
@@ -571,7 +582,7 @@ export class Mirror<S extends SchemaType> {
 
             const fieldSchema = (this.schema as RootSchemaType<any>)
                 ?.definition?.[keyStr];
-            const type = fieldSchema?.type || inferContainerType(value);
+            const type = fieldSchema?.type || inferContainerTypeFromValue(value, this.options?.inferOptions);
             let container: Container | null = null;
 
             // Create or get the container based on the schema type
@@ -1012,7 +1023,7 @@ export class Mirror<S extends SchemaType> {
             isContainer = true;
             containerSchema = itemSchema;
         } else {
-            isContainer = tryInferContainerType(item) !== undefined;
+            isContainer = tryInferContainerType(item, this.options?.inferOptions) !== undefined;
         }
 
         if (isContainer && typeof item === "object" && item !== null) {
@@ -1252,7 +1263,7 @@ export class Mirror<S extends SchemaType> {
     ): [Container, ContainerType] {
         const containerType = schema
             ? schemaToContainerType(schema)
-            : tryInferContainerType(value);
+            : tryInferContainerType(value, this.options?.inferOptions);
 
         switch (containerType) {
             case "Map":
