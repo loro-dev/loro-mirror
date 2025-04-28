@@ -19,6 +19,7 @@ import {
     getDefaultValue,
     InferType,
     isContainerSchema,
+    isListLikeSchema,
     isLoroListSchema,
     isLoroMapSchema,
     isLoroMovableListSchema,
@@ -104,25 +105,25 @@ export interface MirrorOptions<S extends SchemaType> {
 export type InferContainerOptions = {
     defaultLoroText?: boolean;
     defaultMovableList?: boolean;
-}
+};
 
 export type Change<K extends string | number = string | number> =
     | {
-          container: ContainerID | "";
-          key: K;
-          value: any;
-          kind: "insert" | "delete" | "insert-container";
-          childContainerType?: ContainerType;
-      }
+        container: ContainerID | "";
+        key: K;
+        value: any;
+        kind: "insert" | "delete" | "insert-container";
+        childContainerType?: ContainerType;
+    }
     | {
-          container: ContainerID;
-          key: number;
-          value: any;
-          kind: "move";
-          fromIndex: number;
-          toIndex: number;
-          childContainerType?: ContainerType;
-      };
+        container: ContainerID;
+        key: number;
+        value: any;
+        kind: "move";
+        fromIndex: number;
+        toIndex: number;
+        childContainerType?: ContainerType;
+    };
 
 /**
  * Options for setState and sync operations
@@ -315,6 +316,7 @@ export class Mirror<S extends SchemaType> {
 
         try {
             const shallowValue = (container as any).getShallowValue();
+            console.log("shallow value", JSON.stringify(shallowValue, null, 2));
 
             if (container.kind() === "Map") {
                 // For maps, check each value
@@ -402,11 +404,10 @@ export class Mirror<S extends SchemaType> {
 
             this.state = newState;
 
-            this.registerContainersFromLoroEvent(event);
-
             // Notify subscribers of the update
             this.notifySubscribers(SyncDirection.FROM_LORO);
         } finally {
+            this.registerContainersFromLoroEvent(event);
             this.syncing = false;
         }
     };
@@ -414,31 +415,43 @@ export class Mirror<S extends SchemaType> {
     /**
      * Processes container additions/removals from the LoroDoc
      * and ensures the containers are reflected in the container registry.
+     *
+     * TODO: need to handle removing containers from the registry on import
+     * right now the Diff Delta only returns the number of items removed
+     * not the container IDs , of those that were removed.
      */
     private registerContainersFromLoroEvent(batch: LoroEventBatch) {
         for (const event of batch.events) {
             if (event.diff.type === "list") {
                 const diff = event.diff.diff;
 
+                const schema = this.getContainerSchema(event.target);
+
                 for (const change of diff) {
                     if (!change.insert) continue;
-                    // TODO: handle removals
                     for (const item of change.insert) {
                         if (isContainer(item)) {
                             const container = item;
-                            const schema = this.getContainerSchema(
-                                event.target,
-                            );
 
-                            const containerSchema =
-                                schema && isLoroListSchema(schema)
-                                    ? (schema.itemSchema as ContainerSchemaType)
-                                    : undefined;
+                            let containerSchema:
+                                | ContainerSchemaType
+                                | undefined;
+
+                            if (schema && isListLikeSchema(schema)) {
+                                containerSchema =
+                                    schema.itemSchema as ContainerSchemaType;
+                            }
 
                             this.registerContainer(
                                 container.id,
                                 containerSchema,
                             );
+
+                            if (!containerSchema) {
+                                console.warn(
+                                    `Container schema not found for key  in list ${event.target}`,
+                                );
+                            }
                         }
                     }
                 }
@@ -452,6 +465,12 @@ export class Mirror<S extends SchemaType> {
                             ? schema
                             : undefined;
                         this.registerContainer(change.id, containerSchema);
+
+                        if (!containerSchema) {
+                            console.warn(
+                                `Container schema not found for key ${key} in map ${event.target}`,
+                            );
+                        }
                     }
                 }
             }
@@ -582,7 +601,9 @@ export class Mirror<S extends SchemaType> {
 
             const fieldSchema = (this.schema as RootSchemaType<any>)
                 ?.definition?.[keyStr];
-            const type = fieldSchema?.type || inferContainerTypeFromValue(value, this.options?.inferOptions);
+            const type =
+                fieldSchema?.type ||
+                inferContainerTypeFromValue(value, this.options?.inferOptions);
             let container: Container | null = null;
 
             // Create or get the container based on the schema type
@@ -1023,7 +1044,9 @@ export class Mirror<S extends SchemaType> {
             isContainer = true;
             containerSchema = itemSchema;
         } else {
-            isContainer = tryInferContainerType(item, this.options?.inferOptions) !== undefined;
+            isContainer =
+                tryInferContainerType(item, this.options?.inferOptions) !==
+                undefined;
         }
 
         if (isContainer && typeof item === "object" && item !== null) {

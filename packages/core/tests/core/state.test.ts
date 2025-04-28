@@ -11,16 +11,7 @@ import {
   StringSchemaType,
 } from "../../src/schema";
 import { SyncDirection } from "../../src/core/mirror";
-import { LoroDoc, LoroList, LoroMap } from "loro-crdt";
-
-// Type guard for LoroMap
-function isLoroMap(obj: unknown): obj is LoroMap {
-  return obj !== null &&
-    typeof obj === "object" &&
-    "kind" in obj &&
-    typeof obj.kind === "function" &&
-    obj.kind() === "Map";
-}
+import { LoroDoc } from "loro-crdt";
 
 // Utility to wait for sync to complete (three microtasks for reliable sync)
 const waitForSync = async () => {
@@ -186,7 +177,7 @@ describe("Core State Management", () => {
       await waitForSync();
 
       // Get the current state to check format
-      const currentState = store.getState() as TestState;
+      store.getState() as TestState;
 
       // Update state with proper format handling
       store.setState((state) => ({
@@ -213,7 +204,7 @@ describe("Core State Management", () => {
       await waitForSync();
 
       // Get the current state to check format
-      const currentState = store.getState() as TestState;
+      store.getState() as TestState;
 
       // Update state with a function, handling both object and primitive formats
       store.setState((state: TestState) => {
@@ -251,8 +242,7 @@ describe("Core State Management", () => {
       const unsubscribe = store.subscribe(subscriber);
 
       // Get the current state to check format
-      const currentState = store.getState() as TestState;
-
+      store.getState() as TestState;
       // Update state using proper format
       store.setState((state) => ({
         ...state,
@@ -264,7 +254,7 @@ describe("Core State Management", () => {
 
       expect(subscriber).toHaveBeenCalledWith(
         expect.any(Object),
-        SyncDirection.TO_LORO,
+        {direction: SyncDirection.TO_LORO, tags: undefined},
       );
       expect(subscriber).toHaveBeenCalledTimes(1);
 
@@ -298,7 +288,7 @@ describe("Core State Management", () => {
       await waitForSync();
 
       // Get the current state to check format
-      const currentState = store.getState() as TestState;
+      store.getState() as TestState;
 
       // First manually update the loro document directly
       const map = doc.getMap("meta");
@@ -416,7 +406,7 @@ describe("Core State Management", () => {
 
       metaMap.set("count", 0);
       metaMap.set("text", "");
-      const todosList = doc.getList("todos");
+      doc.getList("todos");
 
       // Commit all changes
       doc.commit();

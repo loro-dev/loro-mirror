@@ -1,7 +1,7 @@
-import { Mirror, SyncDirection } from "../../src/core/mirror";
+import { Mirror } from "../../src/core/mirror";
 import { schema } from "../../src/schema";
 import { isContainer, LoroDoc, LoroMap } from "loro-crdt";
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 
 it("syncs initial state from LoroDoc correctly", async () => {
     const doc = new LoroDoc();
@@ -91,7 +91,7 @@ it("works without schema", async () => {
     let f = doc.frontiers();
     mirror.setState((state) => {
         return {
-            todos: state.todos.map((todo) => ({
+            todos: state.todos.map((todo: any) => ({
                 ...todo,
                 completed: !todo.completed,
             })),
@@ -130,7 +130,7 @@ it("syncing from state => LoroDoc", async () => {
     const f = doc.frontiers();
     mirror.setState((state) => {
         return {
-            todos: state.todos.map((todo) => ({
+            todos: state.todos.map((todo: any) => ({
                 ...todo,
                 completed: !todo.completed,
             })),
@@ -145,7 +145,7 @@ it("syncing from state => LoroDoc", async () => {
     });
     const f2 = doc.frontiers();
     expect(f2[0].counter - f[0].counter).toBe(2);
-    const v = doc.toJsonWithReplacer((key, v) => {
+    const v = doc.toJsonWithReplacer((_, v) => {
         if (isContainer(v)) {
             return {
                 id: v.id,

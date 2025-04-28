@@ -3,7 +3,7 @@
  */
 import { produce } from "immer";
 import type { LoroDoc } from "loro-crdt";
-import { Mirror, SyncDirection } from "./mirror";
+import { Mirror, UpdateMetadata } from "./mirror";
 import { InferType, SchemaType } from "../schema";
 
 /**
@@ -66,7 +66,7 @@ export interface Store<S extends SchemaType> {
      * Subscribe to state changes
      */
     subscribe: (
-        callback: (state: InferType<S>, direction: SyncDirection) => void,
+        callback: (state: InferType<S>, metadata: UpdateMetadata) => void,
     ) => () => void;
 
     /**

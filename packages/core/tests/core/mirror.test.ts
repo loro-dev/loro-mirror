@@ -1,8 +1,8 @@
 import { Mirror, SyncDirection } from "../../src/core/mirror";
-import { isValueOfContainerType, valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
+import { valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
 import { schema } from "../../src/schema";
-import { Container, isContainer, LoroDoc, LoroList, LoroMap } from "loro-crdt";
-import { assert, beforeEach, describe, expect, it, vi } from "vitest";
+import { LoroDoc } from "loro-crdt";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("Mirror - State Consistency", () => {
   let doc: LoroDoc;
@@ -46,11 +46,13 @@ describe("Mirror - State Consistency", () => {
     const state = mirror.getState();
 
     // Verify mirror state matches LoroDoc
+    //@ts-ignore
     expect(state.todos["1"]).toEqual({
       id: "1",
       text: "Buy milk",
       completed: false,
     });
+    //@ts-ignore
     expect(state.todos["2"]).toEqual({
       id: "2",
       text: "Write tests",
@@ -308,8 +310,6 @@ describe("Mirror - State Consistency", () => {
 
     // Make rapid changes
     for (let i = 1; i <= 5; i++) {
-      // Create a new state object to avoid mutating the read-only one
-      const currentState = mirror.getState();
 
       // Update using appropriate format - using type assertion for test purposes
       mirror.setState({
@@ -376,9 +376,6 @@ describe("Mirror - State Consistency", () => {
     const updatedState = mirror.getState();
     const updatedValue = updatedState.meta.value;
     expect(updatedValue).toBe("updated in loro");
-
-    // Now update mirror state and sync to Loro
-    const currentState = mirror.getState();
 
     // Use the same format that was already in use
     mirror.setState({
@@ -725,26 +722,26 @@ describe("Mirror - State Consistency", () => {
 
     let serialized = loroDoc.getDeepValueWithID();
 
-    assert(valueIsContainer(serialized.root));
-    assert(valueIsContainerOfType(serialized.root, ":Map"));
+    expect(valueIsContainer(serialized.root)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root, ":Map")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.name))
-    assert(valueIsContainerOfType(serialized.root.value.name, ":Text"));
+    expect(valueIsContainer(serialized.root.value.name)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.name, ":Text")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children))
-    assert(valueIsContainerOfType(serialized.root.value.children, ":List"));
+    expect(valueIsContainer(serialized.root.value.children)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children, ":List")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0]))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0], ":Map"));
+    expect(valueIsContainer(serialized.root.value.children.value[0])).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0], ":Map")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children, ":List"));
+    expect(valueIsContainer(serialized.root.value.children.value[0].value.children)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0].value.children, ":List")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0]))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0], ":Map"));
+    expect(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0])).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0], ":Map")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0].value.name))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0].value.name, ":Text"));
+    expect(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0].value.name));
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0].value.name, ":Text")).toBe(true);
   })
 
   it("subscribers get notified correct amounts for nested containers", async () => {
