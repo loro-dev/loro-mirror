@@ -1,8 +1,8 @@
 import { Mirror, SyncDirection } from "../../src/core/mirror";
 import { valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
 import { schema } from "../../src/schema";
-import { Container, isContainer, LoroDoc, LoroList, LoroMap } from "loro-crdt";
-import { assert, beforeEach, describe, expect, it, vi } from "vitest";
+import { LoroDoc } from "loro-crdt";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("Mirror - State Consistency", () => {
   let doc: LoroDoc;
@@ -46,11 +46,13 @@ describe("Mirror - State Consistency", () => {
     const state = mirror.getState();
 
     // Verify mirror state matches LoroDoc
+    //@ts-ignore
     expect(state.todos["1"]).toEqual({
       id: "1",
       text: "Buy milk",
       completed: false,
     });
+    //@ts-ignore
     expect(state.todos["2"]).toEqual({
       id: "2",
       text: "Write tests",
@@ -91,9 +93,9 @@ describe("Mirror - State Consistency", () => {
     const stateChanges: Array<{ meta: { counter: unknown } }> = [];
     const directions: SyncDirection[] = [];
 
-    mirror.subscribe((state, direction) => {
+    mirror.subscribe((state, meta) => {
       stateChanges.push({ ...state }); // Clone to avoid reference issues
-      directions.push(direction);
+      directions.push(meta.direction);
     });
 
     // Update LoroDoc
@@ -308,8 +310,6 @@ describe("Mirror - State Consistency", () => {
 
     // Make rapid changes
     for (let i = 1; i <= 5; i++) {
-      // Create a new state object to avoid mutating the read-only one
-      const currentState = mirror.getState();
 
       // Update using appropriate format - using type assertion for test purposes
       mirror.setState({
@@ -376,9 +376,6 @@ describe("Mirror - State Consistency", () => {
     const updatedState = mirror.getState();
     const updatedValue = updatedState.meta.value;
     expect(updatedValue).toBe("updated in loro");
-
-    // Now update mirror state and sync to Loro
-    const currentState = mirror.getState();
 
     // Use the same format that was already in use
     mirror.setState({
@@ -565,7 +562,7 @@ describe("Mirror - State Consistency", () => {
     // Unsubscribe should still work (even though dispose already cleaned up)
     unsubscribe();
   });
-  
+
   it("correctly initializes nested containers with schemas", async () => {
     const nestedSchema = schema({
       users: schema.LoroMap({
@@ -725,26 +722,26 @@ describe("Mirror - State Consistency", () => {
 
     let serialized = loroDoc.getDeepValueWithID();
 
-    assert(valueIsContainer(serialized.root));
-    assert(valueIsContainerOfType(serialized.root, ":Map"));
+    expect(valueIsContainer(serialized.root)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root, ":Map")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.name))
-    assert(valueIsContainerOfType(serialized.root.value.name, ":Text"));
+    expect(valueIsContainer(serialized.root.value.name)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.name, ":Text")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children))
-    assert(valueIsContainerOfType(serialized.root.value.children, ":List"));
+    expect(valueIsContainer(serialized.root.value.children)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children, ":List")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0]))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0], ":Map"));
+    expect(valueIsContainer(serialized.root.value.children.value[0])).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0], ":Map")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children, ":List"));
+    expect(valueIsContainer(serialized.root.value.children.value[0].value.children)).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0].value.children, ":List")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0]))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0], ":Map"));
+    expect(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0])).toBe(true);
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0], ":Map")).toBe(true);
 
-    assert(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0].value.name))
-    assert(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0].value.name, ":Text"));
+    expect(valueIsContainer(serialized.root.value.children.value[0].value.children.value[0].value.name));
+    expect(valueIsContainerOfType(serialized.root.value.children.value[0].value.children.value[0].value.name, ":Text")).toBe(true);
   })
 
   it("subscribers get notified correct amounts for nested containers", async () => {
@@ -770,14 +767,14 @@ describe("Mirror - State Consistency", () => {
       initialState: initialState,
     });
 
-    const snapshot = loroDoc.export({mode: "snapshot"});
+    const snapshot = loroDoc.export({ mode: "snapshot" });
 
     // New doc for testing updates
     let doc2 = new LoroDoc();
     doc2.import(snapshot);
     doc2.getMap("root").set("name", "Root2");
 
-    const update = doc2.export({mode: "update"});
+    const update = doc2.export({ mode: "update" });
     let counter = 0;
 
     mirror.subscribe((_) => {
@@ -792,5 +789,30 @@ describe("Mirror - State Consistency", () => {
 
     // Subscriber should have been called once for the import
     expect(counter).toBe(1);
+  })
+
+  it("should respect the infer options that are passed to it", async () => {
+    const someState = {
+      list: [
+        {}
+      ],
+      text: "some string",
+    };
+
+    const doc = new LoroDoc();
+    const mirror = new Mirror({
+      doc,
+      inferOptions: {
+        defaultLoroText: true,
+        defaultMovableList: true,
+      }
+    })
+
+    mirror.setState(someState);
+    await waitForSync();
+
+    const state = doc.getDeepValueWithID();
+
+    expect(valueIsContainerOfType(state.list, "MovableList")).toBe(true); expect(valueIsContainerOfType(state.text, "Text")).toBe(true);
   })
 });

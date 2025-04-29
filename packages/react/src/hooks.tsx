@@ -7,16 +7,13 @@ import React, {
     useCallback,
     useContext,
     useEffect,
-    useMemo,
     useRef,
     useState,
 } from "react";
 import type {
-    CreateStoreOptions,
     InferType,
     SchemaType,
     Store,
-    SyncDirection,
 } from "@loro-mirror/core";
 import type { LoroDoc } from "loro-crdt";
 

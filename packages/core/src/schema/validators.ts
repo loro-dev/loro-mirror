@@ -32,6 +32,12 @@ export function isLoroListSchema<T extends SchemaType>(
     return (schema as BaseSchemaType).type === "loro-list";
 }
 
+export function isListLikeSchema<T extends SchemaType>(
+    schema: SchemaType,
+): schema is LoroListSchema<T> | LoroMovableListSchema<T> {
+    return isLoroListSchema(schema) || isLoroMovableListSchema(schema);
+}
+
 export function isLoroMovableListSchema<T extends SchemaType>(
     schema: SchemaType
 ): schema is LoroMovableListSchema<T> {

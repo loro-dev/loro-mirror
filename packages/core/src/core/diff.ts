@@ -19,7 +19,7 @@ import {
     RootSchemaType,
     SchemaType,
 } from "../schema";
-import { type Change } from "./mirror";
+import { InferContainerOptions, type Change } from "./mirror";
 
 import {
     containerIdToContainerType,
@@ -105,6 +105,7 @@ export function diffContainer(
     newState: unknown,
     containerId: ContainerID | "",
     schema: SchemaType | undefined,
+    inferOptions?: InferContainerOptions,
 ): Change[] {
     const stateAndSchema = { oldState, newState, schema };
     if (containerId === "") {
@@ -126,6 +127,7 @@ export function diffContainer(
             stateAndSchema.newState,
             containerId,
             stateAndSchema.schema,
+            inferOptions,
         );
     }
 
@@ -155,6 +157,7 @@ export function diffContainer(
                 stateAndSchema.newState,
                 containerId,
                 stateAndSchema.schema,
+                inferOptions,
             );
             break;
         case "List":
@@ -180,6 +183,7 @@ export function diffContainer(
                     containerId,
                     stateAndSchema.schema,
                     idSelector,
+                    inferOptions,
                 );
             } else {
                 changes = diffList(
@@ -188,6 +192,7 @@ export function diffContainer(
                     newState as Array<unknown>,
                     containerId,
                     schema as LoroListSchema<SchemaType>,
+                    inferOptions,
                 );
             }
             break;
@@ -216,6 +221,7 @@ export function diffContainer(
                 containerId,
                 stateAndSchema.schema,
                 idSelector,
+                inferOptions,
             );
             break;
         case "Text":
@@ -289,6 +295,7 @@ export function diffMovableList<S extends ArrayLike>(
         | LoroMovableListSchema<SchemaType>
         | undefined,
     idSelector: IdSelector<unknown>,
+    inferOptions?: InferContainerOptions,
 ): Change[] {
     /** Changes resulting from the diff */
     const changes: Change[] = [];
@@ -401,6 +408,7 @@ export function diffMovableList<S extends ArrayLike>(
                 info.newItem,
                 currentItem.id,
                 schema?.itemSchema,
+                inferOptions,
             );
             changes.push(...containerChanges);
         } else {
@@ -447,6 +455,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     containerId: ContainerID,
     schema: LoroListSchema<SchemaType> | undefined,
     idSelector: IdSelector<unknown>,
+    inferOptions?: InferContainerOptions,
 ): Change[] {
     const changes: Change[] = [];
 
@@ -497,6 +506,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                         newItem,
                         item.id,
                         schema?.itemSchema,
+                        inferOptions,
                     ),
                 );
             } else if (!deepEqual(oldItem, newItem)) {
@@ -592,6 +602,7 @@ export function diffList<S extends ArrayLike>(
     newState: S,
     containerId: ContainerID,
     schema: LoroListSchema<SchemaType> | undefined,
+    inferOptions? : InferContainerOptions,
 ): Change[] {
     const changes: Change[] = [];
     const oldLen = oldState.length;
@@ -610,6 +621,7 @@ export function diffList<S extends ArrayLike>(
                 newState[i],
                 itemOnLoro.id,
                 schema?.itemSchema,
+                inferOptions,
             );
             changes.push(...nestedChanges);
         } else if (!deepEqual(oldState[i], newState[i])) {
@@ -680,6 +692,7 @@ export function diffMap<S extends ObjectLike>(
         | LoroMapSchema<Record<string, SchemaType>>
         | RootSchemaType<Record<string, ContainerSchemaType>>
         | undefined,
+    inferOptions?: InferContainerOptions,
 ): Change[] {
     const changes: Change[] = [];
     const oldStateObj = oldState as Record<string, any>;
@@ -707,7 +720,7 @@ export function diffMap<S extends ObjectLike>(
             schema as LoroMapSchema<Record<string, SchemaType>> | undefined
         )?.definition?.[key];
         const containerType =
-            childSchema?.getContainerType() ?? tryInferContainerType(newItem);
+            childSchema?.getContainerType() ?? tryInferContainerType(newItem, inferOptions);
 
         // added new key
         if (!oldItem) {
@@ -754,6 +767,7 @@ export function diffMap<S extends ObjectLike>(
                             newStateObj[key],
                             container.id,
                             childSchema,
+                            inferOptions,
                         ),
                     );
                     continue;
@@ -779,6 +793,7 @@ export function diffMap<S extends ObjectLike>(
                             newStateObj[key],
                             child.id,
                             childSchema,
+                            inferOptions,
                         ),
                     );
                 }

@@ -3,15 +3,27 @@
  */
 
 import { Container, ContainerID, ContainerType, LoroDoc } from "loro-crdt";
-import { LoroListSchema, LoroMapSchema, LoroMovableListSchema, LoroTextSchemaType, SchemaType } from "../schema";
-import { Change } from "./mirror";
+import {
+    LoroListSchema,
+    LoroMapSchema,
+    LoroMovableListSchema,
+    LoroTextSchemaType,
+    SchemaType,
+} from "../schema";
+import { Change, InferContainerOptions } from "./mirror";
 
 /**
  * Check if a value is an object
  */
 export function isObject(value: unknown): value is Record<string, any> {
-    return typeof value === "object" && value !== null && !Array.isArray(value) && 
-           !(value instanceof Date) && !(value instanceof RegExp) && !(value instanceof Function);
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        !(value instanceof Date) &&
+        !(value instanceof RegExp) &&
+        !(value instanceof Function)
+    );
 }
 
 /**
@@ -23,7 +35,8 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 
     // If either value is null or not an object or function, they can't be deeply equal unless they were strictly equal (checked above)
     if (
-        a === null || b === null ||
+        a === null ||
+        b === null ||
         (typeof a !== "object" && typeof a !== "function") ||
         (typeof b !== "object" && typeof b !== "function")
     ) {
@@ -64,7 +77,8 @@ export function deepEqual(a: unknown, b: unknown): boolean {
                     (a as Record<string, unknown>)[key],
                     (b as Record<string, unknown>)[key],
                 )
-            ) return false;
+            )
+                return false;
         }
 
         return true;
@@ -108,7 +122,8 @@ export function setPathValue(
 
         // Create nested objects if they don't exist
         if (
-            current[key] === undefined || current[key] === null ||
+            current[key] === undefined ||
+            current[key] === null ||
             typeof current[key] !== "object"
         ) {
             current[key] = {};
@@ -132,7 +147,9 @@ type ContainerValue = {
 };
 
 export function valueIsContainer(value: any): value is ContainerValue {
-    return value && typeof value === "object" && "cid" in value && "value" in value;
+    return (
+        value && typeof value === "object" && "cid" in value && "value" in value
+    );
 }
 
 export function valueIsContainerOfType(
@@ -142,7 +159,9 @@ export function valueIsContainerOfType(
     return valueIsContainer(value) && value.cid.endsWith(containerType);
 }
 
-export function containerIdToContainerType(containerId: ContainerID): ContainerType | undefined {
+export function containerIdToContainerType(
+    containerId: ContainerID,
+): ContainerType | undefined {
     if (containerId.endsWith(":Map")) {
         return "Map";
     } else if (containerId.endsWith(":List")) {
@@ -156,7 +175,11 @@ export function containerIdToContainerType(containerId: ContainerID): ContainerT
     }
 }
 
-export function getRootContainerByType(doc: LoroDoc, key: string, type: ContainerType): Container {
+export function getRootContainerByType(
+    doc: LoroDoc,
+    key: string,
+    type: ContainerType,
+): Container {
     if (type === "Text") {
         return doc.getText(key);
     } else if (type === "List") {
@@ -203,7 +226,11 @@ export function insertChildToMap(
 }
 
 /* Try to update a change to insert a container */
-export function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, schema: SchemaType | undefined): Change {
+export function tryUpdateToInsertContainer(
+    change: Change,
+    toUpdate: boolean,
+    schema: SchemaType | undefined,
+): Change {
     if (!toUpdate) {
         return change;
     }
@@ -212,9 +239,9 @@ export function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, sc
         return change;
     }
 
-    let containerType = schema ? 
-        schemaToContainerType(schema) ?? 
-            tryInferContainerType(change.value) : undefined;
+    let containerType = schema
+        ? (schemaToContainerType(schema) ?? tryInferContainerType(change.value))
+        : undefined;
 
     switch (containerType) {
         case "Map":
@@ -239,27 +266,39 @@ export function tryUpdateToInsertContainer(change: Change, toUpdate: boolean, sc
 }
 
 /* Get container type from schema */
-export function schemaToContainerType<S extends SchemaType>(schema: S):
-    S extends LoroMapSchema<any> ? "Map" :
-    S extends LoroListSchema<any> ? "List" :
-    S extends LoroMovableListSchema<any> ? "MovableList" :
-    S extends LoroTextSchemaType ? "Text" :
-    undefined {
-
+export function schemaToContainerType<S extends SchemaType>(
+    schema: S,
+): S extends LoroMapSchema<any>
+    ? "Map"
+    : S extends LoroListSchema<any>
+      ? "List"
+      : S extends LoroMovableListSchema<any>
+        ? "MovableList"
+        : S extends LoroTextSchemaType
+          ? "Text"
+          : undefined {
     const containerType = schema.getContainerType();
     return containerType as any;
 }
 
 /* Try to infer container type from value */
-export function tryInferContainerType(value: unknown): ContainerType | undefined {
+export function tryInferContainerType(
+    value: unknown,
+    defaults?: InferContainerOptions,
+): ContainerType | undefined {
     if (isObject(value)) {
         return "Map";
     } else if (Array.isArray(value)) {
+        if (defaults?.defaultMovableList) {
+            return "MovableList";
+        }
         return "List";
     } else if (typeof value === "string") {
-        return "Text";
-    } else {
-        return;
+        if (defaults?.defaultLoroText) {
+            return "Text";
+        } else {
+            return;
+        }
     }
 }
 
@@ -276,19 +315,26 @@ export function isValueOfContainerType(
         case "Text":
             return typeof value === "string" && value !== null;
         default:
-            return false; }
+            return false;
+    }
 }
 
 /* Infer container type from value */
-export function inferContainerType(
+export function inferContainerTypeFromValue(
     value: unknown,
+    defaults?: InferContainerOptions,
 ): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined {
     if (isObject(value)) {
         return "loro-map";
     } else if (Array.isArray(value)) {
+        if (defaults?.defaultMovableList) {
+            return "loro-movable-list";
+        }
         return "loro-list";
     } else if (typeof value === "string") {
-        return "loro-text";
+        if (defaults?.defaultLoroText) {
+            return "loro-text";
+        }
     } else {
         return;
     }
@@ -299,35 +345,35 @@ export type ArrayLike = Array<unknown>;
 
 /* Check if value is an object */
 export function isObjectLike(value: unknown): value is ObjectLike {
-	return typeof value === "object";
+    return typeof value === "object";
 }
 
 /* Check if value is an array */
 export function isArrayLike(value: unknown): value is ArrayLike {
-	return Array.isArray(value);
+    return Array.isArray(value);
 }
 
 /* Check if value is a string */
 export function isStringLike(value: unknown): value is string {
-	return typeof value === "string";
+    return typeof value === "string";
 }
 
 /* Type guard to ensure state and schema are of the correct type */
 export function isStateAndSchemaOfType<
-	S extends ObjectLike | ArrayLike | string,
-	T extends SchemaType,
+    S extends ObjectLike | ArrayLike | string,
+    T extends SchemaType,
 >(
-	values: {
-		oldState: unknown;
-		newState: unknown;
-		schema: SchemaType | undefined;
-	},
-	stateGuard: (value: unknown) => value is S,
-	schemaGuard: (schema: SchemaType) => schema is T,
+    values: {
+        oldState: unknown;
+        newState: unknown;
+        schema: SchemaType | undefined;
+    },
+    stateGuard: (value: unknown) => value is S,
+    schemaGuard: (schema: SchemaType) => schema is T,
 ): values is { oldState: S; newState: S; schema: T | undefined } {
-	return (
-		stateGuard(values.oldState) &&
-		stateGuard(values.newState) &&
-		(!values.schema || schemaGuard(values.schema))
-	);
+    return (
+        stateGuard(values.oldState) &&
+        stateGuard(values.newState) &&
+        (!values.schema || schemaGuard(values.schema))
+    );
 }
