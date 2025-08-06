@@ -66,6 +66,19 @@ export interface LoroMapSchema<T extends Record<string, SchemaType>>
 }
 
 /**
+ * Enhanced LoroMapSchema with catchall support
+ */
+export interface LoroMapSchemaWithCatchall<
+    T extends Record<string, SchemaType>,
+    C extends SchemaType
+> extends BaseSchemaType {
+    type: "loro-map";
+    definition: SchemaDefinition<T>;
+    catchallType: C;
+    catchall<NewC extends SchemaType>(catchallSchema: NewC): LoroMapSchemaWithCatchall<T, NewC>;
+}
+
+/**
  * Loro List schema type
  */
 export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
@@ -108,6 +121,7 @@ export type SchemaType =
     | BooleanSchemaType
     | IgnoreSchemaType
     | LoroMapSchema<Record<string, SchemaType>>
+    | LoroMapSchemaWithCatchall<Record<string, SchemaType>, SchemaType>
     | LoroListSchema<SchemaType>
     | LoroMovableListSchema<SchemaType>
     | LoroTextSchemaType
@@ -115,6 +129,7 @@ export type SchemaType =
 
 export type ContainerSchemaType =
     | LoroMapSchema<Record<string, SchemaType>>
+    | LoroMapSchemaWithCatchall<Record<string, SchemaType>, SchemaType>
     | LoroListSchema<SchemaType>
     | LoroMovableListSchema<SchemaType>
     | LoroTextSchemaType;
@@ -125,8 +140,8 @@ export type ContainerSchemaType =
 export type RootSchemaDefinition<
     T extends Record<string, ContainerSchemaType>,
 > = {
-    [K in keyof T]: T[K];
-};
+        [K in keyof T]: T[K];
+    };
 
 /**
  * Schema definition type
@@ -144,6 +159,10 @@ export type InferType<S extends SchemaType> = S extends StringSchemaType
     : S extends BooleanSchemaType ? boolean
     : S extends IgnoreSchemaType ? any
     : S extends LoroTextSchemaType ? string
+    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+    ? keyof M extends never
+    ? { [key: string]: InferType<C> }
+    : { [K in keyof M]: InferType<M[K]> } & { [K in Exclude<string, keyof M>]: InferType<C> }
     : S extends LoroMapSchema<infer M> ? { [K in keyof M]: InferType<M[K]> }
     : S extends LoroListSchema<infer I> ? Array<InferType<I>>
     : S extends LoroMovableListSchema<infer I> ? Array<InferType<I>>

@@ -7,6 +7,7 @@ import {
     ContainerSchemaType,
     LoroListSchema,
     LoroMapSchema,
+    LoroMapSchemaWithCatchall,
     LoroMovableListSchema,
     LoroTextSchemaType,
     RootSchemaDefinition,
@@ -94,14 +95,55 @@ schema.Ignore = function (options?: SchemaOptions) {
 schema.LoroMap = function <T extends Record<string, SchemaType>>(
     definition: SchemaDefinition<T>,
     options?: SchemaOptions,
-): LoroMapSchema<T> {
-    return {
+): LoroMapSchema<T> & { catchall: <C extends SchemaType>(catchallSchema: C) => LoroMapSchemaWithCatchall<T, C> } {
+    const baseSchema = {
         type: "loro-map" as const,
         definition,
         options: options || {},
         getContainerType() {
             return "Map";
         },
+    };
+
+    // Add catchall method like zod
+    const schemaWithCatchall = {
+        ...baseSchema,
+        catchall<C extends SchemaType>(catchallSchema: C): LoroMapSchemaWithCatchall<T, C> {
+            return {
+                ...baseSchema,
+                catchallType: catchallSchema,
+                catchall: function <NewC extends SchemaType>(newCatchallSchema: NewC) {
+                    return {
+                        ...baseSchema,
+                        catchallType: newCatchallSchema,
+                        catchall: this.catchall.bind(this)
+                    } as LoroMapSchemaWithCatchall<T, NewC>;
+                }
+            } as LoroMapSchemaWithCatchall<T, C>;
+        }
+    };
+
+    return schemaWithCatchall as LoroMapSchema<T> & { catchall: <C extends SchemaType>(catchallSchema: C) => LoroMapSchemaWithCatchall<T, C> };
+};
+
+/**
+ * Create a dynamic record schema (like zod's z.record)
+ */
+schema.LoroMapRecord = function <T extends SchemaType>(
+    valueSchema: T,
+    options?: SchemaOptions,
+): LoroMapSchemaWithCatchall<{}, T> {
+    return {
+        type: "loro-map" as const,
+        definition: {},
+        catchallType: valueSchema,
+        options: options || {},
+        getContainerType() {
+            return "Map";
+        },
+        catchall<NewC extends SchemaType>(newCatchallSchema: NewC): LoroMapSchemaWithCatchall<{}, NewC> {
+            return schema.LoroMapRecord(newCatchallSchema, options);
+        }
     };
 };
 

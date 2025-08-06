@@ -2,13 +2,14 @@
     "extends": "../../tsconfig.json",
     "compilerOptions": {
         "outDir": "./dist",
-        "rootDir": "./src",
+        "rootDir": "./",
         "composite": true,
         "noEmit": false
     },
     "include": [
         "src/**/*",
-        "tests/core/mirror.test.ts"
+        "tests/core/mirror.test.ts",
+        "tests/**/*.test-d.ts"
     ],
     "exclude": [
         "node_modules",
