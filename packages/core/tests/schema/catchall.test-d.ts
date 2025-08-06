@@ -18,6 +18,17 @@ describe("infer type", () => {
         }>();
     })
 
+    test("catchall with empty schema", () => {
+        const emptySchema = schema.LoroMap({});
+        const mixedSchema = emptySchema.catchall(schema.String());
+
+        type InferredType = InferType<typeof mixedSchema>;
+
+        expectTypeOf<InferredType>().toMatchTypeOf<{
+            [key: string]: string,
+        }>();
+    })
+
     test("record loro map", () => {
         const recordSchema = schema.LoroMapRecord(schema.String());
 
