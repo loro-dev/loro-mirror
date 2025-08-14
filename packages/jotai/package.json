@@ -27,7 +27,7 @@
     "author": "",
     "license": "MIT",
     "dependencies": {
-        "@loro-mirror/core": "workspace:*"
+        "@loro-mirror/core": "file:../core"
     },
     "peerDependencies": {
         "loro-crdt": "^1.4.4",
