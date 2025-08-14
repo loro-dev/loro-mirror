@@ -30,6 +30,7 @@ module.exports = {
         compilerOptions: {
           declaration: true,
           declarationDir: 'dist',
+          rootDir: 'src',
         },
         exclude: ['**/*.test.ts', '**/*.test.tsx', 'tests'],
       },

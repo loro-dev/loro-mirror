@@ -15,6 +15,7 @@ import {
     SchemaDefinition,
     SchemaOptions,
     SchemaType,
+    StringSchemaType,
 } from "./types";
 
 export * from "./types";
@@ -40,14 +41,14 @@ export function schema<T extends Record<string, ContainerSchemaType>>(
 /**
  * Define a string field
  */
-schema.String = function (options?: SchemaOptions) {
+schema.String = function <T extends string = string>(options?: SchemaOptions) {
     return {
         type: "string" as const,
         options: options || {},
         getContainerType() {
             return null; // Primitive type, no container
         },
-    };
+    } as unknown as StringSchemaType<T>;
 };
 
 /**

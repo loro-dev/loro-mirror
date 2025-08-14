@@ -29,10 +29,11 @@ export interface BaseSchemaType {
 }
 
 /**
- * String schema type
+ * String schema type (generic to allow custom inferred type)
  */
-export interface StringSchemaType extends BaseSchemaType {
+export interface StringSchemaType<T = string> extends BaseSchemaType {
     type: "string";
+    _: T;
 }
 
 /**
@@ -153,8 +154,8 @@ export type SchemaDefinition<T extends Record<string, SchemaType>> = {
 /**
  * Infer the JavaScript type from a schema type
  */
-export type InferType<S extends SchemaType> = S extends StringSchemaType
-    ? string
+export type InferType<S extends SchemaType> = S extends StringSchemaType<infer T>
+    ? T
     : S extends NumberSchemaType ? number
     : S extends BooleanSchemaType ? boolean
     : S extends IgnoreSchemaType ? any

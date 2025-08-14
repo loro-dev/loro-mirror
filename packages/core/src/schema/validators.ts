@@ -64,12 +64,12 @@ export function isLoroTextSchema(schema: SchemaType): schema is LoroTextSchemaTy
  * Check if a schema is for a Loro container
  */
 export function isContainerSchema(schema?: SchemaType): schema is ContainerSchemaType {
-  return !!schema && (
-    schema.type === "loro-map" || 
-    schema.type === "loro-list" || 
-    schema.type === "loro-text" ||
-    schema.type === "loro-movable-list"
-  );
+    return !!schema && (
+        schema.type === "loro-map" ||
+        schema.type === "loro-list" ||
+        schema.type === "loro-text" ||
+        schema.type === "loro-movable-list"
+    );
 }
 
 /**
