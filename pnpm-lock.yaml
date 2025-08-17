@@ -63,9 +63,6 @@ importers:
       '@loro-mirror/core':
         specifier: workspace:*
         version: link:../core
-      jotai-optics:
-        specifier: ^0.4.0
-        version: 0.4.0(jotai@2.12.5(@types/react@18.3.18)(react@18.3.1))(optics-ts@2.4.1)
     devDependencies:
       '@types/node':
         specifier: ^20.10.5
@@ -871,12 +868,6 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
-  jotai-optics@0.4.0:
-    resolution: {integrity: sha512-osbEt9AgS55hC4YTZDew2urXKZkaiLmLqkTS/wfW5/l0ib8bmmQ7kBXSFaosV6jDDWSp00IipITcJARFHdp42g==}
-    peerDependencies:
-      jotai: '>=2.0.0'
-      optics-ts: '>=2.0.0'
-
   jotai@2.12.5:
     resolution: {integrity: sha512-G8m32HW3lSmcz/4mbqx0hgJIQ0ekndKWiYP7kWVKi0p6saLXdSoye+FZiOFyonnd7Q482LCzm8sMDl7Ar1NWDw==}
     engines: {node: '>=12.20.0'}
@@ -973,9 +964,6 @@ packages:
 
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
-
-  optics-ts@2.4.1:
-    resolution: {integrity: sha512-HaYzMHvC80r7U/LqAd4hQyopDezC60PO2qF5GuIwALut2cl5rK1VWHsqTp0oqoJJWjiv6uXKqsO+Q2OO0C3MmQ==}
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -1651,14 +1639,6 @@ snapshots:
     optionalDependencies:
       vite: 6.2.0(@types/node@18.19.76)
 
-  '@vitest/mocker@3.0.7(vite@6.2.0(@types/node@20.17.19))':
-    dependencies:
-      '@vitest/spy': 3.0.7
-      estree-walker: 3.0.3
-      magic-string: 0.30.17
-    optionalDependencies:
-      vite: 6.2.0(@types/node@20.17.19)
-
   '@vitest/pretty-format@3.0.7':
     dependencies:
       tinyrainbow: 2.0.0
@@ -2037,11 +2017,6 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  jotai-optics@0.4.0(jotai@2.12.5(@types/react@18.3.18)(react@18.3.1))(optics-ts@2.4.1):
-    dependencies:
-      jotai: 2.12.5(@types/react@18.3.18)(react@18.3.1)
-      optics-ts: 2.4.1
-
   jotai@2.12.5(@types/react@18.3.18)(react@18.3.1):
     optionalDependencies:
       '@types/react': 18.3.18
@@ -2124,8 +2099,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-
-  optics-ts@2.4.1: {}
 
   optionator@0.9.4:
     dependencies:
@@ -2429,7 +2402,7 @@ snapshots:
   vitest@3.0.7(@types/node@20.17.19):
     dependencies:
       '@vitest/expect': 3.0.7
-      '@vitest/mocker': 3.0.7(vite@6.2.0(@types/node@20.17.19))
+      '@vitest/mocker': 3.0.7(vite@6.2.0(@types/node@18.19.76))
       '@vitest/pretty-format': 3.0.7
       '@vitest/runner': 3.0.7
       '@vitest/snapshot': 3.0.7

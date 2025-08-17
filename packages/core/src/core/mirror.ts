@@ -316,7 +316,6 @@ export class Mirror<S extends SchemaType> {
 
         try {
             const shallowValue = (container as any).getShallowValue();
-            console.log("shallow value", JSON.stringify(shallowValue, null, 2));
 
             if (container.kind() === "Map") {
                 // For maps, check each value

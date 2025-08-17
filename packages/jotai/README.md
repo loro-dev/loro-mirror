@@ -46,7 +46,7 @@ const todoAtom = loroAtom({
   doc,
   schema: todoSchema,
   initialState: { todos: [], filter: 'all' },
-  key: 'todos' // 用于缓存和持久化
+  key: 'todos'
 });
 
 function TodoApp() {

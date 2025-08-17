@@ -10,6 +10,7 @@ import { atomWithStorage, createJSONStorage, atomFamily, selectAtom } from 'jota
 
 // Import types only to avoid module resolution issues
 import type { LoroDoc } from "loro-crdt";
+import { createStore, SchemaType, Store } from "@loro-mirror/core";
 
 /**
  * Configuration for creating a Loro Mirror atom
@@ -55,55 +56,19 @@ export interface LoroAtomConfig<T = any> {
 }
 
 /**
- * Store interface for type safety
- */
-interface LoroStore<T = any> {
-    getState: () => T;
-    setState: (updater: T | ((prev: T) => T)) => void;
-    subscribe: (callback: (state: T) => void) => () => void;
-    sync: () => T;
-    syncFromLoro: () => T;
-    syncToLoro: () => void;
-    getLoro: () => LoroDoc;
-    getMirror: () => any;
-}
-
-/**
  * Internal store cache to avoid recreating stores
  */
-const storeCache = new Map<string, LoroStore>();
+const storeCache = new Map<string, Store<any>>();
 
 /**
  * Creates a store instance with lazy initialization
  */
-function createLoroStore<T>(config: LoroAtomConfig<T>): LoroStore<T> {
+function createLoroStore<T extends SchemaType>(config: LoroAtomConfig<T>): Store<T> {
     const key = config.key || `store-${Date.now()}-${Math.random()}`;
 
     if (storeCache.has(key)) {
-        return storeCache.get(key) as LoroStore<T>;
+        return storeCache.get(key) as Store<T>;
     }
-
-    // Lazy load the core module to avoid import issues
-    const createStore = (() => {
-        try {
-            return require("@loro-mirror/core").createStore;
-        } catch (e) {
-            console.warn("Could not load @loro-mirror/core, using mock store");
-            // Mock store for development/testing
-            return (config: any) => ({
-                getState: () => config.initialState || {},
-                setState: (updater: any) => {
-                    if (config.debug) console.log("Mock setState:", updater);
-                },
-                subscribe: (callback: any) => () => { },
-                sync: () => config.initialState || {},
-                syncFromLoro: () => config.initialState || {},
-                syncToLoro: () => { },
-                getLoro: () => config.doc,
-                getMirror: () => null,
-            });
-        }
-    })();
 
     const store = createStore(config);
     storeCache.set(key, store);
@@ -143,23 +108,33 @@ export function loroAtom<T = any>(
     config: LoroAtomConfig<T>
 ): WritableAtom<T, [T | ((prev: T) => T)], void> {
     const store = createLoroStore(config);
+    const stateAtom = atom(store.getState());
 
-    return atom(
+    const base = atom(
         // Read function - get current state from store
-        () => {
-            return store.getState();
+        (get) => {
+            return get(stateAtom);
         },
         // Write function - update state and sync to Loro
         (get, set, update) => {
             if (typeof update === 'function') {
                 const currentState = store.getState();
                 const newState = (update as (prev: T) => T)(currentState);
-                store.setState(newState);
+                store.setState(newState as Partial<T>);
             } else {
-                store.setState(update);
+                store.setState(update as Partial<T>);
             }
         }
     );
+    stateAtom.onMount = (set) => {
+        const sub = store.subscribe((newState: T) => {
+            set(newState);
+        });
+        store.sync();
+        return sub;
+    }
+
+    return base;
 }
 
 /**
@@ -409,30 +384,6 @@ export function loroPersistent<T>(
 }
 
 /**
- * Hook to get the underlying Loro document from a config
- * 
- * Useful for advanced operations that need direct access to the Loro document.
- * 
- * @example
- * ```tsx
- * function AdvancedControls() {
- *   const doc = useLoroDoc(todoConfig);
- *   
- *   const exportData = () => {
- *     const snapshot = doc.export({ mode: 'snapshot' });
- *     // Handle export...
- *   };
- * }
- * ```
- */
-export function useLoroDoc<T>(
-    config: LoroAtomConfig<T>
-): LoroDoc | null {
-    const store = createLoroStore(config);
-    return store ? store.getLoro() : null;
-}
-
-/**
  * Hook to get the underlying Mirror instance from a config
  * 
  * Provides access to advanced Mirror functionality for power users.
@@ -453,62 +404,4 @@ export function useLoroMirror<T>(
 ) {
     const store = createLoroStore(config);
     return store ? store.getMirror() : null;
-}
-
-/**
- * Creates a reactive atom that automatically subscribes to store changes
- * 
- * This is a more advanced pattern that creates a truly reactive atom
- * that automatically updates when the underlying Loro document changes.
- * 
- * @example
- * ```tsx
- * const reactiveTodoAtom = loroReactive({
- *   doc: new LoroDoc(),
- *   schema: todoSchema,
- *   initialState: { todos: [] },
- *   key: 'reactive-todos'
- * });
- * 
- * function TodoApp() {
- *   // This component will automatically re-render when Loro document changes
- *   const [state, setState] = useAtom(reactiveTodoAtom);
- * }
- * ```
- */
-export function loroReactive<T>(
-    config: LoroAtomConfig<T>
-): WritableAtom<T, [T | ((prev: T) => T)], void> {
-    const store = createLoroStore(config);
-
-    // Create a simple reactive atom that gets updated by external subscription
-    const baseAtom = atom(store.getState());
-
-    // Set up subscription once
-    store.subscribe((newState: T) => {
-        // Note: In a real implementation, you'd need to trigger atom updates
-        // This is a simplified version for demonstration
-        if (config.debug) {
-            console.log('Store state changed:', newState);
-        }
-    });
-
-    return atom(
-        // Read function
-        (get) => {
-            return get(baseAtom);
-        },
-        // Write function
-        (get, set, update) => {
-            if (typeof update === 'function') {
-                const currentState = store.getState();
-                const newState = (update as (prev: T) => T)(currentState);
-                store.setState(newState);
-                set(baseAtom, newState);
-            } else {
-                store.setState(update);
-                set(baseAtom, update);
-            }
-        }
-    );
 }
