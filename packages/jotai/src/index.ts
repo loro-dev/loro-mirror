@@ -26,6 +26,11 @@ export interface LoroAtomConfig<T = any> {
     schema: any;
 
     /**
+     * Unique key for this atom (used for persistence and identification)
+     */
+    key: string;
+
+    /**
      * Initial state (optional)
      */
     initialState?: Partial<T>;
@@ -47,11 +52,6 @@ export interface LoroAtomConfig<T = any> {
      * @default false
      */
     debug?: boolean;
-
-    /**
-     * Unique key for this atom (used for persistence and identification)
-     */
-    key?: string;
 }
 
 /**
@@ -63,7 +63,7 @@ const storeCache = new Map<string, Store<any>>();
  * Creates a store instance with lazy initialization
  */
 function createLoroStore<T extends SchemaType>(config: LoroAtomConfig<T>): Store<T> {
-    const key = config.key || `store-${Date.now()}-${Math.random()}`;
+    const key = config.key;
 
     if (storeCache.has(key)) {
         return storeCache.get(key) as Store<T>;

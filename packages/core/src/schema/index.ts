@@ -35,7 +35,7 @@ export function schema<T extends Record<string, ContainerSchemaType>, O extends 
         type: "schema" as const,
         definition,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return "Map";
         },
     } as RootSchemaType<T> & { options: O };
@@ -48,7 +48,7 @@ schema.String = function <T extends string = string, O extends SchemaOptions = {
     return {
         type: "string" as const,
         options: (options || {}) as O,
-        getContainerType() {
+        getContainerType: () => {
             return null;
         },
     } as StringSchemaType<T> & { options: O };
@@ -61,7 +61,7 @@ schema.Number = function <O extends SchemaOptions = {}>(options?: O) {
     return {
         type: "number" as const,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return null; // Primitive type, no container
         },
     } as NumberSchemaType & { options: O };
@@ -74,7 +74,7 @@ schema.Boolean = function <O extends SchemaOptions = {}>(options?: O) {
     return {
         type: "boolean" as const,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return null; // Primitive type, no container
         },
     } as BooleanSchemaType & { options: O };
@@ -87,7 +87,7 @@ schema.Ignore = function <O extends SchemaOptions = {}>(options?: O) {
     return {
         type: "ignore" as const,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return null;
         },
     } as IgnoreSchemaType & { options: O };
@@ -104,7 +104,7 @@ schema.LoroMap = function <T extends Record<string, SchemaType>, O extends Schem
         type: "loro-map" as const,
         definition,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return "Map";
         },
     } as LoroMapSchema<T> & { options: O };
@@ -112,15 +112,15 @@ schema.LoroMap = function <T extends Record<string, SchemaType>, O extends Schem
     // Add catchall method like zod
     const schemaWithCatchall = {
         ...baseSchema,
-        catchall<C extends SchemaType>(catchallSchema: C): LoroMapSchemaWithCatchall<T, C> {
+        catchall: <C extends SchemaType>(catchallSchema: C): LoroMapSchemaWithCatchall<T, C> => {
             return {
                 ...baseSchema,
                 catchallType: catchallSchema,
-                catchall: function <NewC extends SchemaType>(newCatchallSchema: NewC) {
+                catchall: <NewC extends SchemaType>(newCatchallSchema: NewC) => {
                     return {
                         ...baseSchema,
                         catchallType: newCatchallSchema,
-                        catchall: this.catchall.bind(this)
+                        catchall: schemaWithCatchall.catchall
                     } as LoroMapSchemaWithCatchall<T, NewC>;
                 }
             } as LoroMapSchemaWithCatchall<T, C>;
@@ -142,10 +142,10 @@ schema.LoroMapRecord = function <T extends SchemaType, O extends SchemaOptions =
         definition: {},
         catchallType: valueSchema,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return "Map";
         },
-        catchall<NewC extends SchemaType>(newCatchallSchema: NewC): LoroMapSchemaWithCatchall<{}, NewC> {
+        catchall: <NewC extends SchemaType>(newCatchallSchema: NewC): LoroMapSchemaWithCatchall<{}, NewC> => {
             return schema.LoroMapRecord(newCatchallSchema, options);
         }
     } as LoroMapSchemaWithCatchall<{}, T> & { options: O };
@@ -164,7 +164,7 @@ schema.LoroList = function <T extends SchemaType, O extends SchemaOptions = {}>(
         itemSchema,
         idSelector,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return "List";
         },
     } as LoroListSchema<T> & { options: O };
@@ -180,7 +180,7 @@ schema.LoroMovableList = function <T extends SchemaType, O extends SchemaOptions
         itemSchema,
         idSelector,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return "MovableList";
         },
     } as LoroMovableListSchema<T> & { options: O };
@@ -193,7 +193,7 @@ schema.LoroText = function <O extends SchemaOptions = {}>(options?: O): LoroText
     return {
         type: "loro-text" as const,
         options: options || ({} as O),
-        getContainerType() {
+        getContainerType: () => {
             return "Text";
         },
     } as LoroTextSchemaType & { options: O };
