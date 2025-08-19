@@ -107,6 +107,7 @@ export function loroAtom<T = any>(
     config: LoroAtomConfig<T>
 ): WritableAtom<T, [T | ((prev: T) => T)], void> {
     const store = createLoroStore(config);
+    store.sync();
     const stateAtom = atom(store.getState());
 
     const base = atom(
@@ -116,23 +117,17 @@ export function loroAtom<T = any>(
         },
         // Write function - update state and sync to Loro
         (get, set, update) => {
+            const currentState = get(stateAtom);
             if (typeof update === 'function') {
-                const currentState = store.getState();
                 const newState = (update as (prev: T) => T)(currentState);
                 store.setState(newState as Partial<T>);
+                set(stateAtom, newState);
             } else {
                 store.setState(update as Partial<T>);
+                set(stateAtom, update);
             }
         }
     );
-    stateAtom.onMount = (set) => {
-        const sub = store.subscribe((newState: T) => {
-            set(newState);
-        });
-        store.sync();
-        return sub;
-    }
-
     return base;
 }
 
