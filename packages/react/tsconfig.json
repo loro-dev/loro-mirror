@@ -5,6 +5,7 @@
         "rootDir": "./src",
         "composite": true,
         "noEmit": false,
+        "inlineSources": true,
         "jsx": "react-jsx"
     },
     "include": [

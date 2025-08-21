@@ -318,7 +318,7 @@ state.
 ### Basic Types
 
 ```typescript
-import { schema } from "@loro-mirror/core";
+import { schema } from "loro-mirror";
 
 const userSchema = schema({
   // Basic types

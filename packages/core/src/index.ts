@@ -11,7 +11,7 @@ export * from "./core";
 import * as schema from "./schema";
 import * as core from "./core";
 
-export default {
-    ...schema,
-    ...core,
-};
+type Combined = typeof schema & typeof core;
+const loroMirror: Combined = Object.assign({}, schema, core);
+
+export default loroMirror;

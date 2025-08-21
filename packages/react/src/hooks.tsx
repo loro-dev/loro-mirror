@@ -10,11 +10,8 @@ import React, {
     useRef,
     useState,
 } from "react";
-import type {
-    InferType,
-    SchemaType,
-    Store,
-} from "@loro-mirror/core";
+import type { InferType, SchemaType, Store } from "loro-mirror";
+import { createStore } from "loro-mirror";
 import type { LoroDoc } from "loro-crdt";
 
 /**
@@ -89,9 +86,7 @@ export function useLoroStore<S extends SchemaType>(
     // Initialize the store and get initial state
     const getStore = useCallback((): Store<S> => {
         if (!storeRef.current) {
-            // We need to dynamically import the core package to avoid circular dependencies
-            const coreModule = require("@loro-mirror/core");
-            storeRef.current = coreModule.createStore(options);
+            storeRef.current = createStore(options);
         }
         return storeRef.current!;
     }, [options]);

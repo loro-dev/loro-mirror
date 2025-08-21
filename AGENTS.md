@@ -9,13 +9,13 @@
 ## Build, Test, and Development Commands
 
 - Install: `pnpm install` (at repo root).
-- Build all: `pnpm build` (runs `rollup -c` in each package).
+- Build all: `pnpm build` (runs `tsc -p .` in each package).
 - Test all: `pnpm test` (Vitest across packages).
 - Lint all: `pnpm lint` (ESLint on `src` in each package).
 - Type check: `pnpm typecheck` (TS `--noEmit`).
 - Per-package examples:
-  - Core build: `pnpm --filter @loro-mirror/core build`
-  - React tests (watch): `pnpm --filter @loro-mirror/react test:watch`
+  - Core build: `pnpm --filter loro-mirror build`
+  - React tests (watch): `pnpm --filter loro-mirror-react test:watch`
 
 ## Coding Style & Naming Conventions
 
@@ -39,5 +39,4 @@
 ## Security & Configuration Tips
 
 - Peer deps: Keep `loro-crdt` versions aligned with peer requirements.
-- Node/Tooling: Use Node 18+ and pnpm. Do not commit `dist/`; builds are produced by Rollup during release or CI.
-
+- Node/Tooling: Use Node 18+ and pnpm. Do not commit `dist/`; builds are produced by TypeScript (tsc).

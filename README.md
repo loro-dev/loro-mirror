@@ -13,29 +13,29 @@ A TypeScript state management library that syncs application state with [loro-cr
 
 ## Packages
 
-- [`@loro-mirror/core`](./packages/core): Core state management functionality
-- [`@loro-mirror/react`](./packages/react): React integration with hooks and context
+- [`loro-mirror`](./packages/core): Core state management functionality
+- [`loro-mirror-react`](./packages/react): React integration with hooks and context
 
 ## Installation
 
 ### Core Package
 
 ```bash
-npm install @loro-mirror/core loro-crdt
+npm install loro-mirror loro-crdt
 # or
-yarn add @loro-mirror/core loro-crdt
+yarn add loro-mirror loro-crdt
 # or
-pnpm add @loro-mirror/core loro-crdt
+pnpm add loro-mirror loro-crdt
 ```
 
 ### React Package
 
 ```bash
-npm install @loro-mirror/react @loro-mirror/core loro-crdt
+npm install loro-mirror-react loro-mirror loro-crdt
 # or
-yarn add @loro-mirror/react @loro-mirror/core loro-crdt
+yarn add loro-mirror-react loro-mirror loro-crdt
 # or
-pnpm add @loro-mirror/react @loro-mirror/core loro-crdt
+pnpm add loro-mirror-react loro-mirror loro-crdt
 ```
 
 ## Quick Start
@@ -44,7 +44,7 @@ pnpm add @loro-mirror/react @loro-mirror/core loro-crdt
 
 ```typescript
 import { LoroDoc } from 'loro-crdt';
-import { schema, createStore } from '@loro-mirror/core';
+import { schema, createStore } from 'loro-mirror';
 
 // Define your schema
 const todoSchema = schema({
@@ -88,8 +88,8 @@ store.subscribe((state) => {
 ```tsx
 import React, { useMemo } from 'react';
 import { LoroDoc } from 'loro-crdt';
-import { schema } from '@loro-mirror/core';
-import { createLoroContext } from '@loro-mirror/react';
+import { schema } from 'loro-mirror';
+import { createLoroContext } from 'loro-mirror-react';
 
 // Define your schema
 const todoSchema = schema({

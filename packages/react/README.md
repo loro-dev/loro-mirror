@@ -5,11 +5,11 @@ React integration for Loro Mirror - a state management library with Loro CRDT sy
 ## Installation
 
 ```bash
-npm install @loro-mirror/react @loro-mirror/core loro-crdt
+npm install loro-mirror-react loro-mirror loro-crdt
 # or
-yarn add @loro-mirror/react @loro-mirror/core loro-crdt
+yarn add loro-mirror-react loro-mirror loro-crdt
 # or
-pnpm add @loro-mirror/react @loro-mirror/core loro-crdt
+pnpm add loro-mirror-react loro-mirror loro-crdt
 ```
 
 ## Usage
@@ -19,8 +19,8 @@ pnpm add @loro-mirror/react @loro-mirror/core loro-crdt
 ```tsx
 import React, { useMemo } from 'react';
 import { LoroDoc } from 'loro-crdt';
-import { schema } from '@loro-mirror/core';
-import { useLoroStore } from '@loro-mirror/react';
+import { schema } from 'loro-mirror';
+import { useLoroStore } from 'loro-mirror-react';
 
 // Define your schema
 const todoSchema = schema({
@@ -68,8 +68,8 @@ function TodoApp() {
 ```tsx
 import React, { useMemo } from 'react';
 import { LoroDoc } from 'loro-crdt';
-import { schema } from '@loro-mirror/core';
-import { createLoroContext } from '@loro-mirror/react';
+import { schema } from 'loro-mirror';
+import { createLoroContext } from 'loro-mirror-react';
 
 // Define your schema
 const todoSchema = schema({
@@ -262,4 +262,4 @@ addTodo('New todo');
 
 ## License
 
-MIT 
+MIT
