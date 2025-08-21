@@ -9,13 +9,14 @@ import { LoroDoc, LoroMap } from "loro-crdt";
 import { schema } from "../../src/schema";
 import { describe, expect, it } from "vitest";
 
+// Utility function to wait for sync to complete (three microtasks for better reliability)
+const waitForSync = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+};
+
 describe("Mirror List Update Optimization", () => {
-    // Utility function to wait for sync to complete (three microtasks for better reliability)
-    const waitForSync = async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-        await Promise.resolve();
-    };
 
     /**
      * Test the behavior when using an idSelector function

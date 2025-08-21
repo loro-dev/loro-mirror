@@ -135,8 +135,7 @@ export function validateSchema<S extends SchemaType>(
                         )
                     ) {
                         const propSchema = schema.definition[key];
-                        const propValue =
-                            (value as Record<string, unknown>)[key];
+                        const propValue = value[key as keyof typeof value];
 
                         const result = validateSchema(propSchema, propValue);
                         if (!result.valid && result.errors) {
@@ -185,8 +184,7 @@ export function validateSchema<S extends SchemaType>(
                             )
                         ) {
                             const propSchema = schema.definition[key];
-                            const propValue =
-                                (value as Record<string, unknown>)[key];
+                            const propValue = value[key as keyof typeof value];
 
                             const result = validateSchema(
                                 propSchema,
@@ -361,6 +359,5 @@ export function createValueFromSchema<S extends SchemaType>(
     // For complex types, pass through as is
     return value as InferType<S>;
 }
-
 
 

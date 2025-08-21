@@ -108,10 +108,14 @@ export function createStore<S extends SchemaType>(
 
     return {
         getState: () => mirror.getState(),
-        setState: (updater) => mirror.setState(updater),
+        setState: (updater) => {
+            mirror.setState(updater);
+        },
         subscribe: (callback) => mirror.subscribe(callback),
         syncFromLoro: () => mirror.syncFromLoro(),
-        syncToLoro: () => mirror.syncToLoro(),
+        syncToLoro: () => {
+            mirror.syncToLoro();
+        },
         sync: () => mirror.sync(),
         getMirror: () => mirror,
         getLoro: () => options.doc,
@@ -123,13 +127,13 @@ export function createStore<S extends SchemaType>(
  */
 export function createReducer<
     S extends SchemaType,
-    A extends Record<string, any>,
+    A extends Record<string, unknown>,
 >(
     actionHandlers: {
         [K in keyof A]: (
-            state: InferType<S>,
+            state: import("immer").Draft<InferType<S>>,
             payload: A[K],
-        ) => void | InferType<S>;
+        ) => void;
     },
 ) {
     return (store: Store<S>) => {
@@ -140,18 +144,13 @@ export function createReducer<
                 throw new Error(`Unknown action type: ${String(actionType)}`);
             }
 
-            store.setState((state) => {
-                // Use immer's produce to create a draft that can be mutated
-                const result = produce(state, (draft: any) => {
-                    // Call the action handler with the draft state and payload
-                    return handler(draft as InferType<S>, payload) as
-                        | InferType<S>
-                        | void;
-                });
-
-                // Cast the result to the correct type
-                return result as unknown as InferType<S>;
-            });
+            store.setState((state) =>
+                produce<InferType<S>>(state, (
+                    draft: import("immer").Draft<InferType<S>>,
+                ) => {
+                    handler(draft, payload);
+                }),
+            );
         };
     };
 }

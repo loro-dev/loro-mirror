@@ -44,7 +44,7 @@ import {
  */
 export function longestIncreasingSubsequence(sequence: number[]): number[] {
     const n = sequence.length;
-    const p = new Array(n).fill(-1);
+    const p = Array.from({ length: n }, () => -1);
     const m: number[] = [];
     for (let i = 0; i < n; i++) {
         const x = sequence[i];
@@ -268,7 +268,7 @@ export function diffText(
         {
             container: containerId,
             key: "",
-            value: newState as string,
+            value: newState,
             kind: "insert",
         },
     ];
@@ -301,9 +301,9 @@ export function diffMovableList<S extends ArrayLike>(
     const changes: Change[] = [];
 
     /** Map of old items by ID */
-    const oldMap = new Map<string, { index: number; item: any }>();
+    const oldMap = new Map<string, { index: number; item: unknown }>();
     /** Map of new items by ID */
-    const newMap = new Map<string, { index: number; item: any }>();
+    const newMap = new Map<string, { index: number; item: unknown }>();
     /** Common items that are shared between old and new states */
     const commonItems: CommonListItemInfo[] = [];
 
@@ -695,8 +695,8 @@ export function diffMap<S extends ObjectLike>(
     inferOptions?: InferContainerOptions,
 ): Change[] {
     const changes: Change[] = [];
-    const oldStateObj = oldState as Record<string, any>;
-    const newStateObj = newState as Record<string, any>;
+    const oldStateObj = oldState as Record<string, unknown>;
+    const newStateObj = newState as Record<string, unknown>;
 
     // Check for removed keys
     for (const key in oldStateObj) {

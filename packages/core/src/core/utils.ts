@@ -3,26 +3,20 @@
  */
 
 import { Container, ContainerID, ContainerType, LoroDoc } from "loro-crdt";
-import {
-    LoroListSchema,
-    LoroMapSchema,
-    LoroMovableListSchema,
-    LoroTextSchemaType,
-    SchemaType,
-} from "../schema";
+import { SchemaType } from "../schema";
 import { Change, InferContainerOptions } from "./mirror";
 
 /**
  * Check if a value is an object
  */
-export function isObject(value: unknown): value is Record<string, any> {
+export function isObject(value: unknown): value is Record<string, unknown> {
     return (
         typeof value === "object" &&
         value !== null &&
         !Array.isArray(value) &&
         !(value instanceof Date) &&
         !(value instanceof RegExp) &&
-        !(value instanceof Function)
+        typeof value !== "function"
     );
 }
 
@@ -65,8 +59,8 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 
     // Handle other objects
     if (!Array.isArray(a) && !Array.isArray(b)) {
-        const keysA = Object.keys(a as object);
-        const keysB = Object.keys(b as object);
+        const keysA = Object.keys(a);
+        const keysB = Object.keys(b);
 
         if (keysA.length !== keysB.length) return false;
 
@@ -90,14 +84,18 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 /**
  * Get a value from a nested object using a path array
  */
-export function getPathValue(obj: Record<string, any>, path: string[]): any {
-    let current = obj;
+export function getPathValue(
+    obj: Record<string, unknown>,
+    path: string[],
+): unknown {
+    let current: unknown = obj;
 
     for (let i = 0; i < path.length; i++) {
         if (current === undefined || current === null) return undefined;
 
         const key = path[i];
-        current = current[key];
+        if (typeof current !== "object") return undefined;
+        current = (current as Record<string, unknown>)[key];
     }
 
     return current;
@@ -108,13 +106,13 @@ export function getPathValue(obj: Record<string, any>, path: string[]): any {
  * Note: This modifies the object directly (intended for use with Immer)
  */
 export function setPathValue(
-    obj: Record<string, any>,
+    obj: Record<string, unknown>,
     path: string[],
-    value: any,
+    value: unknown,
 ): void {
     if (path.length === 0) return;
 
-    let current = obj;
+    let current: Record<string, unknown> = obj;
     const lastIndex = path.length - 1;
 
     for (let i = 0; i < lastIndex; i++) {
@@ -122,14 +120,14 @@ export function setPathValue(
 
         // Create nested objects if they don't exist
         if (
-            current[key] === undefined ||
-            current[key] === null ||
-            typeof current[key] !== "object"
+            (current[key] === undefined ||
+                current[key] === null ||
+                typeof current[key] !== "object")
         ) {
             current[key] = {};
         }
 
-        current = current[key];
+        current = current[key] as Record<string, unknown>;
     }
 
     // Set the value at the final path
@@ -143,17 +141,20 @@ export function setPathValue(
 
 type ContainerValue = {
     cid: string;
-    value: any;
+    value: unknown;
 };
 
-export function valueIsContainer(value: any): value is ContainerValue {
+export function valueIsContainer(value: unknown): value is ContainerValue {
     return (
-        value && typeof value === "object" && "cid" in value && "value" in value
+        value != null &&
+        typeof value === "object" &&
+        "cid" in value &&
+        "value" in value
     );
 }
 
 export function valueIsContainerOfType(
-    value: any,
+    value: unknown,
     containerType: string,
 ): value is ContainerValue {
     return valueIsContainer(value) && value.cid.endsWith(containerType);
@@ -266,19 +267,11 @@ export function tryUpdateToInsertContainer(
 }
 
 /* Get container type from schema */
-export function schemaToContainerType<S extends SchemaType>(
-    schema: S,
-): S extends LoroMapSchema<any>
-    ? "Map"
-    : S extends LoroListSchema<any>
-      ? "List"
-      : S extends LoroMovableListSchema<any>
-        ? "MovableList"
-        : S extends LoroTextSchemaType
-          ? "Text"
-          : undefined {
+export function schemaToContainerType(
+    schema: SchemaType,
+): ContainerType | undefined {
     const containerType = schema.getContainerType();
-    return containerType as any;
+    return containerType === null ? undefined : containerType;
 }
 
 /* Try to infer container type from value */
@@ -305,7 +298,7 @@ export function tryInferContainerType(
 /* Check if value is of a given container type */
 export function isValueOfContainerType(
     containerType: ContainerType,
-    value: any,
+    value: unknown,
 ): boolean {
     switch (containerType) {
         case "MovableList":

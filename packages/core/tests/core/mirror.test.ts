@@ -4,13 +4,13 @@ import { schema } from "../../src/schema";
 import { LoroDoc } from "loro-crdt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Utility function to wait for sync to complete (three microtasks for better reliability)
+const waitForSync = async () => {
+  await Promise.resolve();
+};
+
 describe("Mirror - State Consistency", () => {
   let doc: LoroDoc;
-
-  // Utility function to wait for sync to complete (three microtasks for better reliability)
-  const waitForSync = async () => {
-    await Promise.resolve();
-  };
 
   beforeEach(() => {
     // Create a fresh LoroDoc for each test

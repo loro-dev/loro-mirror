@@ -85,10 +85,12 @@ export function useLoroStore<S extends SchemaType>(
 
     // Initialize the store and get initial state
     const getStore = useCallback((): Store<S> => {
-        if (!storeRef.current) {
-            storeRef.current = createStore(options);
+        let store = storeRef.current;
+        if (!store) {
+            store = createStore(options);
+            storeRef.current = store;
         }
-        return storeRef.current!;
+        return store;
     }, [options]);
 
     // Get the current state
@@ -220,7 +222,7 @@ export function useLoroValue<S extends SchemaType, R>(
  * }
  * ```
  */
-export function useLoroCallback<S extends SchemaType, Args extends any[]>(
+export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
     store: Store<S>,
     updater: (state: InferType<S>, ...args: Args) => void,
     deps: React.DependencyList = [],
@@ -347,7 +349,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
     }
 
     // Hook to create an action that updates the state
-    function useLoroAction<Args extends any[]>(
+    function useLoroAction<Args extends unknown[]>(
         updater: (state: InferType<S>, ...args: Args) => void,
         deps: React.DependencyList = [],
     ): (...args: Args) => void {

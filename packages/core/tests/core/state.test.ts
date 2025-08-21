@@ -442,8 +442,8 @@ describe("Core State Management", () => {
           state.todos.push(newTodo);
         },
         toggleTodo: (state: ReducerState, id: string) => {
-          // Use type assertion to properly type the array elements
-          const todoItems = state.todos as TodoItem[];
+          // Use proper typing inferred from schema
+          const todoItems = state.todos;
           const todo = todoItems.find((t) => t.id === id);
           if (todo) {
             todo.completed = !todo.completed;
@@ -468,8 +468,8 @@ describe("Core State Management", () => {
       await waitForSync();
 
       // Properly type the state and todo items
-      const state = store.getState() as ReducerState;
-      const todoItems = state.todos as TodoItem[];
+      const state = store.getState();
+      const todoItems = state.todos;
 
       expect(todoItems.length).toBe(1);
       expect(todoItems[0].text).toBe("Buy milk");
@@ -479,8 +479,8 @@ describe("Core State Management", () => {
       await waitForSync();
 
       // Get updated state and properly type it
-      const updatedState = store.getState() as ReducerState;
-      const updatedTodoItems = updatedState.todos as TodoItem[];
+      const updatedState = store.getState();
+      const updatedTodoItems = updatedState.todos;
       expect(updatedTodoItems[0].completed).toBe(true);
     });
 

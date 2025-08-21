@@ -111,14 +111,14 @@ export type Change<K extends string | number = string | number> =
     | {
         container: ContainerID | "";
         key: K;
-        value: any;
+        value: unknown;
         kind: "insert" | "delete" | "insert-container";
         childContainerType?: ContainerType;
     }
     | {
         container: ContainerID;
         key: number;
-        value: any;
+        value: unknown;
         kind: "move";
         fromIndex: number;
         toIndex: number;
@@ -255,8 +255,10 @@ export class Mirror<S extends SchemaType> {
                             "loro-movable-list",
                         ].includes(fieldSchema.type)
                     ) {
-                        const containerType =
-                            schemaToContainerType(fieldSchema);
+                        const containerType = schemaToContainerType(fieldSchema);
+                        if (!containerType) {
+                            continue;
+                        }
                         const container = this.getRootContainerByType(
                             key,
                             containerType,
@@ -315,12 +317,19 @@ export class Mirror<S extends SchemaType> {
         let parentSchema = this.getContainerSchema(container.id);
 
         try {
-            const shallowValue = (container as any).getShallowValue();
+            const shallowValue = (
+                container as Container & { getShallowValue: () => unknown }
+            ).getShallowValue();
             console.log("shallow value", JSON.stringify(shallowValue, null, 2));
 
             if (container.kind() === "Map") {
                 // For maps, check each value
-                for (const [key, value] of Object.entries(shallowValue)) {
+                if (typeof shallowValue !== "object" || shallowValue === null) {
+                    return;
+                }
+                for (const [key, value] of Object.entries(
+                    shallowValue as Record<string, unknown>,
+                )) {
                     if (typeof value === "string" && value.startsWith("cid:")) {
                         // This is a container reference
                         const nestedContainer = this.doc.getContainerById(
@@ -347,7 +356,10 @@ export class Mirror<S extends SchemaType> {
                 container.kind() === "MovableList"
             ) {
                 // For lists, check each item
-                shallowValue.forEach((value: any) => {
+                if (!Array.isArray(shallowValue)) {
+                    return;
+                }
+                shallowValue.forEach((value: unknown) => {
                     if (typeof value === "string" && value.startsWith("cid:")) {
                         // This is a container reference
                         const nestedContainer = this.doc.getContainerById(
@@ -487,14 +499,13 @@ export class Mirror<S extends SchemaType> {
         this.syncing = true;
         try {
             // Build a complete new state from the document
-            const currentDocState = this.doc.toJSON();
+            const currentDocState = this.doc.toJSON() as Record<string, unknown>;
 
             // Update the app state to match
-            const newState = produce<InferType<S>>((draft) => {
-                Object.assign(draft, currentDocState);
-            })(this.state);
-
-            this.state = newState;
+            const merged: Record<string, unknown> = {};
+            Object.assign(merged, this.state as Record<string, unknown>);
+            Object.assign(merged, currentDocState);
+            this.state = merged as InferType<S>;
 
             // If the event was from an import, [handleLoroEvent]
             // will handle notifying subscribers
@@ -576,9 +587,7 @@ export class Mirror<S extends SchemaType> {
                 this.applyRootChanges(containerChanges);
             } else {
                 // Handle container-specific changes
-                const container = this.doc.getContainerById(
-                    containerId as ContainerID,
-                );
+                const container = this.doc.getContainerById(containerId);
                 if (container) {
                     this.applyContainerChanges(container, containerChanges);
                 } else {
@@ -599,7 +608,9 @@ export class Mirror<S extends SchemaType> {
         for (const { key, value } of changes) {
             const keyStr = key.toString();
 
-            const fieldSchema = (this.schema as RootSchemaType<any>)
+            const fieldSchema = (this.schema as RootSchemaType<
+                Record<string, ContainerSchemaType>
+            >)
                 ?.definition?.[keyStr];
             const type =
                 fieldSchema?.type ||
@@ -763,7 +774,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update a top-level container directly with a new value
      */
-    private updateTopLevelContainer(container: Container, value: any) {
+    private updateTopLevelContainer(container: Container, value: unknown) {
         const kind = container.kind();
 
         switch (kind) {
@@ -790,7 +801,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update a Text container
      */
-    private updateTextContainer(text: LoroText, value: any) {
+    private updateTextContainer(text: LoroText, value: unknown) {
         if (typeof value !== "string") {
             throw new Error("Text value must be a string");
         }
@@ -802,7 +813,7 @@ export class Mirror<S extends SchemaType> {
      */
     private updateListContainer(
         list: LoroList | LoroMovableList,
-        value: ArrayLike<unknown>,
+        value: unknown,
     ) {
         // Replace entire list
         if (Array.isArray(value)) {
@@ -853,15 +864,12 @@ export class Mirror<S extends SchemaType> {
      */
     private updateListWithIdSelector(
         list: LoroList | LoroMovableList,
-        newItems: any[],
-        idSelector: (item: any) => string | null,
+        newItems: unknown[],
+        idSelector: (item: unknown) => string | null,
         itemSchema: SchemaType,
     ) {
         // First, map current items by ID
-        const currentItemsById = new Map<
-            string,
-            { item: any; index: number }
-        >();
+        const currentItemsById = new Map<string, { item: unknown; index: number }>();
         const currentLength = list.length;
 
         for (let i = 0; i < currentLength; i++) {
@@ -881,10 +889,10 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Then map new items by ID
-        const newItemsById = new Map<string, { item: any; index: number }>();
+        const newItemsById = new Map<string, { item: unknown; index: number }>();
 
         // Helper function to get ID from either LoroMap or plain object
-        const getIdFromItem = (item: any) => {
+        const getIdFromItem = (item: unknown) => {
             if (!item || typeof item !== "object") return null;
 
             try {
@@ -898,8 +906,9 @@ export class Mirror<S extends SchemaType> {
                 }
 
                 // If idSelector tries to call .get("id"), we can try to access .id directly
-                if (typeof item.id === "string") {
-                    return item.id;
+                const idProp = (item as { id?: unknown }).id;
+                if (typeof idProp === "string") {
+                    return idProp;
                 }
             }
             return null;
@@ -998,7 +1007,7 @@ export class Mirror<S extends SchemaType> {
      */
     private updateListByIndex(
         list: LoroList | LoroMovableList,
-        newItems: any[],
+        newItems: unknown[],
         itemSchema: SchemaType | undefined,
     ) {
         // First, clear the list
@@ -1034,7 +1043,7 @@ export class Mirror<S extends SchemaType> {
     private insertItemIntoList(
         list: LoroList | LoroMovableList,
         index: number,
-        item: any,
+        item: unknown,
         itemSchema: SchemaType | undefined,
     ) {
         // Determine if the item should be a container
@@ -1166,7 +1175,7 @@ export class Mirror<S extends SchemaType> {
         map: LoroMap,
         schema: ContainerSchemaType | undefined,
         key: string,
-        value: any,
+        value: unknown,
     ) {
         const [detachedContainer, containerType] =
             this.createContainerFromSchema(schema, value);
@@ -1195,7 +1204,7 @@ export class Mirror<S extends SchemaType> {
         container: Container,
         containerType: ContainerType,
         schema: ContainerSchemaType | undefined,
-        value: any,
+        value: unknown,
     ) {
         if (containerType === "Map") {
             let map = container as LoroMap;
@@ -1207,19 +1216,21 @@ export class Mirror<S extends SchemaType> {
 
             // Populate the map with values
             for (const [key, val] of Object.entries(value)) {
-                const fieldSchema = (schema as LoroMapSchema<any> | undefined)
+                const fieldSchema = (schema as LoroMapSchema<
+                    Record<string, SchemaType>
+                > | undefined)
                     ?.definition[key];
 
                 const isFieldContainer = isContainerSchema(fieldSchema);
 
-                if (
-                    isFieldContainer &&
-                    isValueOfContainerType(
-                        schemaToContainerType(fieldSchema),
-                        val,
-                    )
-                ) {
-                    this.insertContainerIntoMap(map, fieldSchema, key, val);
+                if (isFieldContainer) {
+                    const ct = schemaToContainerType(fieldSchema);
+                    if (ct && isValueOfContainerType(ct, val)) {
+                        this.insertContainerIntoMap(map, fieldSchema, key, val);
+                    } else {
+                        // Default to simple set
+                        map.set(key, val);
+                    }
                 } else {
                     // Default to simple set
                     map.set(key, val);
@@ -1237,7 +1248,7 @@ export class Mirror<S extends SchemaType> {
                 return list;
             }
 
-            const itemSchema = (schema as LoroListSchema<any> | undefined)
+            const itemSchema = (schema as LoroListSchema<SchemaType> | undefined)
                 ?.itemSchema;
 
             const isListItemContainer = isContainerSchema(itemSchema);
@@ -1245,14 +1256,14 @@ export class Mirror<S extends SchemaType> {
             for (let i = 0; i < value.length; i++) {
                 const item = value[i];
 
-                if (
-                    isListItemContainer &&
-                    isValueOfContainerType(
-                        schemaToContainerType(itemSchema),
-                        item,
-                    )
-                ) {
-                    this.insertContainerIntoList(list, itemSchema, i, item);
+                if (isListItemContainer) {
+                    const ct = schemaToContainerType(itemSchema);
+                    if (ct && isValueOfContainerType(ct, item)) {
+                        this.insertContainerIntoList(list, itemSchema, i, item);
+                    } else {
+                        // Default to simple insert
+                        list.insert(i, item);
+                    }
                 } else {
                     // Default to simple insert
                     list.insert(i, item);
@@ -1282,7 +1293,7 @@ export class Mirror<S extends SchemaType> {
      */
     private createContainerFromSchema(
         schema: ContainerSchemaType | undefined,
-        value: any,
+        value: unknown,
     ): [Container, ContainerType] {
         const containerType = schema
             ? schemaToContainerType(schema)
@@ -1311,7 +1322,7 @@ export class Mirror<S extends SchemaType> {
         list: LoroList | LoroMovableList,
         schema: ContainerSchemaType | undefined,
         index: number,
-        value: any,
+        value: unknown,
     ) {
         const [detachedContainer, containerType] =
             this.createContainerFromSchema(schema, value);
@@ -1357,7 +1368,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update a Map container
      */
-    private updateMapContainer(map: LoroMap, value: any) {
+    private updateMapContainer(map: LoroMap, value: unknown) {
         // Replace entire map
         if (isObject(value)) {
             // Find the schema for this container
@@ -1393,7 +1404,7 @@ export class Mirror<S extends SchemaType> {
     private updateMapEntry(
         map: LoroMap,
         key: string,
-        value: any,
+        value: unknown,
         schema: SchemaType | null,
     ) {
         // Check if this field should be a container according to schema

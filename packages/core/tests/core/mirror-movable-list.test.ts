@@ -4,13 +4,14 @@ import { schema } from "../../src/schema";
 import { describe, expect, it } from "vitest";
 import { valueIsContainerOfType } from "../../src/core/utils";
 
+// Utility function to wait for sync to complete (three microtasks for better reliability)
+const waitForSync = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+};
+
 describe("MovableList", () => {
-    // Utility function to wait for sync to complete (three microtasks for better reliability)
-    const waitForSync = async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-        await Promise.resolve();
-    };
 
     async function initTestMirror() {
         const doc = new LoroDoc();
