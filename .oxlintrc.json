@@ -1,0 +1,18 @@
+{
+    "categories": {
+        "correctness": "error",
+        "suspicious": "warn"
+    },
+    "rules": {
+        "typescript/no-explicit-any": "error",
+        "typescript/no-unsafe-type-assertion": "off"
+    },
+    "overrides": [
+        {
+            "files": ["*.test.ts"],
+            "rules": {
+                "typescript/no-explicit-any": "off"
+            }
+        }
+    ]
+}
