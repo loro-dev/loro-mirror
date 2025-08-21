@@ -49,8 +49,8 @@ importers:
         specifier: ^20.10.5
         version: 20.17.19
       loro-crdt:
-        specifier: ^1.4.4
-        version: 1.4.4
+        specifier: ^1.5.10
+        version: 1.5.10
       typescript:
         specifier: ^5.3.3
         version: 5.7.3
@@ -923,6 +923,9 @@ packages:
 
   loro-crdt@1.4.4:
     resolution: {integrity: sha512-4kGyBJ97FWJTaXzSECD7sq6b2+t65EKUGmfcKh+YCHNMSZvv6ZoqME+JpLzAjKyWbBhIGp0mzFyf/5EYZcDBxw==}
+
+  loro-crdt@1.5.10:
+    resolution: {integrity: sha512-dBAw3Hh9EJLaS5MqyNMoZRq7r01UxLWUdm3go2v2EtYIrH658IG0vcktHuZqeEwyTMvE5eUtyHhLx3lgUyDFfw==}
 
   loro-crdt@1.5.9:
     resolution: {integrity: sha512-edkfCYh5W42O7EmNVCx6iPrI0yTAhn0DRbEAk6tmiKaL42IpUoqyDREvtFDmdVVgofxKNgceDBQx8fIIjMdr2Q==}
@@ -2064,6 +2067,8 @@ snapshots:
       js-tokens: 4.0.0
 
   loro-crdt@1.4.4: {}
+
+  loro-crdt@1.5.10: {}
 
   loro-crdt@1.5.9: {}
 

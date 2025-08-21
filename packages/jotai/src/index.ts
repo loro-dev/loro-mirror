@@ -107,27 +107,44 @@ export function loroAtom<T = any>(
     config: LoroAtomConfig<T>
 ): WritableAtom<T, [T | ((prev: T) => T)], void> {
     const store = createLoroStore(config);
-    store.sync();
     const stateAtom = atom(store.getState());
+    let sub: () => void | undefined;
+    const initAtom = atom(null, async (_get, set, action: "init" | "destroy") => {
+        if (action === "init") {
+            sub = store.subscribe((state) => {
+                set(stateAtom, state);
+            });
+            store.sync();
+        } else {
+            sub?.()
+        }
+    })
+
+    initAtom.onMount = (action) => {
+        action("init");
+        return () => {
+            action("destroy");
+        }
+    }
 
     const base = atom(
         // Read function - get current state from store
         (get) => {
+            get(initAtom)
             return get(stateAtom);
         },
         // Write function - update state and sync to Loro
-        (get, set, update) => {
+        (get, _set, update) => {
             const currentState = get(stateAtom);
             if (typeof update === 'function') {
                 const newState = (update as (prev: T) => T)(currentState);
                 store.setState(newState as Partial<T>);
-                set(stateAtom, newState);
             } else {
                 store.setState(update as Partial<T>);
-                set(stateAtom, update);
             }
         }
     );
+
     return base;
 }
 
