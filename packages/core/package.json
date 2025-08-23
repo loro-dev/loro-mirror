@@ -30,11 +30,11 @@
         "immer": "^10.0.3"
     },
     "peerDependencies": {
-        "loro-crdt": "^1.4.4"
+        "loro-crdt": "^1.5.12"
     },
     "devDependencies": {
         "@types/node": "^20.10.5",
-        "loro-crdt": "^1.4.4",
+        "loro-crdt": "^1.5.12",
         "typescript": "^5.3.3"
     }
 }

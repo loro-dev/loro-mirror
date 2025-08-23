@@ -1,3 +1,4 @@
 node_modules
 dist
-*/tsconfig.tsbuildinfo
+# Ignore TS incremental build info everywhere in the repo
+*.tsbuildinfo

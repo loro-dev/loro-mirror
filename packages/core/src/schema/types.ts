@@ -71,7 +71,8 @@ export interface LoroMapSchema<T extends Record<string, SchemaType>>
 export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
     type: "loro-list";
     itemSchema: T;
-    idSelector?: (item: unknown) => string;
+    // oxlint-disable-next-line no-explicit-any
+    idSelector?: (item: any) => string;
 }
 
 /**
@@ -80,7 +81,8 @@ export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
 export interface LoroMovableListSchema<T extends SchemaType> extends BaseSchemaType {
     type: "loro-movable-list";
     itemSchema: T;
-    idSelector?: (item: unknown) => string;
+    // oxlint-disable-next-line no-explicit-any
+    idSelector?: (item: any) => string;
 }
 
 /**
