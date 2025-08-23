@@ -425,8 +425,8 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            console.log("state", JSON.stringify(state, null, 2));
-            console.log("batch", JSON.stringify(b, null, 2));
+            // console.log("state", JSON.stringify(state, null, 2));
+            // console.log("batch", JSON.stringify(b, null, 2));
             state = applyEventBatchToState(state, b);
         });
 

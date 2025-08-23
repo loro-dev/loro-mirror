@@ -1,7 +1,9 @@
 import { produce } from "immer";
 import {
     Container,
+    ContainerID,
     isContainer,
+    LoroCounter,
     LoroEvent,
     LoroEventBatch,
     TreeID,
@@ -31,8 +33,9 @@ export function applyEventBatchToState<T extends object>(
     event: LoroEventBatch,
 ): T {
     const next = produce<T>((draft) => {
+        const ignoreSet = new Set<ContainerID>();
         for (const e of event.events) {
-            applySingleEventToDraft(draft as JSONObject, e);
+            applySingleEventToDraft(draft as JSONObject, e, ignoreSet);
         }
     })(currentState);
     return next;
@@ -41,7 +44,11 @@ export function applyEventBatchToState<T extends object>(
 /**
  * Apply a single event to the immer draft state
  */
-function applySingleEventToDraft(draftRoot: JSONObject, e: LoroEvent) {
+function applySingleEventToDraft(draftRoot: JSONObject, e: LoroEvent, ignoreSet: Set<ContainerID>) {
+    if (ignoreSet.has(e.target)) {
+        return;
+    }
+
     // Resolve the container node in state at the event path
     const { parent, key, node } = getParentKeyNodeByPath(draftRoot, e.path);
 
@@ -96,7 +103,7 @@ function applySingleEventToDraft(draftRoot: JSONObject, e: LoroEvent) {
                 target = parent && key !== undefined ? getAt(parent, key)! : [];
             }
             if (isJSONArray(target)) {
-                applyListDelta(target, e.diff.diff);
+                applyListDelta(target, e.diff.diff, ignoreSet);
             }
             break;
         case "text": {
@@ -210,6 +217,7 @@ function applyMapDiff(targetObj: JSONObject, updated: Record<string, unknown>) {
 function applyListDelta(
     targetArr: JSONValue[],
     deltas: Array<{ insert?: unknown[]; delete?: number; retain?: number }>,
+    ignoreSet: Set<ContainerID>,
 ) {
     let index = 0;
     for (const d of deltas) {
@@ -223,17 +231,11 @@ function applyListDelta(
         } else if (d.insert !== undefined) {
             const items = d.insert.map((it) => {
                 if (isContainer(it)) {
+                    ignoreSet.add(it.id);
                     const c = it as Container;
                     const kind = c.kind();
-                    // Initialize neutral baseline; specific container diff events in the
-                    // same batch will populate the content, preventing double-apply.
-                    if (kind === "Text") return "" as JSONValue;
-                    if (kind === "List" || kind === "MovableList")
-                        return [] as JSONValue[];
-                    if (kind === "Map") return {} as JSONObject;
-                    if (kind === "Counter") return 0 as JSONValue;
-                    if (kind === "Tree") return [] as JSONValue[];
-                    return {} as JSONObject;
+                    if (kind === "Counter") return c.getShallowValue();
+                    return (c as Exclude<Container, LoroCounter>).toJSON();
                 }
                 return it as JSONValue;
             });
