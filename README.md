@@ -51,7 +51,7 @@ const todoSchema = schema({
   todos: schema.LoroList(
     schema.LoroMap({
       id: schema.String({ required: true }),
-      text: schema.String({ required: true }),
+      text: schema.LoroText({ required: true }),
       completed: schema.Boolean({ defaultValue: false }),
     })
   ),
@@ -59,7 +59,6 @@ const todoSchema = schema({
 
 // Create a Loro document
 const doc = new LoroDoc();
-
 // Create a store
 const store = createStore({
   doc,
