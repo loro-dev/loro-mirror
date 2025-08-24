@@ -188,6 +188,7 @@ export class Mirror<S extends SchemaType> {
     // When true, skip processing the next doc-level event batch.
     // Used to avoid double-applying when caller explicitly runs syncFromLoro()
     private suppressNextDocEvent: boolean = false;
+    private subscriptions: (() => void)[] = [];
 
     getContainerIds(): ContainerID[] {
         return Array.from(this.containerRegistry.keys());
@@ -221,7 +222,7 @@ export class Mirror<S extends SchemaType> {
         this.initializeContainers();
 
         // Subscribe to the root doc for global updates
-        this.doc.subscribe(this.handleLoroEvent);
+        this.subscriptions.push(this.doc.subscribe(this.handleLoroEvent));
     }
 
     /**
@@ -1138,13 +1139,9 @@ export class Mirror<S extends SchemaType> {
      * Clean up resources
      */
     dispose() {
-        // Unsubscribe from all container subscriptions
-        for (const [_, unsubscribe] of this.containerSubscriptions) {
-            unsubscribe();
-        }
-
-        this.containerSubscriptions.clear();
         this.subscribers.clear();
+        this.subscriptions.forEach(x => { x() });
+        this.subscriptions.length = 0;
     }
 
     /**

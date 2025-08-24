@@ -20,8 +20,7 @@ npm install loro-mirror-core
 ## Usage
 
 ```typescript
-import { Mirror } from "loro-mirror-core";
-import { schema } from "loro-mirror-core/schema";
+import { Mirror, schema } from "loro-mirror";
 import { LoroDoc } from "loro-crdt";
 
 // Define your schema
