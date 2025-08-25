@@ -74,9 +74,6 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify that only the specified item was updated
@@ -97,9 +94,6 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify that items were reordered correctly, maintaining their identity
@@ -121,9 +115,6 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify that a new item was added while maintaining existing items
@@ -145,11 +136,7 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
         await waitForSync();
-        mirror.sync();
-        await waitForSync();
-
         // Verify that the specified item was removed while maintaining others
         expect(mirror.getState().todos).toHaveLength(3);
         expect(mirror.getState().todos[0].id).toBe("3");
@@ -227,9 +214,6 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify that the item at position 1 was updated
@@ -248,9 +232,6 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify that the items were reordered by position
@@ -322,9 +303,6 @@ describe("Mirror List Update Optimization", () => {
         mirror.setState(initialState);
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify initial state
@@ -357,9 +335,6 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify that only the nested item's quantity was updated
@@ -390,9 +365,6 @@ describe("Mirror List Update Optimization", () => {
         });
         doc.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirror.sync();
         await waitForSync();
 
         // Verify that the new nested item was added
@@ -482,11 +454,6 @@ describe("Mirror List Update Optimization", () => {
         docWithoutId.commit();
         docMovable.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirrorWithId.sync();
-        mirrorWithoutId.sync();
-        mirrorMovable.sync();
         await waitForSync();
 
         // Verify initial state
@@ -504,10 +471,6 @@ describe("Mirror List Update Optimization", () => {
         docWithId.commit();
         docWithoutId.commit();
 
-        // Wait for sync to complete
-        await waitForSync();
-        mirrorWithId.sync();
-        mirrorWithoutId.sync();
         await waitForSync();
 
         // Verify that both mirrors correctly reordered the items

@@ -207,8 +207,6 @@ describe("Mirror - State Consistency", () => {
     await waitForSync();
     await waitForSync();
 
-    // Force a sync to ensure state is updated
-    mirror.sync();
     await waitForSync();
 
     // Get the initial state
@@ -249,8 +247,6 @@ describe("Mirror - State Consistency", () => {
     await waitForSync();
     await waitForSync();
 
-    // Force sync to update state
-    mirror.sync();
     await waitForSync();
 
     // Get updated state
@@ -368,8 +364,6 @@ describe("Mirror - State Consistency", () => {
     map.set("value", "updated in loro");
     doc.commit();
 
-    // Manually sync from Loro
-    mirror.syncFromLoro();
     await waitForSync();
 
     // Verify the update was reflected in the mirror state
@@ -384,8 +378,6 @@ describe("Mirror - State Consistency", () => {
       },
     });
 
-    // Manually sync to Loro and commit
-    mirror.syncToLoro();
     doc.commit();
 
     // Verify Loro doc was updated
@@ -491,9 +483,6 @@ describe("Mirror - State Consistency", () => {
     // Add to list and commit
     itemsList.insertContainer(1, item2);
     doc.commit();
-
-    // Manually sync
-    mirror.syncFromLoro();
 
     // Wait for sync to complete
     await waitForSync();

@@ -14,6 +14,8 @@ import {
     LoroMovableList,
     LoroText,
 } from "loro-crdt";
+
+import { applyEventBatchToState } from "./loroEventApply";
 import {
     ContainerSchemaType,
     getDefaultValue,
@@ -177,11 +179,8 @@ export class Mirror<S extends SchemaType> {
     private subscribers: Set<SubscriberCallback<InferType<S>>> = new Set();
     private syncing: boolean = false;
     private options: MirrorOptions<S>;
-
-    // Unsubscribe functions for container subscriptions
-    private containerSubscriptions: Map<ContainerID, () => void> = new Map();
-
     private containerRegistry: ContainerRegistry = new Map();
+    private subscriptions: (() => void)[] = [];
 
     getContainerIds(): ContainerID[] {
         return Array.from(this.containerRegistry.keys());
@@ -215,7 +214,7 @@ export class Mirror<S extends SchemaType> {
         this.initializeContainers();
 
         // Subscribe to the root doc for global updates
-        this.doc.subscribe(this.handleLoroEvent);
+        this.subscriptions.push(this.doc.subscribe(this.handleLoroEvent));
     }
 
     /**
@@ -289,10 +288,6 @@ export class Mirror<S extends SchemaType> {
 
             this.registerContainerWithRegistry(containerId, schemaType);
 
-            // Subscribe to container events
-            const unsubscribe = container.subscribe(this.handleContainerEvent);
-            this.containerSubscriptions.set(containerId, unsubscribe);
-
             // Register nested containers
             this.registerNestedContainers(container);
         } catch (error) {
@@ -320,7 +315,13 @@ export class Mirror<S extends SchemaType> {
             const shallowValue = (
                 container as Container & { getShallowValue: () => unknown }
             ).getShallowValue();
-            console.log("shallow value", JSON.stringify(shallowValue, null, 2));
+            // Debug: shallow value of container structure
+            if (this.options.debug) {
+                console.log(
+                    "shallow value",
+                    JSON.stringify(shallowValue, null, 2),
+                );
+            }
 
             if (container.kind() === "Map") {
                 // For maps, check each value
@@ -403,19 +404,10 @@ export class Mirror<S extends SchemaType> {
     private handleLoroEvent = (event: LoroEventBatch) => {
         if (this.syncing) return;
         if (event.origin === "to-loro") return;
-
         this.syncing = true;
         try {
-            // Get the current state of the doc
-            const currentDocState = this.doc.toJSON();
-
-            // Update the state with the current doc state
-            const newState = produce<InferType<S>>((draft) => {
-                Object.assign(draft, currentDocState);
-            })(this.state);
-
-            this.state = newState;
-
+            // Incrementally update state using event deltas
+            this.state = applyEventBatchToState(this.state, event);
             // Notify subscribers of the update
             this.notifySubscribers(SyncDirection.FROM_LORO);
         } finally {
@@ -489,34 +481,7 @@ export class Mirror<S extends SchemaType> {
         }
     }
 
-    /**
-     * Handle events from individual containers
-     */
-    private handleContainerEvent = (event: LoroEventBatch) => {
-        if (this.syncing) return;
-        if (event.origin === "to-loro") return;
 
-        this.syncing = true;
-        try {
-            // Build a complete new state from the document
-            const currentDocState = this.doc.toJSON() as Record<string, unknown>;
-
-            // Update the app state to match
-            const merged: Record<string, unknown> = {};
-            Object.assign(merged, this.state as Record<string, unknown>);
-            Object.assign(merged, currentDocState);
-            this.state = merged as InferType<S>;
-
-            // If the event was from an import, [handleLoroEvent]
-            // will handle notifying subscribers
-            if (event.by !== "import") {
-                // Notify subscribers
-                this.notifySubscribers(SyncDirection.FROM_LORO);
-            }
-        } finally {
-            this.syncing = false;
-        }
-    };
 
     /**
      * Update Loro based on state changes
@@ -1096,74 +1061,12 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Sync application state from Loro (one way)
-     */
-    syncFromLoro(): InferType<S> {
-        if (this.syncing) return this.state;
-
-        this.syncing = true;
-        try {
-            // Get the current state from the document
-            const docState = this.doc.toJSON();
-
-            // Update the application state
-            const newState = produce<InferType<S>>((draft) => {
-                Object.assign(draft, docState);
-            })(this.state);
-
-            this.state = newState;
-
-            this.notifySubscribers(SyncDirection.FROM_LORO);
-        } finally {
-            this.syncing = false;
-        }
-
-        return this.state;
-    }
-
-    /**
-     * Sync Loro from application state (one way)
-     */
-    syncToLoro() {
-        if (this.syncing) return;
-
-        this.syncing = true;
-        try {
-            // Update Loro based on current state
-            this.updateLoro(this.state);
-
-            this.notifySubscribers(SyncDirection.TO_LORO);
-        } finally {
-            this.syncing = false;
-        }
-    }
-
-    /**
-     * Full bidirectional sync
-     */
-    sync() {
-        if (this.syncing) return this.state;
-
-        // First sync from Loro to get latest state
-        this.syncFromLoro();
-
-        // Then sync back to Loro
-        this.syncToLoro();
-
-        return this.state;
-    }
-
-    /**
      * Clean up resources
      */
     dispose() {
-        // Unsubscribe from all container subscriptions
-        for (const [_, unsubscribe] of this.containerSubscriptions) {
-            unsubscribe();
-        }
-
-        this.containerSubscriptions.clear();
         this.subscribers.clear();
+        this.subscriptions.forEach(x => { x() });
+        this.subscriptions.length = 0;
     }
 
     /**
@@ -1198,7 +1101,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Once a container has been created, and attached to its parent
      *
-     * We initialize the inner vaues using the schema that we previously registered.
+     * We initialize the inner values using the schema that we previously registered.
      */
     private initializeContainer(
         container: Container,
@@ -1439,7 +1342,10 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Update state and propagate changes to Loro
+     * 
      * @param updater Function or object to update state
+     *  If it's a function, it will be called with the current state as an argument.
+     *  But the provided state is immutable, it should return a new state immutable object.
      * @param options Optional settings including tags
      */
     setState(
@@ -1457,6 +1363,7 @@ export class Mirror<S extends SchemaType> {
                 : { ...this.state, ...updater };
 
         // Validate state if needed
+        // TODO: REVIEW We don't need to validate the state that are already reviewed
         if (this.options.validateUpdates) {
             const validation =
                 this.schema && validateSchema(this.schema, newState);

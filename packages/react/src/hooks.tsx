@@ -107,9 +107,6 @@ export function useLoroStore<S extends SchemaType>(
             setLocalState(newState);
         });
 
-        // Initial sync
-        store.sync();
-
         return unsubscribe;
     }, [getStore]);
 
@@ -125,27 +122,9 @@ export function useLoroStore<S extends SchemaType>(
         [getStore],
     );
 
-    // Create a stable sync function
-    const sync = useCallback(() => {
-        return getStore().sync();
-    }, [getStore]);
-
-    // Create a stable syncFromLoro function
-    const syncFromLoro = useCallback(() => {
-        return getStore().syncFromLoro();
-    }, [getStore]);
-
-    // Create a stable syncToLoro function
-    const syncToLoro = useCallback(() => {
-        getStore().syncToLoro();
-    }, [getStore]);
-
     return {
         state,
         setState,
-        sync,
-        syncFromLoro,
-        syncToLoro,
         store: getStore(),
     };
 }

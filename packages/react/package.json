@@ -32,13 +32,13 @@
         "loro-mirror": "workspace:*"
     },
     "peerDependencies": {
-        "loro-crdt": "^1.4.4",
+        "loro-crdt": "^1.5.12",
         "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
     },
     "devDependencies": {
         "@types/node": "^20.10.5",
         "@types/react": "^18.2.45",
-        "loro-crdt": "^1.4.4",
+        "loro-crdt": "^1.5.12",
         "react": "^18.2.0",
         "typescript": "^5.3.3"
     }
