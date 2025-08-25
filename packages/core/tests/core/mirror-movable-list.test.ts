@@ -40,7 +40,6 @@ describe("MovableList", () => {
             ],
         });
 
-        mirror.sync();
         await waitForSync();
 
         return { mirror, doc };
@@ -90,7 +89,6 @@ describe("MovableList", () => {
             ],
         });
 
-        mirror.sync();
         await waitForSync();
 
         const serialized = doc.getDeepValueWithID();
@@ -120,7 +118,6 @@ describe("MovableList", () => {
             ],
         });
 
-        mirror.sync();
         await waitForSync();
 
         const serialized = doc.getDeepValueWithID();
@@ -151,7 +148,6 @@ describe("MovableList", () => {
             ],
         });
 
-        mirror.sync();
         await waitForSync();
 
         const initialSerialized = doc.getDeepValueWithID();
@@ -179,7 +175,6 @@ describe("MovableList", () => {
 
         mirror.setState(deriredState);
 
-        mirror.sync();
         await waitForSync();
 
         const serialized = doc.getDeepValueWithID();
@@ -226,7 +221,6 @@ describe("MovableList", () => {
             ],
         });
 
-        mirror.sync();
         await waitForSync();
 
         const desiredState = {
@@ -248,7 +242,6 @@ describe("MovableList", () => {
 
         mirror.setState(desiredState);
 
-        mirror.sync();
         await waitForSync();
 
         const serialized = doc.getDeepValueWithID();
@@ -304,7 +297,6 @@ describe("MovableList", () => {
 
         mirror.setState(desiredState);
 
-        mirror.sync();
         await waitForSync();
 
         const serialized = doc.getDeepValueWithID();
@@ -323,7 +315,6 @@ describe("MovableList", () => {
             list: [],
         });
 
-        mirror.sync();
         await waitForSync();
 
         const serialized = doc.getDeepValueWithID();
@@ -347,7 +338,6 @@ describe("MovableList", () => {
 
         mirror.setState(desiredState);
 
-        mirror.sync();
         await waitForSync();
 
         const serialized = doc.getDeepValueWithID();

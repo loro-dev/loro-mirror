@@ -179,15 +179,7 @@ export class Mirror<S extends SchemaType> {
     private subscribers: Set<SubscriberCallback<InferType<S>>> = new Set();
     private syncing: boolean = false;
     private options: MirrorOptions<S>;
-
-    // Unsubscribe functions for container subscriptions
-    private containerSubscriptions: Map<ContainerID, () => void> = new Map();
-
     private containerRegistry: ContainerRegistry = new Map();
-
-    // When true, skip processing the next doc-level event batch.
-    // Used to avoid double-applying when caller explicitly runs syncFromLoro()
-    private suppressNextDocEvent: boolean = false;
     private subscriptions: (() => void)[] = [];
 
     getContainerIds(): ContainerID[] {
@@ -412,11 +404,6 @@ export class Mirror<S extends SchemaType> {
     private handleLoroEvent = (event: LoroEventBatch) => {
         if (this.syncing) return;
         if (event.origin === "to-loro") return;
-        if (this.suppressNextDocEvent) {
-            this.suppressNextDocEvent = false;
-            return;
-        }
-
         this.syncing = true;
         try {
             // Incrementally update state using event deltas
@@ -1071,68 +1058,6 @@ export class Mirror<S extends SchemaType> {
         for (const subscriber of this.subscribers) {
             subscriber(this.state, metadata);
         }
-    }
-
-    /**
-     * Sync application state from Loro (one way)
-     */
-    syncFromLoro(): InferType<S> {
-        if (this.syncing) return this.state;
-
-        this.syncing = true;
-        try {
-            // Get the current state from the document
-            const docState = this.doc.toJSON();
-
-            // Update the application state
-            const newState = produce<InferType<S>>((draft) => {
-                Object.assign(draft, docState);
-            })(this.state);
-
-            this.state = newState;
-
-            this.notifySubscribers(SyncDirection.FROM_LORO);
-            // We've just synchronized from the doc explicitly; the doc will
-            // still emit the same change batch asynchronously. Skip it once
-            // to avoid double-applying the same diff to our state.
-            this.suppressNextDocEvent = true;
-        } finally {
-            this.syncing = false;
-        }
-
-        return this.state;
-    }
-
-    /**
-     * Sync Loro from application state (one way)
-     */
-    syncToLoro() {
-        if (this.syncing) return;
-
-        this.syncing = true;
-        try {
-            // Update Loro based on current state
-            this.updateLoro(this.state);
-
-            this.notifySubscribers(SyncDirection.TO_LORO);
-        } finally {
-            this.syncing = false;
-        }
-    }
-
-    /**
-     * Full bidirectional sync
-     */
-    sync() {
-        if (this.syncing) return this.state;
-
-        // First sync from Loro to get latest state
-        this.syncFromLoro();
-
-        // Then sync back to Loro
-        this.syncToLoro();
-
-        return this.state;
     }
 
     /**

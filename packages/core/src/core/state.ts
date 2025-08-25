@@ -70,21 +70,6 @@ export interface Store<S extends SchemaType> {
     ) => () => void;
 
     /**
-     * Force sync from Loro to application state
-     */
-    syncFromLoro: () => InferType<S>;
-
-    /**
-     * Force sync from application state to Loro
-     */
-    syncToLoro: () => void;
-
-    /**
-     * Full bidirectional sync
-     */
-    sync: () => InferType<S>;
-
-    /**
      * Get the underlying Mirror instance
      */
     getMirror: () => Mirror<S>;
@@ -112,11 +97,6 @@ export function createStore<S extends SchemaType>(
             mirror.setState(updater);
         },
         subscribe: (callback) => mirror.subscribe(callback),
-        syncFromLoro: () => mirror.syncFromLoro(),
-        syncToLoro: () => {
-            mirror.syncToLoro();
-        },
-        sync: () => mirror.sync(),
         getMirror: () => mirror,
         getLoro: () => options.doc,
     };

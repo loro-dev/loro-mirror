@@ -29,7 +29,6 @@ describe("Text Container Behave correctly", () => {
             text: "Hello World",
         });
 
-        mirror.sync();
         await waitForSync();
 
         let serialized = doc.getDeepValueWithID();
@@ -53,8 +52,8 @@ describe("Text Container Behave correctly", () => {
         ).toBe("Hello World");
 
         doc.getText("text").update("Hello World 2");
+        doc.commit();
 
-        mirror.sync();
         await waitForSync();
 
         const mirrorState = mirror.getState();
@@ -90,7 +89,6 @@ describe("Text Container Behave correctly", () => {
             },
         });
 
-        mirror.sync();
         await waitForSync();
 
         let serialized = doc.getDeepValueWithID();
@@ -127,8 +125,8 @@ describe("Text Container Behave correctly", () => {
         const map = doc.getMap("map");
         const text = map.get("text") as LoroText;
         text.update("Hello World 2");
+        doc.commit();
 
-        mirror.sync();
         await waitForSync();
 
         const mirrorState = mirror.getState();
@@ -142,7 +140,7 @@ describe("Text Container Behave correctly", () => {
 
         expect(
             valueIsContainer(serialized.map) &&
-                valueIsContainerOfType(serialized.map, ":Map"),
+            valueIsContainerOfType(serialized.map, ":Map"),
             "map field should be a LoroMap Container -- set from loro",
         );
     });
@@ -161,7 +159,6 @@ describe("Text Container Behave correctly", () => {
             list: ["Hello World"],
         });
 
-        mirror.sync();
         await waitForSync();
 
         let serialized = doc.getDeepValueWithID();
