@@ -301,6 +301,9 @@ export function diffMovableList<S extends ArrayLike>(
 ): Change[] {
     /** Changes resulting from the diff */
     const changes: Change[] = [];
+    if (oldState === newState) {
+        return changes;
+    }
 
     /** Map of old items by ID */
     const oldMap = new Map<string, { index: number; item: unknown }>();
@@ -460,6 +463,10 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     inferOptions?: InferContainerOptions,
 ): Change[] {
     const changes: Change[] = [];
+    if (oldState === newState) {
+        return changes;
+    }
+
     const useContainer = !!(schema?.itemSchema.getContainerType() ?? true);
     const oldItemsById = new Map();
     const newItemsById = new Map();
@@ -623,13 +630,42 @@ export function diffList<S extends ArrayLike>(
     schema: LoroListSchema<SchemaType> | undefined,
     inferOptions?: InferContainerOptions,
 ): Change[] {
+    if (oldState === newState) {
+        return [];
+    }
+
     const changes: Change[] = [];
     const oldLen = oldState.length;
     const newLen = newState.length;
-    const minLen = Math.min(oldLen, newLen);
     const list = doc.getList(containerId);
 
-    for (let i = 0; i < minLen; i++) {
+    // Find common prefix
+    let start = 0;
+    while (
+        start < oldLen &&
+        start < newLen &&
+        oldState[start] === newState[start]
+    ) {
+        start++;
+    }
+
+    // Find common suffix (after the differing middle), ensuring no overlap with prefix
+    let suffix = 0;
+    while (
+        suffix < oldLen - start &&
+        suffix < newLen - start &&
+        oldState[oldLen - 1 - suffix] === newState[newLen - 1 - suffix]
+    ) {
+        suffix++;
+    }
+
+    const oldBlockLen = oldLen - start - suffix;
+    const newBlockLen = newLen - start - suffix;
+
+    // First, handle overlapping part in the middle block as updates (preserve nested containers)
+    const overlap = Math.min(oldBlockLen, newBlockLen);
+    for (let j = 0; j < overlap; j++) {
+        const i = start + j;
         if (oldState[i] === newState[i]) continue;
 
         const itemOnLoro = list.get(i);
@@ -643,7 +679,7 @@ export function diffList<S extends ArrayLike>(
                 inferOptions,
             );
             changes.push(...nestedChanges);
-        } else if (!deepEqual(oldState[i], newState[i])) {
+        } else {
             changes.push({
                 container: containerId,
                 key: i,
@@ -665,22 +701,26 @@ export function diffList<S extends ArrayLike>(
         }
     }
 
-    for (let i = newLen; i < oldLen; i++) {
+    // Then handle extra deletions (when old middle block is longer)
+    for (let k = 0; k < oldBlockLen - overlap; k++) {
+        // Always delete at the same index (start + overlap) to remove a contiguous block
         changes.push({
             container: containerId,
-            key: newLen,
+            key: start + overlap,
             value: undefined,
             kind: "delete",
         });
     }
 
-    for (let i = oldLen; i < newLen; i++) {
+    // Finally handle extra insertions (when new middle block is longer)
+    for (let k = 0; k < newBlockLen - overlap; k++) {
+        const insertIndex = start + overlap + k;
         changes.push(
             tryUpdateToInsertContainer(
                 {
                     container: containerId,
-                    key: i,
-                    value: newState[i],
+                    key: insertIndex,
+                    value: newState[insertIndex],
                     kind: "insert",
                 },
                 true,
