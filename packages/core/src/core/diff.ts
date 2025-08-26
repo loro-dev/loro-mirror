@@ -321,18 +321,22 @@ export function diffMovableList<S extends ArrayLike>(
 
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
-        if (id) {
-            newMap.set(id, { index: newIndex, item });
-            if (oldMap.has(id)) {
-                const { index: oldIndex, item: oldItem } = oldMap.get(id)!;
-                commonItems.push({
-                    id,
-                    oldIndex,
-                    newIndex,
-                    oldItem,
-                    newItem: item,
-                });
-            }
+        if (!id) {
+            throw new Error("Item ID cannot be null");
+        }
+        if (newMap.has(id)) {
+            throw new Error("Duplicate item id in new state");
+        }
+        newMap.set(id, { index: newIndex, item });
+        if (oldMap.has(id)) {
+            const { index: oldIndex, item: oldItem } = oldMap.get(id)!;
+            commonItems.push({
+                id,
+                oldIndex,
+                newIndex,
+                oldItem,
+                newItem: item,
+            });
         }
     }
 
@@ -355,27 +359,51 @@ export function diffMovableList<S extends ArrayLike>(
     changes.push(...deletionOps);
 
     // Handle moves
-    const oldIndicesSequence = commonItems.map((info) => info.oldIndex);
+    // After deletions are applied, indices shift left for items after a deleted index.
+    // Compute move operations relative to the post-deletion list to avoid index mismatch.
+    // Build the order of common item IDs in old and new states.
+    const oldCommonIds: string[] = [];
+    for (const item of oldState) {
+        const id = idSelector(item);
+        if (id && newMap.has(id)) {
+            oldCommonIds.push(id);
+        }
+    }
+    const newCommonIds: string[] = commonItems.map((info) => info.id);
 
-    /** LIS of the old indices that are in the common items
-     * This is represented as the core set of indexes which remain the same
-     * betweeen both old and new states.
-     * All move operations should only be performed on items that are not in the LIS.
-     * By excluding items in the LIS, we ensure that we don't perform unnecessary move operations.
-     */
-    const lisIndices = longestIncreasingSubsequence(oldIndicesSequence);
-    const lisSet = new Set<number>(lisIndices);
-    for (const [i, info] of commonItems.entries()) {
-        // If the common item is not in the LIS and its positions differ, mark it for move
-        if (!lisSet.has(i) && info.oldIndex !== info.newIndex) {
-            changes.push({
-                container: containerId,
-                key: info.oldIndex,
-                value: info.newItem,
-                kind: "move",
-                fromIndex: info.oldIndex,
-                toIndex: info.newIndex,
-            });
+    // Simulate moves on an array of IDs to compute correct from/to indices
+    const currentOrder = [...oldCommonIds];
+    const currentIndexMap = new Map<string, number>();
+    currentOrder.forEach((id, idx) => currentIndexMap.set(id, idx));
+
+    for (
+        let targetIndex = 0;
+        targetIndex < newCommonIds.length;
+        targetIndex++
+    ) {
+        const id = newCommonIds[targetIndex];
+        const currentIndex = currentIndexMap.get(id);
+        if (currentIndex === undefined) continue; // safety guard
+        if (currentIndex === targetIndex) continue; // already in place
+
+        changes.push({
+            container: containerId,
+            key: currentIndex,
+            value: undefined,
+            kind: "move",
+            fromIndex: currentIndex,
+            toIndex: targetIndex,
+        });
+
+        // Update the simulated order and index map after the move
+        const [moved] = currentOrder.splice(currentIndex, 1);
+        currentOrder.splice(targetIndex, 0, moved);
+
+        // Update indices for the affected range
+        const start = Math.min(currentIndex, targetIndex);
+        const end = Math.max(currentIndex, targetIndex);
+        for (let i = start; i <= end; i++) {
+            currentIndexMap.set(currentOrder[i], i);
         }
     }
 
