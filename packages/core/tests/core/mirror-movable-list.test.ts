@@ -12,7 +12,6 @@ const waitForSync = async () => {
 };
 
 describe("MovableList", () => {
-
     async function initTestMirror() {
         const doc = new LoroDoc();
         doc.setPeerId(1);
@@ -348,5 +347,236 @@ describe("MovableList", () => {
         ).toBe("Hello World 4");
 
         expect(mirror.getState()).toEqual(desiredState);
+    });
+
+    it("movable list handles basic moves", async () => {
+        const doc = new LoroDoc();
+        doc.setPeerId(1);
+        const schema_ = schema({
+            list: schema.LoroMovableList(
+                schema.LoroMap({
+                    id: schema.String(),
+                    text: schema.LoroText(),
+                }),
+                (item) => item.id,
+            ),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: schema_,
+        });
+
+        mirror.setState({
+            list: [
+                { id: "0", text: "" },
+                { id: "1", text: "" },
+                { id: "2", text: "" },
+                { id: "3", text: "" },
+            ],
+        });
+        expect(doc.frontiers()[0].counter).toBe(11);
+        mirror.setState({
+            list: [
+                { id: "1", text: "" },
+                { id: "0", text: "" },
+                { id: "2", text: "" },
+                { id: "3", text: "" },
+            ],
+        });
+        expect(doc.frontiers()[0].counter).toBe(12);
+        mirror.setState({
+            list: [
+                { id: "0", text: "" },
+                { id: "1", text: "" },
+                { id: "3", text: "" },
+                { id: "2", text: "" },
+            ],
+        });
+        expect(doc.frontiers()[0].counter).toBe(14);
+    });
+
+    it("movable list handles delete + reorder without index errors", async () => {
+        const { mirror, doc } = await initTestMirror();
+
+        // Set to four items first
+        mirror.setState({
+            list: [
+                { id: "A", text: "tA" },
+                { id: "B", text: "tB" },
+                { id: "C", text: "tC" },
+                { id: "D", text: "tD" },
+            ],
+        });
+        await waitForSync();
+
+        const initial = doc.getDeepValueWithID();
+        const idToCid = new Map(
+            initial.list.value.map((x: any) => [x.value.id, x.cid]),
+        );
+
+        const desired = {
+            list: [
+                { id: "D", text: "tD" },
+                { id: "C", text: "tC" },
+                { id: "B", text: "tB" },
+            ],
+        };
+        mirror.setState(desired);
+        await waitForSync();
+
+        const after = doc.getDeepValueWithID();
+        expect(after.list.value.map((x: any) => x.value.id)).toEqual([
+            "D",
+            "C",
+            "B",
+        ]);
+        // Container IDs preserved for remaining items
+        expect(after.list.value[0].cid).toBe(idToCid.get("D"));
+        expect(after.list.value[1].cid).toBe(idToCid.get("C"));
+        expect(after.list.value[2].cid).toBe(idToCid.get("B"));
+
+        // Ensure state mirrors correctly
+        expect(mirror.getState()).toEqual(desired);
+    });
+
+    it("movable list handles insert + delete + reorder mix", async () => {
+        const { mirror, doc } = await initTestMirror();
+
+        mirror.setState({
+            list: [
+                { id: "A", text: "tA" },
+                { id: "B", text: "tB" },
+                { id: "C", text: "tC" },
+            ],
+        });
+        await waitForSync();
+
+        const initial = doc.getDeepValueWithID();
+        const idToCid = new Map(
+            initial.list.value.map((x: any) => [x.value.id, x.cid]),
+        );
+
+        const desired = {
+            list: [
+                { id: "C", text: "tc" },
+                { id: "E", text: "te" },
+                { id: "B", text: "tb" },
+            ],
+        };
+        mirror.setState(desired);
+        await waitForSync();
+
+        const after = doc.getDeepValueWithID();
+        expect(after.list.value.map((x: any) => x.value.id)).toEqual([
+            "C",
+            "E",
+            "B",
+        ]);
+        // C and B preserve container ids; E is new
+        expect(after.list.value[0].cid).toBe(idToCid.get("C"));
+        expect(after.list.value[2].cid).toBe(idToCid.get("B"));
+        expect(after.list.value[1].cid).not.toBe(idToCid.get("A"));
+        expect(after.list.value[1].cid).not.toBe(idToCid.get("B"));
+        expect(after.list.value[1].cid).not.toBe(idToCid.get("C"));
+
+        // Texts updated accordingly
+        expect(after.list.value[0].value.text.value).toBe("tc");
+        expect(after.list.value[2].value.text.value).toBe("tb");
+        expect(after.list.value[1].value.text.value).toBe("te");
+
+        expect(mirror.getState()).toEqual(desired);
+    });
+
+    it("movable list throws on missing item id", async () => {
+        const { mirror } = await initTestMirror();
+        // @ts-expect-error testing runtime validation
+        expect(() =>
+            mirror.setState({
+                list: [
+                    // missing id
+                    { text: "no id" },
+                ],
+            }),
+        ).toThrow();
+    });
+
+    it("movable list throws on duplicate ids in new state", async () => {
+        const { mirror } = await initTestMirror();
+        expect(() =>
+            mirror.setState({
+                list: [
+                    { id: "X", text: "1" },
+                    { id: "X", text: "2" },
+                ],
+            }),
+        ).toThrow();
+    });
+
+    it("movable list fuzz: large shuffles preserve container ids and text", async () => {
+        const { mirror, doc } = await initTestMirror();
+
+        // Deterministic RNG
+        let seed = 0x12345678;
+        const rand = () => {
+            seed = (1664525 * seed + 1013904223) >>> 0;
+            return seed / 0x100000000;
+        };
+        const shuffle = <T>(arr: T[]): T[] => {
+            const a = arr.slice();
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(rand() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        };
+
+        const N = 80;
+        const ROUNDS = 25;
+
+        const makeItem = (i: number) => ({
+            id: String(i + 1),
+            text: `T${i + 1}`,
+        });
+        let current = Array.from({ length: N }, (_, i) => makeItem(i));
+
+        mirror.setState({ list: current });
+        await waitForSync();
+
+        const initial = doc.getDeepValueWithID();
+        const initialCidById = new Map(
+            initial.list.value.map((x: any) => [x.value.id, x.cid]),
+        );
+
+        for (let r = 0; r < ROUNDS; r++) {
+            // Shuffle order
+            let next = shuffle(current);
+
+            // Randomly update a few items' text to exercise nested updates
+            const updates = Math.floor(rand() * 5);
+            for (let k = 0; k < updates; k++) {
+                const idx = Math.floor(rand() * next.length);
+                const id = next[idx].id;
+                next[idx] = { id, text: `T${id}-r${r}` } as any;
+            }
+
+            mirror.setState({ list: next });
+            await waitForSync();
+
+            const after = doc.getDeepValueWithID();
+            // Verify order and IDs
+            const ids = after.list.value.map((x: any) => x.value.id);
+            expect(ids).toEqual(next.map((x) => x.id));
+            // Verify container IDs preserved
+            after.list.value.forEach((x: any, i: number) => {
+                expect(x.cid).toBe(initialCidById.get(next[i].id));
+                expect(x.value.text.value).toBe(next[i].text);
+            });
+
+            // Mirror state reflects next
+            expect(mirror.getState()).toEqual({ list: next });
+
+            current = next;
+        }
     });
 });
