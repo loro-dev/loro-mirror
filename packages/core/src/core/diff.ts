@@ -32,7 +32,7 @@ import {
     type ObjectLike,
     type ArrayLike,
     tryInferContainerType,
-    tryUpdateToInsertContainer,
+    tryUpdateToContainer,
     isStringLike,
     isArrayLike,
 } from "./utils";
@@ -383,7 +383,7 @@ export function diffMovableList<S extends ArrayLike>(
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
         if (!id || !oldMap.has(id)) {
-            const op = tryUpdateToInsertContainer(
+            const op = tryUpdateToContainer(
                 {
                     container: containerId,
                     key: newIndex,
@@ -417,20 +417,13 @@ export function diffMovableList<S extends ArrayLike>(
             );
             changes.push(...containerChanges);
         } else {
-            // For non-container items, simulate an update as a deletion followed by an insertion.
-            changes.push({
-                container: containerId,
-                key: info.newIndex,
-                value: undefined,
-                kind: "delete",
-            });
             changes.push(
-                tryUpdateToInsertContainer(
+                tryUpdateToContainer(
                     {
                         container: containerId,
                         key: info.newIndex,
                         value: info.newItem,
-                        kind: "insert",
+                        kind: "set",
                     },
                     true,
                     schema?.itemSchema,
@@ -538,7 +531,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     kind: "delete",
                 });
                 changes.push(
-                    tryUpdateToInsertContainer(
+                    tryUpdateToContainer(
                         {
                             container: containerId,
                             key: index + offset,
@@ -559,7 +552,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
         if (newId && !oldItemsById.has(newId)) {
             // A new item
             changes.push(
-                tryUpdateToInsertContainer(
+                tryUpdateToContainer(
                     {
                         container: containerId,
                         key: index + offset,
@@ -590,7 +583,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     for (; newIndex < newState.length; newIndex++) {
         const newItem = newState[newIndex];
         changes.push(
-            tryUpdateToInsertContainer(
+            tryUpdateToContainer(
                 {
                     container: containerId,
                     key: index + offset,
@@ -687,7 +680,7 @@ export function diffList<S extends ArrayLike>(
                 kind: "delete",
             });
             changes.push(
-                tryUpdateToInsertContainer(
+                tryUpdateToContainer(
                     {
                         container: containerId,
                         key: i,
@@ -716,7 +709,7 @@ export function diffList<S extends ArrayLike>(
     for (let k = 0; k < newBlockLen - overlap; k++) {
         const insertIndex = start + overlap + k;
         changes.push(
-            tryUpdateToInsertContainer(
+            tryUpdateToContainer(
                 {
                     container: containerId,
                     key: insertIndex,

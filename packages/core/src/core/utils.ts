@@ -217,7 +217,7 @@ export function insertChildToMap(
 }
 
 /* Try to update a change to insert a container */
-export function tryUpdateToInsertContainer(
+export function tryUpdateToContainer(
     change: Change,
     toUpdate: boolean,
     schema: SchemaType | undefined,
@@ -226,7 +226,12 @@ export function tryUpdateToInsertContainer(
         return change;
     }
 
-    if (change.kind !== "insert") {
+    let containerOp: Change["kind"];
+    if (change.kind === "insert") {
+        containerOp = "insert-container";
+    } else if (change.kind === "set") {
+        containerOp = "set-container";
+    } else {
         return change;
     }
 
@@ -234,23 +239,29 @@ export function tryUpdateToInsertContainer(
         ? (schemaToContainerType(schema) ?? tryInferContainerType(change.value))
         : undefined;
 
+    if (containerType == null) {
+        return change;
+    }
+
+    change.kind = containerOp;
     switch (containerType) {
         case "Map":
-            change.kind = "insert-container";
             change.childContainerType = "Map";
             break;
         case "List":
-            change.kind = "insert-container";
             change.childContainerType = "List";
             break;
         case "Text":
-            change.kind = "insert-container";
             change.childContainerType = "Text";
             break;
         case "Counter":
-            change.kind = "insert-container";
             change.childContainerType = "Counter";
             break;
+        case "Tree":
+            change.childContainerType = "Tree";
+            break;
+        default:
+            throw new Error();
     }
 
     return change;

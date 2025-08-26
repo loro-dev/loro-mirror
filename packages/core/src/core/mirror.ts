@@ -114,7 +114,12 @@ export type Change<K extends string | number = string | number> =
           container: ContainerID | "";
           key: K;
           value: unknown;
-          kind: "insert" | "delete" | "insert-container";
+          kind:
+              | "set"
+              | "set-container"
+              | "insert"
+              | "delete"
+              | "insert-container";
           childContainerType?: ContainerType;
       }
     | {
@@ -710,6 +715,29 @@ export class Mirror<S extends SchemaType> {
                         const fromIndex = change.fromIndex;
                         const toIndex = change.toIndex;
                         list.move(fromIndex, toIndex);
+                    } else if (kind === "set") {
+                        list.set(index, value);
+                    } else if (kind === "set-container") {
+                        const schema = this.getSchemaForChildContainer(
+                            container.id,
+                            key,
+                        );
+                        const [detachedContainer, containerType] =
+                            this.createContainerFromSchema(schema, value);
+                        let newContainer = list.setContainer(
+                            index,
+                            detachedContainer,
+                        );
+
+                        this.registerContainer(newContainer.id, schema);
+                        this.initializeContainer(
+                            newContainer,
+                            containerType,
+                            schema,
+                            value,
+                        );
+                    } else {
+                        throw new Error();
                     }
                 }
 
