@@ -111,21 +111,21 @@ export type InferContainerOptions = {
 
 export type Change<K extends string | number = string | number> =
     | {
-        container: ContainerID | "";
-        key: K;
-        value: unknown;
-        kind: "insert" | "delete" | "insert-container";
-        childContainerType?: ContainerType;
-    }
+          container: ContainerID | "";
+          key: K;
+          value: unknown;
+          kind: "insert" | "delete" | "insert-container";
+          childContainerType?: ContainerType;
+      }
     | {
-        container: ContainerID;
-        key: number;
-        value: unknown;
-        kind: "move";
-        fromIndex: number;
-        toIndex: number;
-        childContainerType?: ContainerType;
-    };
+          container: ContainerID;
+          key: number;
+          value: unknown;
+          kind: "move";
+          fromIndex: number;
+          toIndex: number;
+          childContainerType?: ContainerType;
+      };
 
 /**
  * Options for setState and sync operations
@@ -254,7 +254,8 @@ export class Mirror<S extends SchemaType> {
                             "loro-movable-list",
                         ].includes(fieldSchema.type)
                     ) {
-                        const containerType = schemaToContainerType(fieldSchema);
+                        const containerType =
+                            schemaToContainerType(fieldSchema);
                         if (!containerType) {
                             continue;
                         }
@@ -481,8 +482,6 @@ export class Mirror<S extends SchemaType> {
         }
     }
 
-
-
     /**
      * Update Loro based on state changes
      */
@@ -513,9 +512,9 @@ export class Mirror<S extends SchemaType> {
             if (this.options.debug) {
                 console.log("changes:", JSON.stringify(changes, null, 2));
             }
+
             // Apply the changes to the Loro document
             this.applyChangesToLoro(changes);
-
             // Log the doc state after changes
             if (this.options.debug) {
                 console.log(
@@ -557,7 +556,7 @@ export class Mirror<S extends SchemaType> {
                     this.applyContainerChanges(container, containerChanges);
                 } else {
                     throw new Error(
-                        `Container not found for ID: ${containerId}. 
+                        `Container not found for ID: ${containerId}.
                         This is likely due to a stale reference or a synchronization issue.`,
                     );
                 }
@@ -573,10 +572,11 @@ export class Mirror<S extends SchemaType> {
         for (const { key, value } of changes) {
             const keyStr = key.toString();
 
-            const fieldSchema = (this.schema as RootSchemaType<
-                Record<string, ContainerSchemaType>
-            >)
-                ?.definition?.[keyStr];
+            const fieldSchema = (
+                this.schema as RootSchemaType<
+                    Record<string, ContainerSchemaType>
+                >
+            )?.definition?.[keyStr];
             const type =
                 fieldSchema?.type ||
                 inferContainerTypeFromValue(value, this.options?.inferOptions);
@@ -757,7 +757,7 @@ export class Mirror<S extends SchemaType> {
                 break;
             default:
                 throw new Error(
-                    `Unknown container kind for top-level update: ${kind}. 
+                    `Unknown container kind for top-level update: ${kind}.
                     This is likely a programming error or unsupported container type.`,
                 );
         }
@@ -834,7 +834,10 @@ export class Mirror<S extends SchemaType> {
         itemSchema: SchemaType,
     ) {
         // First, map current items by ID
-        const currentItemsById = new Map<string, { item: unknown; index: number }>();
+        const currentItemsById = new Map<
+            string,
+            { item: unknown; index: number }
+        >();
         const currentLength = list.length;
 
         for (let i = 0; i < currentLength; i++) {
@@ -854,7 +857,10 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Then map new items by ID
-        const newItemsById = new Map<string, { item: unknown; index: number }>();
+        const newItemsById = new Map<
+            string,
+            { item: unknown; index: number }
+        >();
 
         // Helper function to get ID from either LoroMap or plain object
         const getIdFromItem = (item: unknown) => {
@@ -1065,7 +1071,9 @@ export class Mirror<S extends SchemaType> {
      */
     dispose() {
         this.subscribers.clear();
-        this.subscriptions.forEach(x => { x() });
+        this.subscriptions.forEach((x) => {
+            x();
+        });
         this.subscriptions.length = 0;
     }
 
@@ -1119,10 +1127,11 @@ export class Mirror<S extends SchemaType> {
 
             // Populate the map with values
             for (const [key, val] of Object.entries(value)) {
-                const fieldSchema = (schema as LoroMapSchema<
-                    Record<string, SchemaType>
-                > | undefined)
-                    ?.definition[key];
+                const fieldSchema = (
+                    schema as
+                        | LoroMapSchema<Record<string, SchemaType>>
+                        | undefined
+                )?.definition[key];
 
                 const isFieldContainer = isContainerSchema(fieldSchema);
 
@@ -1151,8 +1160,9 @@ export class Mirror<S extends SchemaType> {
                 return list;
             }
 
-            const itemSchema = (schema as LoroListSchema<SchemaType> | undefined)
-                ?.itemSchema;
+            const itemSchema = (
+                schema as LoroListSchema<SchemaType> | undefined
+            )?.itemSchema;
 
             const isListItemContainer = isContainerSchema(itemSchema);
 
@@ -1342,7 +1352,7 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Update state and propagate changes to Loro
-     * 
+     *
      * @param updater Function or object to update state
      *  If it's a function, it will be called with the current state as an argument.
      *  But the provided state is immutable, it should return a new state immutable object.

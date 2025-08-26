@@ -242,6 +242,8 @@ export function diffContainer(
                 containerId,
             );
             break;
+        default:
+            throw new Error(`Unsupported container type: ${containerType}`);
     }
 
     return changes;
@@ -458,7 +460,6 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     inferOptions?: InferContainerOptions,
 ): Change[] {
     const changes: Change[] = [];
-
     const useContainer = !!(schema?.itemSchema.getContainerType() ?? true);
     const oldItemsById = new Map();
     const newItemsById = new Map();
@@ -467,6 +468,8 @@ export function diffListWithIdSelector<S extends ArrayLike>(
         const id = idSelector(item);
         if (id) {
             oldItemsById.set(id, { item, index });
+        } else {
+            throw new Error("Item ID cannot be null");
         }
     }
 
@@ -474,6 +477,8 @@ export function diffListWithIdSelector<S extends ArrayLike>(
         const id = idSelector(item);
         if (id) {
             newItemsById.set(id, { item, newIndex });
+        } else {
+            throw new Error("Item ID cannot be null");
         }
     }
 
@@ -481,21 +486,30 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     let newIndex = 0;
     let offset = 0;
     let index = 0;
-    for (; index < oldState.length; index++) {
+    while (index < oldState.length) {
+        if (newIndex >= newState.length) {
+            // An old item not found in the new state, delete here
+            changes.push({
+                container: containerId,
+                key: index + offset,
+                value: undefined,
+                kind: "delete",
+            });
+            offset--;
+            index++;
+            continue;
+        }
+
         const oldItem = oldState[index];
         const newItem = newState[newIndex];
         if (oldItem === newItem) {
             newIndex++;
+            index++;
             continue;
         }
 
-        const oldId = oldItem ? idSelector(oldItem) : null;
-        const newId = newItem ? idSelector(newItem) : null;
-
-        if (oldId === null || newId === null) {
-            continue;
-        }
-
+        const oldId = idSelector(oldItem);
+        const newId = idSelector(newItem);
         if (oldId === newId) {
             const item = list.get(index);
             if (isContainer(item)) {
@@ -529,11 +543,14 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     ),
                 );
             }
+
+            index++;
             newIndex++;
             continue;
         }
 
         if (newId && !oldItemsById.has(newId)) {
+            // A new item
             changes.push(
                 tryUpdateToInsertContainer(
                     {
@@ -546,12 +563,13 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     schema?.itemSchema,
                 ),
             );
-            index--;
+
             offset++;
             newIndex++;
             continue;
         }
 
+        // An old item not found in the new state, delete here
         changes.push({
             container: containerId,
             key: index + offset,
@@ -559,6 +577,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
             kind: "delete",
         });
         offset--;
+        index++;
     }
 
     for (; newIndex < newState.length; newIndex++) {
@@ -602,7 +621,7 @@ export function diffList<S extends ArrayLike>(
     newState: S,
     containerId: ContainerID,
     schema: LoroListSchema<SchemaType> | undefined,
-    inferOptions? : InferContainerOptions,
+    inferOptions?: InferContainerOptions,
 ): Change[] {
     const changes: Change[] = [];
     const oldLen = oldState.length;
@@ -720,7 +739,8 @@ export function diffMap<S extends ObjectLike>(
             schema as LoroMapSchema<Record<string, SchemaType>> | undefined
         )?.definition?.[key];
         const containerType =
-            childSchema?.getContainerType() ?? tryInferContainerType(newItem, inferOptions);
+            childSchema?.getContainerType() ??
+            tryInferContainerType(newItem, inferOptions);
 
         // added new key
         if (!oldItem) {
