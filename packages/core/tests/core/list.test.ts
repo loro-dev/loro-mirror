@@ -117,45 +117,77 @@ describe("setState for LoroList", () => {
     });
 
     it("without selector", () => {
-        const withIdSchema = schema({
-            items: schema.LoroList(
-                schema.LoroMap({
-                    id: schema.String({ required: true }),
-                }),
-            ),
+        const s = schema({
+            items: schema.LoroList(schema.Number()),
         });
         const doc = new LoroDoc();
-        const m = new Mirror({ doc, schema: withIdSchema, debug: true });
+        const m = new Mirror({ doc, schema: s });
         {
-            const s = { items: [{ id: "123" }] };
+            const s = { items: [123] };
             m.setState(s);
             expect(doc.toJSON()).toStrictEqual(s);
         }
+        let counter = doc.frontiers()[0].counter;
+        expect(counter).toBe(0);
+
         {
             const s = {
-                items: [
-                    { id: "0" },
-                    { id: "1", value: { key: 123 } },
-                    { id: "2" },
-                    { id: "123" },
-                ],
+                items: [0, 1, 123],
             };
             m.setState(s);
             expect(doc.toJSON()).toStrictEqual(s);
         }
+        counter = doc.frontiers()[0].counter;
+        expect(counter).toBe(2);
+
         {
             const s = {
-                items: [{ id: "1" }, { id: "0" }, { id: "123" }, { id: "2" }],
+                items: [0, 1, 123, 5],
             };
             m.setState(s);
             expect(doc.toJSON()).toStrictEqual(s);
         }
+        counter = doc.frontiers()[0].counter;
+        expect(counter).toBe(3);
+
         {
             const s = {
-                items: [{ id: "1" }],
+                items: [0, 1, 2, 123, 5],
             };
             m.setState(s);
             expect(doc.toJSON()).toStrictEqual(s);
         }
+        counter = doc.frontiers()[0].counter;
+        expect(counter).toBe(4);
+
+        {
+            const s = {
+                items: [2, 123, 5],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        counter = doc.frontiers()[0].counter;
+        expect(counter).toBe(6);
+
+        {
+            const s = {
+                items: [2, 5],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        counter = doc.frontiers()[0].counter;
+        expect(counter).toBe(7);
+
+        {
+            const s = {
+                items: [2],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        counter = doc.frontiers()[0].counter;
+        expect(counter).toBe(8);
     });
 });
