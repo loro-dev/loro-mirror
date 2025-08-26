@@ -120,9 +120,9 @@ export function setPathValue(
 
         // Create nested objects if they don't exist
         if (
-            (current[key] === undefined ||
-                current[key] === null ||
-                typeof current[key] !== "object")
+            current[key] === undefined ||
+            current[key] === null ||
+            typeof current[key] !== "object"
         ) {
             current[key] = {};
         }
@@ -163,17 +163,7 @@ export function valueIsContainerOfType(
 export function containerIdToContainerType(
     containerId: ContainerID,
 ): ContainerType | undefined {
-    if (containerId.endsWith(":Map")) {
-        return "Map";
-    } else if (containerId.endsWith(":List")) {
-        return "List";
-    } else if (containerId.endsWith(":Text")) {
-        return "Text";
-    } else if (containerId.endsWith(":MovableList")) {
-        return "MovableList";
-    } else {
-        return undefined;
-    }
+    return containerId.split(":")[2] as ContainerType;
 }
 
 export function getRootContainerByType(

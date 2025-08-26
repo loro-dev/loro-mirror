@@ -12,12 +12,9 @@ import { describe, expect, it } from "vitest";
 // Utility function to wait for sync to complete (three microtasks for better reliability)
 const waitForSync = async () => {
     await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
 };
 
 describe("Mirror List Update Optimization", () => {
-
     /**
      * Test the behavior when using an idSelector function
      * This should result in efficient updates that only modify changed items
@@ -143,8 +140,9 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().todos[1].id).toBe("1");
         expect(mirror.getState().todos[2].id).toBe("4");
         // Verify that id '2' is no longer in the list
-        expect(mirror.getState().todos.find((todo) => todo.id === "2"))
-            .toBeUndefined();
+        expect(
+            mirror.getState().todos.find((todo) => todo.id === "2"),
+        ).toBeUndefined();
     });
 
     /**
@@ -439,7 +437,6 @@ describe("Mirror List Update Optimization", () => {
             schema: movableListSchema,
         });
 
-
         // Generate 10 items
         const items = Array.from({ length: 10 }, (_, i) => ({
             id: `id-${i}`,
@@ -488,7 +485,5 @@ describe("Mirror List Update Optimization", () => {
         expect(mirrorWithoutId.getState().items).toEqual(
             mirrorMovable.getState().items,
         );
-
     });
-
 });

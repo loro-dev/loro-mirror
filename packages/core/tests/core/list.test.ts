@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { longestIncreasingSubsequence } from "../../src/core/diff";
+import { Mirror, schema } from "../../src";
+import { LoroDoc } from "loro-crdt";
 
 describe("longestIncreasingSubsequence", () => {
     it("should return empty array for empty input", () => {
@@ -71,5 +73,46 @@ describe("longestIncreasingSubsequence", () => {
         }
 
         expect(result.length).toBe(4);
+    });
+});
+
+describe("setState for LoroList with selector", () => {
+    it("sync", () => {
+        const withIdSchema = schema({
+            items: schema.LoroList(
+                schema.LoroMap({
+                    id: schema.String({ required: true }),
+                }),
+                (item) => item.id,
+            ),
+        });
+        const doc = new LoroDoc();
+        const m = new Mirror({ doc, schema: withIdSchema });
+        {
+            const s = { items: [{ id: "123" }] };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        {
+            const s = {
+                items: [{ id: "0" }, { id: "1" }, { id: "2" }, { id: "123" }],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        {
+            const s = {
+                items: [{ id: "1" }, { id: "0" }, { id: "123" }, { id: "2" }],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        {
+            const s = {
+                items: [{ id: "1" }],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
     });
 });
