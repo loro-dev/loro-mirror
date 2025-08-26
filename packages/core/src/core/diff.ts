@@ -668,7 +668,7 @@ export function diffList<S extends ArrayLike>(
     for (let i = newLen; i < oldLen; i++) {
         changes.push({
             container: containerId,
-            key: i,
+            key: newLen,
             value: undefined,
             kind: "delete",
         });

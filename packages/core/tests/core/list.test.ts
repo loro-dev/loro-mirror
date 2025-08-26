@@ -76,8 +76,8 @@ describe("longestIncreasingSubsequence", () => {
     });
 });
 
-describe("setState for LoroList with selector", () => {
-    it("sync", () => {
+describe("setState for LoroList", () => {
+    it("with selector", () => {
         const withIdSchema = schema({
             items: schema.LoroList(
                 schema.LoroMap({
@@ -96,6 +96,49 @@ describe("setState for LoroList with selector", () => {
         {
             const s = {
                 items: [{ id: "0" }, { id: "1" }, { id: "2" }, { id: "123" }],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        {
+            const s = {
+                items: [{ id: "1" }, { id: "0" }, { id: "123" }, { id: "2" }],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        {
+            const s = {
+                items: [{ id: "1" }],
+            };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+    });
+
+    it("without selector", () => {
+        const withIdSchema = schema({
+            items: schema.LoroList(
+                schema.LoroMap({
+                    id: schema.String({ required: true }),
+                }),
+            ),
+        });
+        const doc = new LoroDoc();
+        const m = new Mirror({ doc, schema: withIdSchema, debug: true });
+        {
+            const s = { items: [{ id: "123" }] };
+            m.setState(s);
+            expect(doc.toJSON()).toStrictEqual(s);
+        }
+        {
+            const s = {
+                items: [
+                    { id: "0" },
+                    { id: "1", value: { key: 123 } },
+                    { id: "2" },
+                    { id: "123" },
+                ],
             };
             m.setState(s);
             expect(doc.toJSON()).toStrictEqual(s);
