@@ -279,6 +279,13 @@ export function diffText(
 /**
  * Finds the difference between two lists based on an idSelector function
  *
+ * Time Complexity:
+ *
+ * - O(1) if not changed
+ * - O(n + klogk) for insertions/deletions/replacements, where k is the number of deletions
+ * - O(n) for one move op
+ * - Worst case O(n^2) for move op
+ *
  * @param doc The LoroDoc instance
  * @param oldState The old state
  * @param newState The new state
@@ -299,53 +306,43 @@ export function diffMovableList<S extends ArrayLike>(
     idSelector: IdSelector<unknown>,
     inferOptions?: InferContainerOptions,
 ): Change[] {
-    /** Changes resulting from the diff */
     const changes: Change[] = [];
-    if (oldState === newState) {
-        return changes;
-    }
+    if (oldState === newState) return changes;
 
-    /** Map of old items by ID */
-    const oldMap = new Map<string, { index: number; item: unknown }>();
-    /** Map of new items by ID */
-    const newMap = new Map<string, { index: number; item: unknown }>();
-    /** Common items that are shared between old and new states */
-    const commonItems: CommonListItemInfo[] = [];
+    type IndexItemMap = Map<string, { index: number; item: unknown }>;
 
-    for (const [index, item] of oldState.entries()) {
+    // 1) Build per-state maps and collect common items (ordered by new state)
+    const oldMap: IndexItemMap = new Map();
+    const newMap: IndexItemMap = new Map();
+    const common: CommonListItemInfo[] = [];
+
+    for (const [i, item] of oldState.entries()) {
         const id = idSelector(item);
-        if (id) {
-            oldMap.set(id, { index, item });
-        }
+        if (id) oldMap.set(id, { index: i, item });
     }
 
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
-        if (!id) {
-            throw new Error("Item ID cannot be null");
-        }
-        if (newMap.has(id)) {
-            throw new Error("Duplicate item id in new state");
-        }
+        if (!id) throw new Error("Item ID cannot be null");
+        if (newMap.has(id)) throw new Error("Duplicate item id in new state");
         newMap.set(id, { index: newIndex, item });
-        if (oldMap.has(id)) {
-            const { index: oldIndex, item: oldItem } = oldMap.get(id)!;
-            commonItems.push({
+        const oldEntry = oldMap.get(id);
+        if (oldEntry) {
+            common.push({
                 id,
-                oldIndex,
+                oldIndex: oldEntry.index,
                 newIndex,
-                oldItem,
+                oldItem: oldEntry.item,
                 newItem: item,
             });
         }
     }
 
-    const deletionOps: Change<number>[] = [];
-
-    // Figure out which items need to be deleted
-    for (const [id, { index }] of oldMap.entries()) {
+    // 2) Deletions (from highest index to lowest)
+    const deletions: Change[] = [];
+    for (const [id, { index }] of oldMap) {
         if (!newMap.has(id)) {
-            deletionOps.push({
+            deletions.push({
                 container: containerId,
                 key: index,
                 value: undefined,
@@ -353,89 +350,71 @@ export function diffMovableList<S extends ArrayLike>(
             });
         }
     }
+    deletions.sort((a, b) => (b.key as number) - (a.key as number));
+    changes.push(...deletions);
 
-    // Sort deletions in descending order to avoid index shift issues.
-    deletionOps.sort((a, b) => b.key - a.key);
-    changes.push(...deletionOps);
-
-    // Handle moves
-    // After deletions are applied, indices shift left for items after a deleted index.
-    // Compute move operations relative to the post-deletion list to avoid index mismatch.
-    // Build the order of common item IDs in old and new states.
+    // 3) Moves (simulate post-deletion order; place each target item)
     const oldCommonIds: string[] = [];
     for (const item of oldState) {
         const id = idSelector(item);
-        if (id && newMap.has(id)) {
-            oldCommonIds.push(id);
-        }
+        if (id && newMap.has(id)) oldCommonIds.push(id);
     }
-    const newCommonIds: string[] = commonItems.map((info) => info.id);
+    const newCommonIds: string[] = common.map((c) => c.id);
+    if (!deepEqual(oldCommonIds, newCommonIds)) {
+        // Need to move
+        const order = [...oldCommonIds];
+        const idxOf = new Map<string, number>();
+        order.forEach((id, i) => idxOf.set(id, i));
 
-    // Simulate moves on an array of IDs to compute correct from/to indices
-    const currentOrder = [...oldCommonIds];
-    const currentIndexMap = new Map<string, number>();
-    currentOrder.forEach((id, idx) => currentIndexMap.set(id, idx));
+        for (let target = 0; target < newCommonIds.length; target++) {
+            const id = newCommonIds[target];
+            const from = idxOf.get(id);
+            if (from == null || from === target) continue;
 
-    for (
-        let targetIndex = 0;
-        targetIndex < newCommonIds.length;
-        targetIndex++
-    ) {
-        const id = newCommonIds[targetIndex];
-        const currentIndex = currentIndexMap.get(id);
-        if (currentIndex === undefined) continue; // safety guard
-        if (currentIndex === targetIndex) continue; // already in place
+            changes.push({
+                container: containerId,
+                key: from,
+                value: undefined,
+                kind: "move",
+                fromIndex: from,
+                toIndex: target,
+            });
 
-        changes.push({
-            container: containerId,
-            key: currentIndex,
-            value: undefined,
-            kind: "move",
-            fromIndex: currentIndex,
-            toIndex: targetIndex,
-        });
-
-        // Update the simulated order and index map after the move
-        const [moved] = currentOrder.splice(currentIndex, 1);
-        currentOrder.splice(targetIndex, 0, moved);
-
-        // Update indices for the affected range
-        const start = Math.min(currentIndex, targetIndex);
-        const end = Math.max(currentIndex, targetIndex);
-        for (let i = start; i <= end; i++) {
-            currentIndexMap.set(currentOrder[i], i);
+            const [moved] = order.splice(from, 1);
+            order.splice(target, 0, moved);
+            const start = Math.min(from, target);
+            const end = Math.max(from, target);
+            for (let i = start; i <= end; i++) idxOf.set(order[i], i);
         }
     }
 
-    // Handle Insertions
+    // 4) Insertions (items only in new state)
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
         if (!id || !oldMap.has(id)) {
-            const op = tryUpdateToContainer(
-                {
-                    container: containerId,
-                    key: newIndex,
-                    value: item,
-                    kind: "insert",
-                },
-                true,
-                schema?.itemSchema,
+            changes.push(
+                tryUpdateToContainer(
+                    {
+                        container: containerId,
+                        key: newIndex,
+                        value: item,
+                        kind: "insert",
+                    },
+                    true,
+                    schema?.itemSchema,
+                ),
             );
-            changes.push(op);
         }
     }
 
-    // Handle Updates
-    for (const info of commonItems) {
-        if (deepEqual(info.oldItem, info.newItem)) {
-            continue;
-        }
+    // 5) Updates (for items present in both states)
+    for (const info of common) {
+        if (deepEqual(info.oldItem, info.newItem)) continue;
+
         const movableList = doc.getMovableList(containerId);
         const currentItem = movableList.get(info.oldIndex);
-
         if (isContainer(currentItem)) {
-            // Recursively diff container items.
-            const containerChanges = diffContainer(
+            const nested = diffContainer(
                 doc,
                 info.oldItem,
                 info.newItem,
@@ -443,7 +422,7 @@ export function diffMovableList<S extends ArrayLike>(
                 schema?.itemSchema,
                 inferOptions,
             );
-            changes.push(...containerChanges);
+            changes.push(...nested);
         } else {
             changes.push(
                 tryUpdateToContainer(

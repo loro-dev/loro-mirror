@@ -871,7 +871,7 @@ export class Mirror<S extends SchemaType> {
         for (let i = 0; i < currentLength; i++) {
             const item = list.get(i);
             try {
-                if (item && typeof item === "object") {
+                if (item) {
                     const id = idSelector(item);
                     if (id) {
                         currentItemsById.set(id, { item, index: i });
@@ -892,7 +892,7 @@ export class Mirror<S extends SchemaType> {
 
         // Helper function to get ID from either LoroMap or plain object
         const getIdFromItem = (item: unknown) => {
-            if (!item || typeof item !== "object") return null;
+            if (!item) return null;
 
             try {
                 // First try using the idSelector directly (for LoroMap objects)
@@ -918,6 +918,8 @@ export class Mirror<S extends SchemaType> {
                 const id = getIdFromItem(item);
                 if (id) {
                     newItemsById.set(id, { item, index });
+                } else {
+                    throw new Error(`Item at index ${index} has no ID`);
                 }
             } catch (e) {
                 if (this.options.debug) {
