@@ -78,7 +78,8 @@ export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
 /**
  * Loro Movable List schema type
  */
-export interface LoroMovableListSchema<T extends SchemaType> extends BaseSchemaType {
+export interface LoroMovableListSchema<T extends SchemaType>
+    extends BaseSchemaType {
     type: "loro-movable-list";
     itemSchema: T;
     // oxlint-disable-next-line no-explicit-any
@@ -127,8 +128,8 @@ export type ContainerSchemaType =
 export type RootSchemaDefinition<
     T extends Record<string, ContainerSchemaType>,
 > = {
-        [K in keyof T]: T[K];
-    };
+    [K in keyof T]: T[K];
+};
 
 /**
  * Schema definition type
@@ -142,16 +143,24 @@ export type SchemaDefinition<T extends Record<string, SchemaType>> = {
  */
 export type InferType<S extends SchemaType> = S extends StringSchemaType
     ? string
-    : S extends NumberSchemaType ? number
-    : S extends BooleanSchemaType ? boolean
-    // oxlint-disable-next-line no-explicit-any
-    : S extends IgnoreSchemaType ? any
-    : S extends LoroTextSchemaType ? string
-    : S extends LoroMapSchema<infer M> ? { [K in keyof M]: InferType<M[K]> }
-    : S extends LoroListSchema<infer I> ? Array<InferType<I>>
-    : S extends LoroMovableListSchema<infer I> ? Array<InferType<I>>
-    : S extends RootSchemaType<infer R> ? { [K in keyof R]: InferType<R[K]> }
-    : never;
+    : S extends NumberSchemaType
+      ? number
+      : S extends BooleanSchemaType
+        ? boolean
+        : S extends IgnoreSchemaType
+          ? // oxlint-disable-next-line no-explicit-anyS extends IgnoreSchemaType
+            any
+          : S extends LoroTextSchemaType
+            ? string
+            : S extends LoroMapSchema<infer M>
+              ? { [K in keyof M]: InferType<M[K]> }
+              : S extends LoroListSchema<infer I>
+                ? Array<InferType<I>>
+                : S extends LoroMovableListSchema<infer I>
+                  ? Array<InferType<I>>
+                  : S extends RootSchemaType<infer R>
+                    ? { [K in keyof R]: InferType<R[K]> }
+                    : never;
 
 /**
  * Infer the JavaScript type from a schema definition

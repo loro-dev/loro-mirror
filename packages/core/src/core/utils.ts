@@ -244,26 +244,7 @@ export function tryUpdateToContainer(
     }
 
     change.kind = containerOp;
-    switch (containerType) {
-        case "Map":
-            change.childContainerType = "Map";
-            break;
-        case "List":
-            change.childContainerType = "List";
-            break;
-        case "Text":
-            change.childContainerType = "Text";
-            break;
-        case "Counter":
-            change.childContainerType = "Counter";
-            break;
-        case "Tree":
-            change.childContainerType = "Tree";
-            break;
-        default:
-            throw new Error();
-    }
-
+    change.childContainerType = containerType;
     return change;
 }
 
