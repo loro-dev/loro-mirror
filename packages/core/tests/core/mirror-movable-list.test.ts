@@ -527,11 +527,11 @@ describe("MovableList", () => {
 
     it("movable list throws on missing item id", async () => {
         const { mirror } = await initTestMirror();
-        // @ts-expect-error testing runtime validation
         expect(() =>
             mirror.setState({
                 list: [
                     // missing id
+                    // @ts-expect-error testing runtime validation
                     { text: "no id" },
                 ],
             }),
