@@ -394,6 +394,43 @@ describe("MovableList", () => {
             ],
         });
         expect(doc.frontiers()[0].counter).toBe(14);
+        expect(doc.toJSON()).toStrictEqual({
+            list: [
+                { id: "0", text: "" },
+                { id: "1", text: "" },
+                { id: "3", text: "" },
+                { id: "2", text: "" },
+            ],
+        });
+    });
+
+    it("movable list handles basic sets", async () => {
+        const doc = new LoroDoc();
+        doc.setPeerId(1);
+        const schema_ = schema({
+            list: schema.LoroMovableList(
+                schema.String(),
+                (item) => item.split(":")[0],
+            ),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: schema_,
+        });
+
+        mirror.setState({
+            list: ["1:a", "2:b"],
+        });
+        expect(doc.toJSON()).toStrictEqual({
+            list: ["1:a", "2:b"],
+        });
+        expect(doc.frontiers()[0].counter).toBe(1);
+        mirror.setState({
+            list: ["1:a", "2:bc"],
+        });
+        expect(doc.frontiers()[0].counter).toBe(2);
+        expect(doc.exportJsonUpdates()).toMatchSnapshot();
     });
 
     it("movable list handles delete + reorder without index errors", async () => {

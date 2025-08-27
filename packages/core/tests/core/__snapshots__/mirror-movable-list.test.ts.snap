@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`MovableList > movable list handles basic sets 1`] = `
+{
+  "changes": [
+    {
+      "deps": [],
+      "id": "0@0",
+      "lamport": 0,
+      "msg": undefined,
+      "ops": [
+        {
+          "container": "cid:root-list:MovableList",
+          "content": {
+            "pos": 0,
+            "type": "insert",
+            "value": [
+              "1:a",
+              "2:b",
+            ],
+          },
+          "counter": 0,
+        },
+        {
+          "container": "cid:root-list:MovableList",
+          "content": {
+            "elem_id": "L1@0",
+            "type": "set",
+            "value": "2:bc",
+          },
+          "counter": 2,
+        },
+      ],
+      "timestamp": 0,
+    },
+  ],
+  "peers": [
+    "1",
+  ],
+  "schema_version": 1,
+  "start_version": {},
+}
+`;
