@@ -197,6 +197,29 @@ For detailed documentation, see the README files in each package:
 - [Core Documentation](./packages/core/README.md)
 - [React Documentation](./packages/react/README.md)
 
+## Schema Overview
+
+Loro Mirror uses a typed schema to map your app state to Loro containers. Common schema constructors:
+
+- `schema.String(options?)`: string
+- `schema.Number(options?)`: number
+- `schema.Boolean(options?)`: boolean
+- `schema.Ignore(options?)`: exclude from sync (app-only)
+- `schema.LoroText(options?)`: rich text (`LoroText`)
+- `schema.LoroMap(definition, options?)`: object (`LoroMap`)
+- `schema.LoroList(itemSchema, idSelector?, options?)`: list (`LoroList`)
+- `schema.LoroMovableList(itemSchema, idSelector, options?)`: movable list that emits move ops (requires `idSelector`)
+- `schema.LoroTree(nodeSchema, options?)`: hierarchical tree (`LoroTree`) with per-node `data` map
+
+Tree nodes have the shape `{ id?: string; data: T; children: Node<T>[] }`. Define a tree by passing a node `LoroMap` schema:
+
+```ts
+import { schema } from "loro-mirror";
+
+const node = schema.LoroMap({ title: schema.String({ required: true }) });
+const mySchema = schema({ outline: schema.LoroTree(node) });
+```
+
 ## API Reference (Core Mirror)
 
 ### Mirror

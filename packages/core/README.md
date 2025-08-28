@@ -409,6 +409,119 @@ const mySchema = schema({
 - `schema.LoroText(options?)` - Loro rich text
 - `schema.LoroMap(definition, options?)` - Loro map (object)
 - `schema.LoroList(itemSchema, idSelector?, options?)` - Loro list (array)
+- `schema.LoroMovableList(itemSchema, idSelector, options?)` - Loro movable list that emits stable move operations when order changes (requires an `idSelector`).
+- `schema.LoroTree(nodeSchema, options?)` - Loro tree where each node carries a `data` map described by `nodeSchema`.
+
+### Tree Schema
+
+Tree fields let you model hierarchical data with per-node metadata stored in a Loro map.
+
+Shape in app state:
+
+```ts
+type TreeNode<T> = {
+  id?: string; // optional when creating; assigned by Loro if omitted
+  data: T;     // validated by the provided nodeSchema
+  children: Array<TreeNode<T>>;
+};
+```
+
+Define a tree by providing a node `LoroMap` schema. Each node's `data` will follow that schema; `children` is always an array of nodes.
+
+```ts
+import { schema } from "loro-mirror";
+
+const folderNode = schema.LoroMap({
+  name: schema.String({ required: true }),
+  color: schema.String({ defaultValue: "blue" }),
+});
+
+const fsSchema = schema({
+  tree: schema.LoroTree(folderNode),
+});
+
+// Example initial state
+const initial = {
+  tree: [
+    {
+      data: { name: "root" },
+      children: [
+        { data: { name: "docs" }, children: [] },
+        { data: { name: "src" }, children: [] },
+      ],
+    },
+  ],
+};
+```
+
+Notes:
+
+- `id` is optional when creating nodes. Mirror will create the node in the Loro tree and use its generated ID. If you supply an existing ID, Mirror will target that node.
+- Reordering or moving nodes is done by changing the `children` arrays. Mirror diffs trees and applies minimal `create`/`move`/`delete` operations, and syncs nested `data` map changes.
+- Under the hood, Loro serializes node payloads under `meta`. Mirror normalizes it to `data` in app state and schema validation.
+
+#### Updating Trees with `setState`
+
+Use normal `setState` updates; mutate the draft tree and Mirror will apply the minimal tree operations.
+
+Add nodes:
+
+```ts
+// Add a root-level node
+store.setState((s) => {
+  s.tree.push({ data: { name: "assets" }, children: [] });
+});
+
+// Add a child under an existing parent (by index here)
+store.setState((s) => {
+  const parent = s.tree[0];
+  parent.children.push({ data: { name: "images" }, children: [] });
+});
+```
+
+Update node data:
+
+```ts
+store.setState((s) => {
+  const node = s.tree[0].children[0];
+  node.data.name = "imgs"; // edits sync via the node's LoroMap
+});
+```
+
+Move or reorder nodes (same parent):
+
+```ts
+store.setState((s) => {
+  // Move last root node to the front
+  const [n] = s.tree.splice(s.tree.length - 1, 1);
+  s.tree.splice(0, 0, n);
+});
+```
+
+Move nodes across parents:
+
+```ts
+store.setState((s) => {
+  const from = s.tree[0].children;
+  const to = s.tree[1].children;
+  const [n] = from.splice(0, 1);
+  to.splice(0, 0, n);
+});
+```
+
+Delete nodes:
+
+```ts
+store.setState((s) => {
+  // Remove first child of first root node
+  s.tree[0].children.splice(0, 1);
+});
+```
+
+Tips:
+
+- Node `id`s are populated by Loro when created. If you don’t specify an `id`, it becomes available on the next state after sync; avoid relying on the new `id` inside the same `setState` call.
+- For finding nodes by `id`, traverse `s.tree` recursively and mutate the located node/children array.
 
 ### `createStore`
 
