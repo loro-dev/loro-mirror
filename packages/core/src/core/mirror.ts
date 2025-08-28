@@ -183,7 +183,7 @@ export class Mirror<S extends SchemaType> {
     private schema?: S;
     private state: InferType<S>;
     private subscribers: Set<SubscriberCallback<InferType<S>>> = new Set();
-    private syncing: boolean = false;
+    private syncing = false;
     private options: MirrorOptions<S>;
     private containerRegistry: ContainerRegistry = new Map();
     private subscriptions: (() => void)[] = [];
@@ -598,7 +598,7 @@ export class Mirror<S extends SchemaType> {
                     if (kind === "insert") {
                         map.set(key as string, value);
                     } else if (kind === "insert-container") {
-                        let schema = this.getSchemaForChildContainer(
+                        const schema = this.getSchemaForChildContainer(
                             container.id,
                             key,
                         );
@@ -698,7 +698,7 @@ export class Mirror<S extends SchemaType> {
                         );
                         const [detachedContainer, _containerType] =
                             this.createContainerFromSchema(schema, value);
-                        let newContainer = list.setContainer(
+                        const newContainer = list.setContainer(
                             index,
                             detachedContainer,
                         );
@@ -1089,7 +1089,7 @@ export class Mirror<S extends SchemaType> {
     ) {
         const [detachedContainer, _containerType] =
             this.createContainerFromSchema(schema, value);
-        let insertedContainer = map.setContainer(key, detachedContainer);
+        const insertedContainer = map.setContainer(key, detachedContainer);
 
         if (!insertedContainer) {
             throw new Error("Failed to insert container into map");
@@ -1295,23 +1295,35 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update state and propagate changes to Loro
      *
-     * @param updater Function or object to update state
-     *  If it's a function, it will be called with the current state as an argument.
-     *  But the provided state is immutable, it should return a new state immutable object.
-     * @param options Optional settings including tags
+     * - If `updater` is an object, it will shallow-merge into the current state.
+     * - If `updater` is a function, it may EITHER:
+     *   - mutate a draft (Immer-style), OR
+     *   - return a brand new immutable state object.
+     *
+     * This supports both immutable and mutative update styles without surprises.
      */
     setState(
         updater:
-            | ((state: InferType<S>) => InferType<S>)
+            | ((state: InferType<S>) => InferType<S> | void)
             | Partial<InferType<S>>,
         options?: SetStateOptions,
     ) {
         if (this.syncing) return; // Prevent recursive updates
 
-        // Calculate new state
+        // Calculate new state; support mutative or return-based updater via Immer
         const newState =
             typeof updater === "function"
-                ? updater(this.state)
+                ? produce<InferType<S>>(this.state, (draft) => {
+                      // Allow updater to either mutate draft or return a new state
+                      const maybeResult = (updater as (s: InferType<S>) => InferType<S> | void)(
+                          draft as InferType<S>,
+                      );
+                      if (maybeResult && maybeResult !== draft) {
+                          // Replace if updater returned a new state object
+                          // Immer interprets a return value as replacement
+                          return maybeResult as unknown as InferType<S>;
+                      }
+                  })
                 : { ...this.state, ...updater };
 
         // Validate state if needed

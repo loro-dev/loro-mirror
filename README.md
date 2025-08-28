@@ -43,134 +43,150 @@ pnpm add loro-mirror-react loro-mirror loro-crdt
 ### Core Usage
 
 ```typescript
-import { LoroDoc } from 'loro-crdt';
-import { schema, createStore } from 'loro-mirror';
+import { LoroDoc } from "loro-crdt";
+import { schema, createStore } from "loro-mirror";
 
 // Define your schema
 const todoSchema = schema({
-  todos: schema.LoroList(
-    schema.LoroMap({
-      id: schema.String({ required: true }),
-      text: schema.LoroText({ required: true }),
-      completed: schema.Boolean({ defaultValue: false }),
-    })
-  ),
+    todos: schema.LoroList(
+        schema.LoroMap({
+            id: schema.String({ required: true }),
+            text: schema.String({ required: true }),
+            completed: schema.Boolean({ defaultValue: false }),
+        }),
+    ),
 });
 
 // Create a Loro document
 const doc = new LoroDoc();
 // Create a store
 const store = createStore({
-  doc,
-  schema: todoSchema,
-  initialState: { todos: [] },
+    doc,
+    schema: todoSchema,
+    initialState: { todos: [] },
 });
 
-// Update the state
+// Update the state (immutable update)
+store.setState((s) => ({
+    ...s,
+    todos: [
+        ...s.todos,
+        {
+            id: Date.now().toString(),
+            text: "Learn Loro Mirror",
+            completed: false,
+        },
+    ],
+}));
+
+// Or: draft-style updates (mutate a draft)
 store.setState((state) => {
-  state.todos.push({
-    id: Date.now().toString(),
-    text: 'Learn Loro Mirror',
-    completed: false,
-  });
-  return state;
+    state.todos.push({
+        id: Date.now().toString(),
+        text: "Learn Loro Mirror",
+        completed: false,
+    });
+    // no return needed
 });
 
 // Subscribe to state changes
 store.subscribe((state) => {
-  console.log('State updated:', state);
+    console.log("State updated:", state);
 });
 ```
 
 ### React Usage
 
 ```tsx
-import React, { useMemo } from 'react';
-import { LoroDoc } from 'loro-crdt';
-import { schema } from 'loro-mirror';
-import { createLoroContext } from 'loro-mirror-react';
+import React, { useMemo, useState } from "react";
+import { LoroDoc } from "loro-crdt";
+import { schema } from "loro-mirror";
+import { createLoroContext } from "loro-mirror-react";
 
 // Define your schema
 const todoSchema = schema({
-  todos: schema.LoroList(
-    schema.LoroMap({
-      id: schema.String({ required: true }),
-      text: schema.String({ required: true }),
-      completed: schema.Boolean({ defaultValue: false }),
-    })
-  ),
+    todos: schema.LoroList(
+        schema.LoroMap({
+            id: schema.String({ required: true }),
+            text: schema.String({ required: true }),
+            completed: schema.Boolean({ defaultValue: false }),
+        }),
+    ),
 });
 
 // Create a context
-const {
-  LoroProvider,
-  useLoroState,
-  useLoroSelector,
-  useLoroAction,
-} = createLoroContext(todoSchema);
+const { LoroProvider, useLoroState, useLoroSelector, useLoroAction } =
+    createLoroContext(todoSchema);
 
 // Root component
 function App() {
-  const doc = useMemo(() => new LoroDoc(), []);
-  
-  return (
-    <LoroProvider doc={doc} initialState={{ todos: [] }}>
-      <TodoList />
-      <AddTodoForm />
-    </LoroProvider>
-  );
+    const doc = useMemo(() => new LoroDoc(), []);
+
+    return (
+        <LoroProvider doc={doc} initialState={{ todos: [] }}>
+            <TodoList />
+            <AddTodoForm />
+        </LoroProvider>
+    );
 }
 
 // Todo list component
 function TodoList() {
-  const todos = useLoroSelector(state => state.todos);
-  
-  return (
-    <ul>
-      {todos.map(todo => (
-        <li key={todo.id}>
-          <input
-            type="checkbox"
-            checked={todo.completed}
-            onChange={() => toggleTodo(todo.id)}
-          />
-          <span>{todo.text}</span>
-        </li>
-      ))}
-    </ul>
-  );
+    const todos = useLoroSelector((state) => state.todos);
+    const toggleTodo = useLoroAction((s, id: string) => {
+        const i = s.todos.findIndex((t) => t.id === id);
+        if (i !== -1) s.todos[i].completed = !s.todos[i].completed;
+    }, []);
+
+    return (
+        <ul>
+            {todos.map((todo) => (
+                <li key={todo.id}>
+                    <input
+                        type="checkbox"
+                        checked={todo.completed}
+                        onChange={() => toggleTodo(todo.id)}
+                    />
+                    <span>{todo.text}</span>
+                </li>
+            ))}
+        </ul>
+    );
 }
 
 // Add todo form component
 function AddTodoForm() {
-  const [text, setText] = useState('');
-  
-  const addTodo = useLoroAction((state) => {
-    state.todos.push({
-      id: Date.now().toString(),
-      text: text.trim(),
-      completed: false,
-    });
-  }, [text]);
-  
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (text.trim()) {
-      addTodo();
-      setText('');
-    }
-  };
-  
-  return (
-    <form onSubmit={handleSubmit}>
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="What needs to be done?"
-      />
-      <button type="submit">Add Todo</button>
-    </form>
-  );
+    const [text, setText] = useState("");
+
+    const addTodo = useLoroAction(
+        (state) => {
+            state.todos.push({
+                id: Date.now().toString(),
+                text: text.trim(),
+                completed: false,
+            });
+        },
+        [text],
+    );
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (text.trim()) {
+            addTodo();
+            setText("");
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit}>
+            <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="What needs to be done?"
+            />
+            <button type="submit">Add Todo</button>
+        </form>
+    );
 }
 ```
 

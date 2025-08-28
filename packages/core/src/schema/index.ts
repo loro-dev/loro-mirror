@@ -107,6 +107,9 @@ schema.LoroMap = function <T extends Record<string, SchemaType>>(
 
 /**
  * Define a Loro list
+ *
+ * Optional `idSelector` enables more efficient updates by tracking items by stable IDs
+ * rather than by position.
  */
 schema.LoroList = function <T extends SchemaType>(
     itemSchema: T,

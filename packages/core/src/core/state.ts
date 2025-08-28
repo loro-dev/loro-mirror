@@ -58,7 +58,7 @@ export interface Store<S extends SchemaType> {
      */
     setState: (
         updater:
-            | ((state: InferType<S>) => InferType<S>)
+            | ((state: InferType<S>) => InferType<S> | void)
             | Partial<InferType<S>>,
     ) => void;
 

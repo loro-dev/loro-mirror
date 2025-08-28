@@ -235,7 +235,7 @@ export function tryUpdateToContainer(
         return change;
     }
 
-    let containerType = schema
+    const containerType = schema
         ? (schemaToContainerType(schema) ?? tryInferContainerType(change.value))
         : undefined;
 

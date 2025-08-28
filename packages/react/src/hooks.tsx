@@ -13,6 +13,7 @@ import React, {
 import type { InferType, SchemaType, Store } from "loro-mirror";
 import { createStore } from "loro-mirror";
 import type { LoroDoc } from "loro-crdt";
+// (No external state helper needed; Mirror handles Immer internally)
 
 /**
  * Context options for creating a Loro Mirror store
@@ -114,10 +115,10 @@ export function useLoroStore<S extends SchemaType>(
     const setState = useCallback(
         (
             updater:
-                | ((state: InferType<S>) => InferType<S>)
+                | ((state: InferType<S>) => InferType<S> | void)
                 | Partial<InferType<S>>,
         ) => {
-            getStore().setState(updater);
+            getStore().setState(updater as any);
         },
         [getStore],
     );
@@ -203,17 +204,12 @@ export function useLoroValue<S extends SchemaType, R>(
  */
 export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
     store: Store<S>,
-    updater: (state: InferType<S>, ...args: Args) => void,
+    updater: (state: InferType<S>, ...args: Args) => void | InferType<S>,
     deps: React.DependencyList = [],
 ): (...args: Args) => void {
     return useCallback(
         (...args: Args) => {
-            store.setState((state: InferType<S>) => {
-                // Use immer's produce to create a new state with the updates
-                const newState = { ...state };
-                updater(newState, ...args);
-                return newState;
-            });
+            store.setState((s) => updater(s, ...args) as any);
         },
         [store, updater, ...deps],
     );
@@ -310,10 +306,10 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
         const updateState = useCallback(
             (
                 updater:
-                    | ((state: InferType<S>) => InferType<S>)
+                    | ((state: InferType<S>) => InferType<S> | void)
                     | Partial<InferType<S>>,
             ) => {
-                store.setState(updater);
+                store.setState(updater as any);
             },
             [store],
         );

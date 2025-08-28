@@ -49,14 +49,13 @@ function TodoApp() {
   
   // Add a new todo
   const addTodo = (text: string) => {
-    setState((state) => {
-      state.todos.push({
-        id: Date.now().toString(),
-        text,
-        completed: false,
-      });
-      return state;
-    });
+    setState((s) => ({
+      ...s,
+      todos: [
+        ...s.todos,
+        { id: Date.now().toString(), text, completed: false },
+      ],
+    }));
   };
   
   // Rest of your component...
@@ -146,7 +145,7 @@ function TodoItem({ todo }) {
 Creates and manages a Loro Mirror store.
 
 ```tsx
-const { state, setState, sync, syncFromLoro, syncToLoro, store } = useLoroStore({
+const { state, setState, store } = useLoroStore({
   doc,
   schema,
   initialState,

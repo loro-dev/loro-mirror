@@ -14,7 +14,7 @@ CRDT.
 ## Installation
 
 ```bash
-npm install loro-mirror-core
+npm install loro-mirror loro-crdt
 ```
 
 ## Usage
@@ -50,13 +50,19 @@ const mirror = new Mirror({
 // Get the current state
 const state = mirror.getState();
 
-// Update the state (immutably)
+// Update the state (immutable update)
 mirror.setState({
   ...state,
   todos: [
     ...state.todos,
     { id: "3", text: "New task", completed: false },
   ],
+});
+
+// Or: draft-style updates (mutate a draft)
+mirror.setState((draft) => {
+  draft.todos.push({ id: "4", text: "Another task", completed: false });
+  // no return needed
 });
 
 // Subscribe to changes
@@ -126,8 +132,7 @@ Here's a practical example showing how to use the Mirror with a todo list
 application:
 
 ```typescript
-import { Mirror } from "loro-mirror-core";
-import { schema } from "loro-mirror-core/schema";
+import { Mirror, schema } from "loro-mirror";
 import { LoroDoc } from "loro-crdt";
 import { useEffect, useState } from "react";
 
@@ -148,7 +153,7 @@ const todoAppSchema = schema({
   sorting: schema.String({ defaultValue: "createdAt" }),
 });
 
-// Create a custom hook to use the Mirror
+// Example hook to wire the Mirror into React state
 function useTodoApp() {
   const [mirror] = useState(() => {
     const doc = new LoroDoc();
@@ -169,10 +174,10 @@ function useTodoApp() {
 
   // Add a new todo
   const addTodo = (text) => {
-    setState({
-      ...state,
+    setState((s) => ({
+      ...s,
       todos: [
-        ...state.todos,
+        ...s.todos,
         {
           id: Date.now().toString(),
           text,
@@ -181,17 +186,17 @@ function useTodoApp() {
           createdAt: Date.now(),
         },
       ],
-    });
+    }));
   };
 
   // Toggle a todo's completed status
   const toggleTodo = (id) => {
-    setState({
-      ...state,
-      todos: state.todos.map((todo) =>
+    setState((s) => ({
+      ...s,
+      todos: s.todos.map((todo) =>
         todo.id === id ? { ...todo, completed: !todo.completed } : todo
       ),
-    });
+    }));
   };
 
   // Remove a todo
@@ -306,8 +311,7 @@ For large lists, using an `idSelector` can significantly improve performance by:
 - Preserving item identity which can help with animations and React rendering
   optimizations
 
-For more examples and detailed API documentation, see the
-[API Reference](API.md).
+For more examples and API notes, see below.
 
 ## Schema System
 
@@ -401,7 +405,7 @@ const mySchema = schema({
 - `schema.String(options?)` - String type
 - `schema.Number(options?)` - Number type
 - `schema.Boolean(options?)` - Boolean type
-- `schema.Ignore(options?)` - Field to ignore (not synced with Loro)
+- `schema.Ignore(options?)` - Field to ignore (not synced with Loro). Any changes to this field are kept in app state only and are not mirrored into Loro.
 - `schema.LoroText(options?)` - Loro rich text
 - `schema.LoroMap(definition, options?)` - Loro map (object)
 - `schema.LoroList(itemSchema, idSelector?, options?)` - Loro list (array)
@@ -424,11 +428,8 @@ const store = createStore({
 ### Store API
 
 - `getState()` - Get the current state
-- `setState(updater)` - Update the state
+- `setState(updater)` - Update state; supports mutating a draft or returning a new state object
 - `subscribe(callback)` - Subscribe to state changes
-- `syncFromLoro()` - Sync from Loro to application state
-- `syncToLoro()` - Sync from application state to Loro
-- `sync()` - Full bidirectional sync
 - `getMirror()` - Get the underlying Mirror instance
 
 ### `createReducer`

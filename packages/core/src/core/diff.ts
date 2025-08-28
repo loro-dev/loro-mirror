@@ -759,6 +759,13 @@ export function diffMap<S extends ObjectLike>(
 
     // Check for removed keys
     for (const key in oldStateObj) {
+        // Skip ignored fields defined in schema
+        const childSchemaForDelete = (
+            schema as LoroMapSchema<Record<string, SchemaType>> | undefined
+        )?.definition?.[key as keyof typeof oldStateObj];
+        if (childSchemaForDelete && childSchemaForDelete.type === "ignore") {
+            continue;
+        }
         if (!(key in newStateObj)) {
             changes.push({
                 container: containerId,
@@ -778,6 +785,11 @@ export function diffMap<S extends ObjectLike>(
         const childSchema = (
             schema as LoroMapSchema<Record<string, SchemaType>> | undefined
         )?.definition?.[key];
+
+        // Skip ignored fields defined in schema
+        if (childSchema && childSchema.type === "ignore") {
+            continue;
+        }
         const containerType =
             childSchema?.getContainerType() ??
             tryInferContainerType(newItem, inferOptions);
@@ -815,7 +827,7 @@ export function diffMap<S extends ObjectLike>(
             ) {
                 // the parent is the root container
                 if (containerId === "") {
-                    let container = getRootContainerByType(
+                    const container = getRootContainerByType(
                         doc,
                         key,
                         containerType,
