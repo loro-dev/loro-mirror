@@ -9,6 +9,7 @@ import {
     LoroMapSchema,
     LoroMovableListSchema,
     LoroTextSchemaType,
+    LoroTreeSchema,
     RootSchemaType,
     SchemaType,
 } from "./types";
@@ -61,6 +62,15 @@ export function isLoroTextSchema(schema: SchemaType): schema is LoroTextSchemaTy
 }
 
 /**
+ * Type guard for LoroTreeSchema
+ */
+export function isLoroTreeSchema<T extends Record<string, SchemaType>>(
+    schema: SchemaType,
+): schema is LoroTreeSchema<T> {
+    return (schema as BaseSchemaType).type === "loro-tree";
+}
+
+/**
  * Check if a schema is for a Loro container
  */
 export function isContainerSchema(schema?: SchemaType): schema is ContainerSchemaType {
@@ -68,7 +78,8 @@ export function isContainerSchema(schema?: SchemaType): schema is ContainerSchem
     schema.type === "loro-map" || 
     schema.type === "loro-list" || 
     schema.type === "loro-text" ||
-    schema.type === "loro-movable-list"
+    schema.type === "loro-movable-list" ||
+    schema.type === "loro-tree"
   );
 }
 
@@ -167,6 +178,49 @@ export function validateSchema<S extends SchemaType>(
                 });
             }
             break;
+
+        case "loro-tree": {
+            if (!Array.isArray(value)) {
+                errors.push("Value must be an array of tree nodes");
+                break;
+            }
+
+            if (!isLoroTreeSchema(schema)) {
+                errors.push("Invalid tree schema");
+                break;
+            }
+
+            // Validate nodes recursively
+            const validateNode = (node: unknown, path: string) => {
+                if (!isObject(node)) {
+                    errors.push(`${path}: Node must be an object`);
+                    return;
+                }
+                const n = node as Record<string, unknown>;
+                if (n.id != null && typeof n.id !== "string") {
+                    errors.push(`${path}: id must be a string if provided`);
+                }
+                // Validate data against nodeSchema
+                const dataResult = validateSchema(
+                    schema.nodeSchema,
+                    n.data as unknown,
+                );
+                if (!dataResult.valid && dataResult.errors) {
+                    errors.push(...dataResult.errors.map((e) => `${path}.data: ${e}`));
+                }
+                // Children
+                if (!Array.isArray(n.children)) {
+                    errors.push(`${path}: children must be an array`);
+                } else {
+                    n.children.forEach((child, idx) =>
+                        validateNode(child, `${path}.children[${idx}]`),
+                    );
+                }
+            };
+
+            value.forEach((node, i) => validateNode(node, `node[${i}]`));
+            break;
+        }
 
         case "schema":
             if (!isObject(value)) {
@@ -309,6 +363,11 @@ export function getDefaultValue<S extends SchemaType>(
 
         case "loro-list":
             return [] as InferType<S>;
+        case "loro-tree": {
+            const value = schema.options.required ? [] : undefined;
+            if (value === undefined) return undefined;
+            return value as InferType<S>;
+        }
 
         case "schema": {
             if (isRootSchemaType(schema)) {
@@ -359,5 +418,4 @@ export function createValueFromSchema<S extends SchemaType>(
     // For complex types, pass through as is
     return value as InferType<S>;
 }
-
 

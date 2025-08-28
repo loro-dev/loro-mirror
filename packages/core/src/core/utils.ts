@@ -179,6 +179,8 @@ export function getRootContainerByType(
         return doc.getMovableList(key);
     } else if (type === "Map") {
         return doc.getMap(key);
+    } else if (type === "Tree") {
+        return doc.getTree(key);
     } else {
         throw new Error();
     }

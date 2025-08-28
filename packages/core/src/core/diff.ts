@@ -4,6 +4,8 @@ import {
     isContainer,
     LoroDoc,
     LoroMap,
+    LoroTree,
+    TreeID,
 } from "loro-crdt";
 import {
     ContainerSchemaType,
@@ -11,11 +13,13 @@ import {
     isLoroMapSchema,
     isLoroMovableListSchema,
     isLoroTextSchema,
+    isLoroTreeSchema,
     isRootSchemaType,
     LoroListSchema,
     LoroMapSchema,
     LoroMovableListSchema,
     LoroTextSchemaType,
+    LoroTreeSchema,
     RootSchemaType,
     SchemaType,
 } from "../schema";
@@ -242,6 +246,26 @@ export function diffContainer(
                 containerId,
             );
             break;
+        case "Tree":
+            if (
+                !isStateAndSchemaOfType<
+                    ArrayLike,
+                    LoroTreeSchema<Record<string, SchemaType>>
+                >(stateAndSchema, isArrayLike, isLoroTreeSchema)
+            ) {
+                throw new Error(
+                    "Failed to diff container(tree). Old and new state must be arrays",
+                );
+            }
+            changes = diffTree(
+                doc,
+                stateAndSchema.oldState,
+                stateAndSchema.newState,
+                containerId,
+                stateAndSchema.schema,
+                inferOptions,
+            );
+            break;
         default:
             throw new Error(`Unsupported container type: ${containerType}`);
     }
@@ -274,6 +298,136 @@ export function diffText(
             kind: "insert",
         },
     ];
+}
+
+/**
+ * Diffs a LoroTree between two states
+ *
+ * Produces structural tree operations (create/move/delete) and per-node data updates.
+ */
+export function diffTree(
+    doc: LoroDoc,
+    oldState: ArrayLike,
+    newState: ArrayLike,
+    containerId: ContainerID,
+    schema: LoroTreeSchema<Record<string, SchemaType>> | undefined,
+    inferOptions?: InferContainerOptions,
+): Change[] {
+    const changes: Change[] = [];
+    if (oldState === newState) return changes;
+
+    type Node = { id?: string; data?: unknown; children?: any[] };
+
+    const toArray = (arr: ArrayLike) => arr as unknown as Node[];
+    const oldArr = toArray(oldState);
+    const newArr = toArray(newState);
+
+    // Walk helpers
+    type NodeInfo = { id: string; parent?: string; index: number; node: Node };
+
+    const oldInfoById = new Map<string, NodeInfo>();
+    const newInfoById = new Map<string, NodeInfo>();
+
+    function walk(arr: Node[], map: Map<string, NodeInfo>, parent?: string) {
+        for (let i = 0; i < arr.length; i++) {
+            const n = arr[i];
+            if (n && typeof n === "object" && typeof n.id === "string") {
+                map.set(n.id, { id: n.id, parent, index: i, node: n });
+            }
+            if (n && Array.isArray(n.children)) {
+                walk(n.children, map, typeof n.id === "string" ? n.id : undefined);
+            }
+        }
+    }
+
+    walk(oldArr, oldInfoById);
+    walk(newArr, newInfoById);
+
+    // Deletions (ids in old but not in new) – delete deepest nodes first
+    const toDelete: NodeInfo[] = [];
+    for (const [id, info] of oldInfoById) {
+        if (!newInfoById.has(id)) toDelete.push(info);
+    }
+
+    // Compute depth for stable deletion order
+    const depth = (info: NodeInfo): number => {
+        let d = 0;
+        let p = info.parent ? oldInfoById.get(info.parent) : undefined;
+        while (p) {
+            d++;
+            p = p.parent ? oldInfoById.get(p.parent) : undefined;
+        }
+        return d;
+    };
+    toDelete.sort((a, b) => depth(b) - depth(a));
+    for (const info of toDelete) {
+        changes.push({
+            container: containerId,
+            kind: "tree-delete",
+            target: info.id as TreeID,
+        });
+    }
+
+    // Creates (nodes in new but not in old) – create parents before children (preorder)
+    function pushCreates(arr: Node[], parent?: string) {
+        for (let i = 0; i < arr.length; i++) {
+            const n = arr[i];
+            const id = typeof n.id === "string" ? n.id : undefined;
+            if (!id || !oldInfoById.has(id)) {
+                changes.push({
+                    container: containerId,
+                    kind: "tree-create",
+                    parent: parent as TreeID | undefined,
+                    index: i,
+                    value: n?.data,
+                });
+            }
+            if (n && Array.isArray(n.children)) {
+                const pid = typeof n.id === "string" ? n.id : undefined;
+                pushCreates(n.children, pid);
+            }
+        }
+    }
+    pushCreates(newArr);
+
+    // Moves and data updates for common nodes
+    for (const [id, newInfo] of newInfoById) {
+        const oldInfo = oldInfoById.get(id);
+        if (!oldInfo) continue; // created above
+
+        const parentChanged = (oldInfo.parent ?? undefined) !== (newInfo.parent ?? undefined);
+        const indexChanged = oldInfo.index !== newInfo.index;
+        if (parentChanged || indexChanged) {
+            changes.push({
+                container: containerId,
+                kind: "tree-move",
+                target: id as TreeID,
+                parent: newInfo.parent as TreeID | undefined,
+                index: newInfo.index,
+            });
+        }
+
+        // Data updates: diff node.data via its map container id
+        try {
+            const tree = doc.getTree(containerId);
+            const node = tree.getNodeByID(id as TreeID);
+            if (node && schema) {
+                const nested = diffContainer(
+                    doc,
+                    oldInfo.node?.data,
+                    newInfo.node?.data,
+                    node.data.id,
+                    schema.nodeSchema,
+                    inferOptions,
+                );
+                changes.push(...nested);
+            }
+        } catch (_) {
+            // best effort
+        }
+    }
+
+    return changes;
 }
 
 /**
@@ -346,11 +500,14 @@ export function diffMovableList<S extends ArrayLike>(
                 container: containerId,
                 key: index,
                 value: undefined,
-                kind: "delete",
+                kind: "delete" as const,
             });
         }
     }
-    deletions.sort((a, b) => (b.key as number) - (a.key as number));
+    // sort highest index first
+    (deletions as any).sort(
+        (a: any, b: any) => (b.key as number) - (a.key as number),
+    );
     changes.push(...deletions);
 
     // 3) Moves (simulate post-deletion order; place each target item)

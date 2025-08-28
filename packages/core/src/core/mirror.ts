@@ -13,6 +13,8 @@ import {
     LoroMap,
     LoroMovableList,
     LoroText,
+    LoroTree,
+    TreeID,
 } from "loro-crdt";
 
 import { applyEventBatchToState } from "./loroEventApply";
@@ -25,8 +27,10 @@ import {
     isLoroListSchema,
     isLoroMapSchema,
     isLoroMovableListSchema,
+    isLoroTreeSchema,
     LoroListSchema,
     LoroMapSchema,
+    LoroTreeSchema,
     RootSchemaType,
     SchemaType,
     validateSchema,
@@ -131,6 +135,25 @@ export type Change<K extends string | number = string | number> =
           fromIndex: number;
           toIndex: number;
           childContainerType?: ContainerType;
+      }
+    | {
+          container: ContainerID;
+          kind: "tree-create";
+          parent?: TreeID;
+          index: number;
+          value?: unknown; // initial node.data
+      }
+    | {
+          container: ContainerID;
+          kind: "tree-move";
+          target: TreeID;
+          parent?: TreeID;
+          index: number;
+      }
+    | {
+          container: ContainerID;
+          kind: "tree-delete";
+          target: TreeID;
       };
 
 /**
@@ -233,6 +256,23 @@ export class Mirror<S extends SchemaType> {
         // Update the state with the doc's current state
         const newState = produce<InferType<S>>((draft) => {
             Object.assign(draft, currentDocState);
+
+            // Normalize tree fields if schema present
+            if (this.schema) {
+                const rootDef = (
+                    this.schema as RootSchemaType<Record<string, ContainerSchemaType>>
+                ).definition;
+                for (const key in rootDef) {
+                    if (!Object.prototype.hasOwnProperty.call(rootDef, key)) continue;
+                    const fieldSchema = rootDef[key];
+                    if (fieldSchema?.type === "loro-tree") {
+                        const val = (currentDocState as any)[key];
+                        if (Array.isArray(val)) {
+                            (draft as any)[key] = normalizeTreeJson(val);
+                        }
+                    }
+                }
+            }
         })(this.state);
 
         this.state = newState;
@@ -254,6 +294,7 @@ export class Mirror<S extends SchemaType> {
                             "loro-list",
                             "loro-text",
                             "loro-movable-list",
+                            "loro-tree",
                         ].includes(fieldSchema.type)
                     ) {
                         const containerType =
@@ -272,6 +313,8 @@ export class Mirror<S extends SchemaType> {
             }
         }
     }
+
+    
 
     /**
      * Register a container with the Mirror
@@ -363,6 +406,19 @@ export class Mirror<S extends SchemaType> {
                         }
                     }
                 }
+            } else if (container.kind() === "Tree") {
+                const tree = container as LoroTree;
+                let nodeSchema: ContainerSchemaType | undefined;
+                if (parentSchema && isLoroTreeSchema(parentSchema)) {
+                    nodeSchema = parentSchema.nodeSchema as ContainerSchemaType;
+                }
+                if (nodeSchema) {
+                    const nodes = tree.getNodes();
+                    for (const node of nodes) {
+                        // Register the node.data map and its nested containers
+                        this.registerContainer(node.data.id, nodeSchema);
+                    }
+                }
             }
         } catch (error) {
             if (this.options.debug) {
@@ -450,6 +506,23 @@ export class Mirror<S extends SchemaType> {
                             console.warn(
                                 `Container schema not found for key ${key} in map ${event.target}`,
                             );
+                        }
+                    }
+                }
+            } else if (event.diff.type === "tree") {
+                const tree = this.doc.getTree(event.target);
+                const schema = this.getContainerSchema(event.target);
+                let nodeSchema: ContainerSchemaType | undefined;
+                if (schema && isLoroTreeSchema(schema)) {
+                    nodeSchema = schema.nodeSchema as ContainerSchemaType;
+                }
+                if (!nodeSchema) continue;
+
+                for (const item of event.diff.diff) {
+                    if (item.action === "create") {
+                        const node = tree.getNodeByID(item.target);
+                        if (node) {
+                            this.registerContainer(node.data.id, nodeSchema);
                         }
                     }
                 }
@@ -544,7 +617,9 @@ export class Mirror<S extends SchemaType> {
      * Update root-level fields
      */
     private applyRootChanges(changes: Change[]) {
-        for (const { key, value } of changes) {
+        for (const change of changes) {
+            if (!("key" in change)) continue;
+            const { key, value } = change as Extract<Change, { key: string | number }>;
             const keyStr = key.toString();
 
             const fieldSchema = (
@@ -566,6 +641,8 @@ export class Mirror<S extends SchemaType> {
                 container = this.doc.getText(keyStr);
             } else if (type === "loro-movable-list") {
                 container = this.doc.getMovableList(keyStr);
+            } else if (type === "loro-tree") {
+                container = this.doc.getTree(keyStr);
             } else {
                 throw new Error();
             }
@@ -586,7 +663,8 @@ export class Mirror<S extends SchemaType> {
             case "Map": {
                 const map = container as LoroMap;
 
-                for (const { key, value, kind } of changes) {
+                for (const change of changes) {
+                    const { key, value, kind } = change as any;
                     if (key === "") {
                         continue; // Skip empty key
                     }
@@ -617,7 +695,8 @@ export class Mirror<S extends SchemaType> {
             case "List": {
                 const list = container as LoroList;
                 // Process other changes (add/remove/replace)
-                for (const { key, value, kind } of changes) {
+                for (const change of changes) {
+                    const { key, value, kind } = change as any;
                     if (typeof key !== "number") {
                         throw new Error(`Invalid list index: ${key}`);
                     }
@@ -655,7 +734,7 @@ export class Mirror<S extends SchemaType> {
                 const list = container as LoroMovableList;
 
                 for (const change of changes) {
-                    const { key, value, kind } = change;
+                    const { key, value, kind } = change as any;
                     if (typeof key !== "number") {
                         throw new Error(`Invalid list index: ${key}`);
                     }
@@ -682,8 +761,8 @@ export class Mirror<S extends SchemaType> {
                             value,
                         );
                     } else if (kind === "move") {
-                        const fromIndex = change.fromIndex;
-                        const toIndex = change.toIndex;
+                        const fromIndex = (change as any).fromIndex as number;
+                        const toIndex = (change as any).toIndex as number;
                         list.move(fromIndex, toIndex);
                     } else if (kind === "set") {
                         list.set(index, value);
@@ -711,15 +790,46 @@ export class Mirror<S extends SchemaType> {
             case "Text": {
                 const text = container as LoroText;
                 // Text containers only support direct value updates
-                for (const { key, value } of changes) {
-                    if (typeof value === "string") {
-                        text.update(value);
+                for (const change of changes) {
+                    if (!("value" in change)) continue;
+                    const v = (change as any).value;
+                    if (typeof v === "string") {
+                        text.update(v);
                     } else {
-                        console.warn(
-                            `Invalid Text change. Only 'value' property can be updated`,
-                            key,
-                            value,
+                        // ignore
+                    }
+                }
+                break;
+            }
+            case "Tree": {
+                const tree = container as LoroTree;
+                // Determine node schema for initializing new nodes
+                let nodeSchema: ContainerSchemaType | undefined;
+                const parentSchema = this.getContainerSchema(tree.id);
+                if (parentSchema && isLoroTreeSchema(parentSchema)) {
+                    nodeSchema = parentSchema.nodeSchema as ContainerSchemaType;
+                }
+
+                for (const change of changes) {
+                    if (change.kind === "tree-create") {
+                        const newNode = tree.createNode(
+                            change.parent,
+                            change.index,
                         );
+                        if (nodeSchema) {
+                            this.registerContainer(newNode.data.id, nodeSchema);
+                            this.initializeContainer(
+                                newNode.data,
+                                nodeSchema,
+                                change.value,
+                            );
+                        }
+                    } else if (change.kind === "tree-move") {
+                        tree.move(change.target, change.parent, change.index);
+                    } else if (change.kind === "tree-delete") {
+                        tree.delete(change.target);
+                    } else {
+                        // ignore non-tree changes for tree container
                     }
                 }
                 break;
@@ -747,6 +857,9 @@ export class Mirror<S extends SchemaType> {
                 break;
             case "MovableList":
                 this.updateListContainer(container as LoroMovableList, value);
+                break;
+            case "Tree":
+                this.updateTreeContainer(container as LoroTree, value);
                 break;
             default:
                 throw new Error(
@@ -1161,6 +1274,9 @@ export class Mirror<S extends SchemaType> {
             if (typeof value === "string") {
                 text.update(value);
             }
+        } else if (kind === "Tree") {
+            const tree = container as LoroTree;
+            this.updateTreeContainer(tree, value);
         } else {
             throw new Error(`Unknown container kind: ${kind}`);
         }
@@ -1188,6 +1304,8 @@ export class Mirror<S extends SchemaType> {
                 return [new LoroMovableList(), "MovableList"];
             case "Text":
                 return [new LoroText(), "Text"];
+            case "Tree":
+                return [new LoroTree(), "Tree"];
             default:
                 throw new Error(`Unknown schema type: ${containerType}`);
         }
@@ -1221,6 +1339,69 @@ export class Mirror<S extends SchemaType> {
         this.registerContainer(insertedContainer.id, schema);
 
         this.initializeContainer(insertedContainer, schema, value);
+    }
+
+    /**
+     * Update a Tree container with a new tree value
+     */
+    private updateTreeContainer(tree: LoroTree, value: unknown) {
+        if (!Array.isArray(value)) {
+            throw new Error("Tree value must be an array of nodes");
+        }
+
+        // Determine node schema
+        let nodeSchema: ContainerSchemaType | undefined;
+        const parentSchema = this.getContainerSchema(tree.id);
+        if (parentSchema && isLoroTreeSchema(parentSchema)) {
+            nodeSchema = parentSchema.nodeSchema as ContainerSchemaType;
+        }
+
+        // Remove all existing roots (which removes entire subtrees)
+        try {
+            const roots = (tree as any).roots ? (tree as any).roots() : [];
+            for (const root of roots) {
+                tree.delete(root.id);
+            }
+        } catch (e) {
+            // Fallback: delete by enumerating nodes if roots() is unavailable
+            const nodes = (tree as any).getNodes ? (tree as any).getNodes() : [];
+            // delete roots only (nodes whose parent is undefined)
+            for (const node of nodes) {
+                try {
+                    if (!node.parent || node.parent() === undefined) {
+                        tree.delete(node.id);
+                    }
+                } catch (_) {
+                    // best effort
+                }
+            }
+        }
+
+        // Helper to recursively create nodes
+        const createNodes = (
+            nodes: any[],
+            parent?: TreeID,
+        ) => {
+            for (let i = 0; i < nodes.length; i++) {
+                const n = nodes[i];
+                const created = tree.createNode(parent, i);
+                if (nodeSchema) {
+                    this.registerContainer(created.data.id, nodeSchema);
+                    this.initializeContainer(
+                        created.data,
+                        nodeSchema,
+                        (n && typeof n === "object" && "data" in n)
+                            ? (n as any).data
+                            : {},
+                    );
+                }
+                if (n && Array.isArray((n as any).children)) {
+                    createNodes((n as any).children, created.id);
+                }
+            }
+        };
+
+        createNodes(value);
     }
 
     /**
@@ -1401,8 +1582,23 @@ export class Mirror<S extends SchemaType> {
             isLoroMovableListSchema(containerSchema)
         ) {
             return containerSchema.itemSchema;
+        } else if (isLoroTreeSchema(containerSchema)) {
+            // Tree nodes' data map schema
+            return containerSchema.nodeSchema;
         }
 
         return undefined;
     }
+}
+
+// Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
+function normalizeTreeJson(input: any[]): any[] {
+    if (!Array.isArray(input)) return [];
+    const mapNode = (n: any): any => {
+        const id = String(n?.id ?? "");
+        const data = (n && typeof n === "object" && n.meta && typeof n.meta === "object") ? n.meta : {};
+        const children = Array.isArray(n?.children) ? n.children.map(mapNode) : [];
+        return { id, data, children };
+    };
+    return input.map(mapNode);
 }
