@@ -6,13 +6,15 @@ describe("infer type", () => {
         const mixedSchema = schema.LoroMap({
             name: schema.String(),
             age: schema.Number(),
-        })
+        }).catchall(schema.String());
 
         type InferredType = InferType<typeof mixedSchema>;
 
         expectTypeOf<InferredType>().toMatchTypeOf<{
             name: string,
             age: number,
+        } & {
+            [key: string]: string,
         }>();
     })
 

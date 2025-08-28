@@ -167,12 +167,13 @@ export type InferType<S extends SchemaType> = S extends StringSchemaType
     any
     : S extends LoroTextSchemaType
     ? string
+    // should be before the LoroMapSchema<infer M> because it's a subtype
+    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+    ? keyof M extends never
+    ? { [key: string]: InferType<C> }
+    : { [K in keyof M]: InferType<M[K]> } & { [K in Exclude<string, keyof M>]: InferType<C> }
     : S extends LoroMapSchema<infer M>
     ? { [K in keyof M]: InferType<M[K]> }
-    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
-    ? (keyof M extends never
-        ? { [key: string]: InferType<C> } | undefined
-        : { [K in keyof M]: InferType<M[K]> } & { [K in Exclude<string, keyof M>]: InferType<C> } | undefined)
     : S extends LoroListSchema<infer I>
     ? Array<InferType<I>>
     : S extends LoroMovableListSchema<infer I>
