@@ -188,10 +188,6 @@ export class Mirror<S extends SchemaType> {
     private containerRegistry: ContainerRegistry = new Map();
     private subscriptions: (() => void)[] = [];
 
-    getContainerIds(): ContainerID[] {
-        return Array.from(this.containerRegistry.keys());
-    }
-
     /**
      * Creates a new Mirror instance
      */
@@ -1315,9 +1311,9 @@ export class Mirror<S extends SchemaType> {
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
                       // Allow updater to either mutate draft or return a new state
-                      const maybeResult = (updater as (s: InferType<S>) => InferType<S> | void)(
-                          draft as InferType<S>,
-                      );
+                      const maybeResult = (
+                          updater as (s: InferType<S>) => InferType<S> | void
+                      )(draft as InferType<S>);
                       if (maybeResult && maybeResult !== draft) {
                           // Replace if updater returned a new state object
                           // Immer interprets a return value as replacement

@@ -197,6 +197,88 @@ For detailed documentation, see the README files in each package:
 - [Core Documentation](./packages/core/README.md)
 - [React Documentation](./packages/react/README.md)
 
+## API Reference (Core Mirror)
+
+### Mirror
+
+- `new Mirror(options)`: Creates a bidirectional sync between app state and a `LoroDoc`.
+    - **`doc`**: `LoroDoc` – required Loro document instance.
+    - **`schema`**: root schema – optional but recommended for strong typing and validation.
+    - **`initialState`**: partial state – merged with schema defaults and current doc JSON.
+    - **`validateUpdates`**: boolean (default `true`) – validate new state against schema.
+    - **`throwOnValidationError`**: boolean (default `false`) – throw on invalid updates.
+    - **`debug`**: boolean (default `false`) – log diffs and applied changes.
+    - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` – influence container-type inference when inserting containers from plain values.
+
+- `getState(): State`: Returns the current in-memory state view.
+- `setState(updater, options?)`: Update state and sync to Loro.
+    - **`updater`**: either a partial object to shallow-merge or a function that may mutate a draft (Immer-style) or return a new state object.
+    - **`options`**: `{ tags?: string | string[] }` – arbitrary tags attached to this update; delivered to subscribers in metadata.
+- `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
+    - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when produced locally, `BIDIRECTIONAL` for manual/initial syncs.
+    - **`tags`**: `string[] | undefined` – tags provided via `setState`.
+- `dispose()`: Unsubscribe internal listeners and clear subscribers.
+
+#### Notes
+
+- **Lists and IDs**: If your list schema provides an `idSelector`, list updates use minimal add/remove/update/move operations; otherwise index-based diffs are applied.
+- **Container inference**: When schema is missing/ambiguous for a field, the mirror infers container types from values. `inferOptions.defaultLoroText` makes strings become `LoroText`; `inferOptions.defaultMovableList` makes arrays become `LoroMovableList`.
+
+### Types
+
+- `SyncDirection`:
+    - `FROM_LORO` – applied due to incoming `LoroDoc` changes
+    - `TO_LORO` – applied due to local `setState`
+    - `BIDIRECTIONAL` – initial/manual sync context
+- `UpdateMetadata`: `{ direction: SyncDirection; tags?: string[] }`
+- `SetStateOptions`: `{ tags?: string | string[] }`
+
+### Example
+
+```ts
+import { LoroDoc } from "loro-crdt";
+import { Mirror, schema, SyncDirection } from "loro-mirror";
+
+const todoSchema = schema({
+    todos: schema.LoroList(
+        schema.LoroMap({
+            id: schema.String({ required: true }),
+            text: schema.String({ required: true }),
+            completed: schema.Boolean({ defaultValue: false }),
+        }),
+        (t) => t.id,
+    ),
+});
+
+const doc = new LoroDoc();
+const mirror = new Mirror({ doc, schema: todoSchema, validateUpdates: true });
+
+// Subscribe with metadata
+const unsubscribe = mirror.subscribe((state, { direction, tags }) => {
+    if (direction === SyncDirection.FROM_LORO) {
+        console.log("Remote update", tags);
+    } else {
+        console.log("Local update", tags);
+    }
+});
+
+// Update with draft mutation + tags
+mirror.setState(
+    (s) => {
+        s.todos.push({
+            id: Date.now().toString(),
+            text: "Write docs",
+            completed: false,
+        });
+    },
+    { tags: ["ui:add"] },
+);
+
+// Cleanup
+unsubscribe();
+mirror.dispose();
+```
+
 ## License
 
 MIT
