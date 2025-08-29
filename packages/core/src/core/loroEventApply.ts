@@ -325,12 +325,8 @@ function applyTreeDiff(
             }
             if (!moved) continue;
             const toArr = getChildrenArray(d.parent);
-            let idx = d.index;
-            if (d.oldParent === d.parent && oldIdx < d.index) {
-                // After removing, target index shifts left by 1
-                idx = d.index - 1;
-            }
-            const toIdx = clampIndex(idx, toArr.length + 1);
+            // Use the target index as the final index in the destination
+            const toIdx = clampIndex(d.index, toArr.length + 1);
             toArr.splice(toIdx, 0, moved as unknown as Node);
         }
     }
