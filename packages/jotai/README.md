@@ -25,13 +25,14 @@ import { LoroDoc } from 'loro-crdt';
 import { schema } from 'loro-mirror';
 import { loroMirrorAtom } from 'loro-mirror-jotai';
 
+type TodoStatus = "todo" | "inProgress" | "done";
+
 // 1. Define your schema
 const todoSchema = schema({
   todos: schema.LoroList(
     schema.LoroMap({
-      id: schema.String(),
       text: schema.String(),
-      completed: schema.Boolean({ defaultValue: false }),
+      status: schema.String<TodoStatus>()
     }),
   ),
 });
@@ -43,7 +44,6 @@ const doc = new LoroDoc();
 const todoAtom = loroMirrorAtom({
   doc,
   schema: todoSchema,
-  key: 'todos', // A unique key for this state
   initialState: { todos: [] },
 });
 
@@ -53,13 +53,11 @@ function TodoApp() {
 
   const addTodo = () => {
     setState((prevState) => ({
-      ...prevState,
       todos: [
         ...prevState.todos,
         {
-          id: `${Date.now()}`,
           text: 'New Todo',
-          completed: false,
+          status: "todo",
         },
       ],
     }));
@@ -70,8 +68,8 @@ function TodoApp() {
       <button onClick={addTodo}>Add Todo</button>
       <ul>
         {state.todos.map((todo) => (
-          <li key={todo.id} style={{ textDecoration: todo.completed ? 'line-through' : 'none' }}>
-            {todo.text}
+          <li key={todo.text}>
+            {todo.text}: {todo.status}
           </li>
         ))}
       </ul>
