@@ -10,7 +10,7 @@ describe("infer type", () => {
 
         type InferredType = InferType<typeof mixedSchema>;
 
-        expectTypeOf<InferredType>().toMatchTypeOf<{
+        expectTypeOf<InferredType>().toEqualTypeOf<{
             name: string,
             age: number,
         } & {
@@ -24,7 +24,7 @@ describe("infer type", () => {
 
         type InferredType = InferType<typeof mixedSchema>;
 
-        expectTypeOf<InferredType>().toMatchTypeOf<{
+        expectTypeOf<InferredType>().toEqualTypeOf<{
             [key: string]: string,
         }>();
     })
@@ -34,8 +34,34 @@ describe("infer type", () => {
 
         type InferredType = InferType<typeof recordSchema>;
 
-        expectTypeOf<InferredType>().toMatchTypeOf<{
+        expectTypeOf<InferredType>().toEqualTypeOf<{
             [key: string]: string,
         }>();
+    })
+
+    test("infer custom string type", () => {
+        type UserId = string & { _brand: "userId" };
+        const stringSchema = schema.String<UserId>();
+
+        type InferredType = InferType<typeof stringSchema>;
+
+        expectTypeOf<InferredType>().toEqualTypeOf<UserId>();
+    })
+
+    test("infer required", () => {
+        const requiredSchema = schema.String({ required: false });
+
+        type InferredType = InferType<typeof requiredSchema>;
+
+        expectTypeOf<InferredType>().toEqualTypeOf<string | undefined>();
+    })
+
+    test("infer required false and custom string type", () => {
+        type UserId = string & { _brand: "userId" };
+        const requiredSchema = schema.String<UserId, { required: false }>({ required: false });
+
+        type InferredType = InferType<typeof requiredSchema>;
+
+        expectTypeOf<InferredType>().toEqualTypeOf<UserId | undefined>();
     })
 })
