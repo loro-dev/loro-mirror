@@ -7,6 +7,7 @@ export default defineConfig({
         globals: true,
         typecheck: {
             enabled: true,
+            tsconfig: "./tsconfig.typecheck.json",
         },
     },
 });
