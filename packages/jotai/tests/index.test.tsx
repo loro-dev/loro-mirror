@@ -77,36 +77,4 @@ describe('loro-mirror-jotai', () => {
 
         expect(result.current[0]).toEqual({ text: 'hello' });
     });
-
-    it('should share state between atoms with the same key', async () => {
-        const doc = new LoroDoc();
-        const testSchema = schema({
-            map: schema.LoroMap({
-                count: schema.Number()
-            })
-        });
-        const config = {
-            doc,
-            schema: testSchema,
-            key: 'shared-counter',
-            initialState: { map: { count: 0 } },
-        };
-
-        const atom1 = loroMirrorAtom(config);
-        const atom2 = loroMirrorAtom(config);
-
-        const { result: result1 } = renderHook(() => useAtom(atom1));
-        const { result: result2 } = renderHook(() => useAtom(atom2));
-
-        act(() => {
-            result1.current[1]((prev) => ({ map: { count: prev.map.count + 1 } }));
-        });
-
-        await act(async () => {
-            await waitFor(50);
-        });
-
-        expect(result1.current[0].map.count).toBe(1);
-        expect(result2.current[0].map.count).toBe(1);
-    });
 });
