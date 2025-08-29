@@ -3,7 +3,7 @@ import { useAtom } from 'jotai';
 import { LoroDoc } from 'loro-crdt';
 import { schema } from 'loro-mirror';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loroMirrorAtom, useLoroMirror } from '../src';
+import { loroMirrorAtom } from '../src';
 
 // Helper to wait for Jotai state propagation
 const waitFor = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -12,7 +12,7 @@ describe('loro-mirror-jotai', () => {
     // Clear store cache after each test to ensure isolation
     afterEach(() => {
         const doc = new LoroDoc();
-        const testAtom = loroMirrorAtom({ doc, schema: schema({}), key: 'test-cleanup' });
+        const testAtom = loroMirrorAtom({ doc, schema: schema({}) });
         const { unmount } = renderHook(() => useAtom(testAtom));
         unmount();
     });
@@ -23,7 +23,6 @@ describe('loro-mirror-jotai', () => {
         const testAtom = loroMirrorAtom({
             doc,
             schema: testSchema,
-            key: 'test-init',
             initialState: { text: 'hello' },
         });
 
@@ -37,7 +36,6 @@ describe('loro-mirror-jotai', () => {
         const testAtom = loroMirrorAtom({
             doc,
             schema: testSchema,
-            key: 'test-atom-to-loro',
             initialState: { text: '' },
         });
 
@@ -62,7 +60,6 @@ describe('loro-mirror-jotai', () => {
         const testAtom = loroMirrorAtom({
             doc,
             schema: testSchema,
-            key: 'test-loro-to-atom',
             initialState: { text: '' },
         });
         const loroText = doc.getText('text');
@@ -111,25 +108,5 @@ describe('loro-mirror-jotai', () => {
 
         expect(result1.current[0].map.count).toBe(1);
         expect(result2.current[0].map.count).toBe(1);
-    });
-
-    describe('useLoroMirror', () => {
-        it('should return the mirror instance for a given config', () => {
-            const doc = new LoroDoc();
-            const testSchema = schema({ text: schema.LoroText() });
-            const config = {
-                doc,
-                schema: testSchema,
-                key: 'mirror-test',
-            };
-
-            // First, initialize an atom to ensure the store and mirror are created
-            const testAtom = loroMirrorAtom(config);
-            renderHook(() => useAtom(testAtom));
-
-            const { result } = renderHook(() => useLoroMirror(config));
-
-            expect(result.current).not.toBeNull();
-        });
     });
 });
