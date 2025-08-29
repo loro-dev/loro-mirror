@@ -15,10 +15,9 @@ A TypeScript state management library that syncs application state with [loro-cr
 
 - [`loro-mirror`](./packages/core): Core state management functionality
 - [`loro-mirror-react`](./packages/react): React integration with hooks and context
+- [`loro-mirror-jotai`](./packages/jotai): Jotai integration
 
 ## Installation
-
-### Core Package
 
 ```bash
 npm install loro-mirror loro-crdt
@@ -28,15 +27,7 @@ yarn add loro-mirror loro-crdt
 pnpm add loro-mirror loro-crdt
 ```
 
-### React Package
-
-```bash
-npm install loro-mirror-react loro-mirror loro-crdt
-# or
-yarn add loro-mirror-react loro-mirror loro-crdt
-# or
-pnpm add loro-mirror-react loro-mirror loro-crdt
-```
+`loro-mirror-react` and `loro-mirror-jotai` are optional.
 
 ## Quick Start
 
@@ -316,6 +307,7 @@ For detailed documentation, see the README files in each package:
 
 - [Core Documentation](./packages/core/README.md)
 - [React Documentation](./packages/react/README.md)
+- [Jotai Documentation](./packages/jotai/README.md)
 
 ## API Reference (Core Mirror)
 
