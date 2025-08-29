@@ -9,7 +9,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "rollup -c",
+        "build": "tsc -p .",
         "test": "vitest run",
         "test:watch": "vitest",
         "lint": "eslint src --ext .ts,.tsx",

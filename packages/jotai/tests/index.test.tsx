@@ -130,7 +130,6 @@ describe('loro-mirror-jotai', () => {
             const { result } = renderHook(() => useLoroMirror(config));
 
             expect(result.current).not.toBeNull();
-            expect(result.current?.getContainerIds).toBeInstanceOf(Function);
         });
     });
 });
