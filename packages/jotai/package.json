@@ -3,7 +3,6 @@
     "version": "0.1.0",
     "description": "Jotai integration for Loro Mirror - a state management library with Loro CRDT synchronization",
     "main": "dist/index.js",
-    "module": "dist/index.esm.js",
     "types": "dist/index.d.ts",
     "files": [
         "dist"
