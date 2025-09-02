@@ -74,13 +74,13 @@ export function isLoroTreeSchema<T extends Record<string, SchemaType>>(
  * Check if a schema is for a Loro container
  */
 export function isContainerSchema(schema?: SchemaType): schema is ContainerSchemaType {
-  return !!schema && (
-    schema.type === "loro-map" || 
-    schema.type === "loro-list" || 
-    schema.type === "loro-text" ||
-    schema.type === "loro-movable-list" ||
-    schema.type === "loro-tree"
-  );
+    return !!schema && (
+        schema.type === "loro-map" ||
+        schema.type === "loro-list" ||
+        schema.type === "loro-text" ||
+        schema.type === "loro-movable-list" ||
+        schema.type === "loro-tree"
+    );
 }
 
 /**
@@ -200,6 +200,8 @@ export function validateSchema<S extends SchemaType>(
                 if (n.id != null && typeof n.id !== "string") {
                     errors.push(`${path}: id must be a string if provided`);
                 }
+
+                //TODO: validate valid TreeID
                 // Validate data against nodeSchema
                 const dataResult = validateSchema(
                     schema.nodeSchema,

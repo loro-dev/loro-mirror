@@ -6,7 +6,6 @@ import { schema } from "../../src/schema";
 // Small helper to wait for microtasks (mirror commits async)
 const tick = async () => {
     await Promise.resolve();
-    await Promise.resolve();
 };
 
 describe("LoroTree integration", () => {
@@ -61,14 +60,18 @@ describe("LoroTree integration", () => {
         expect(nodes.length).toBe(2);
         // Verify data initialized
         const titles = nodes
-            .filter((n) => (n.parent() === undefined))
+            .filter((n) => n.parent() === undefined)
             .map((n) => n.data.get("title"));
         expect(titles.sort()).toEqual(["A", "B"]);
     });
 
     // FROM_LORO edge cases
-    it.todo("FROM_LORO: creates nested subtree and normalizes meta->data shape");
-    it.todo("FROM_LORO: updates node.data fields (set/add/delete) reflect under data");
+    it.todo(
+        "FROM_LORO: creates nested subtree and normalizes meta->data shape",
+    );
+    it.todo(
+        "FROM_LORO: updates node.data fields (set/add/delete) reflect under data",
+    );
     it("FROM_LORO: move within same parent (forward and backward) updates order correctly", async () => {
         const doc = new LoroDoc();
         doc.setPeerId(1);
@@ -93,42 +96,42 @@ describe("LoroTree integration", () => {
         const m = new Mirror({ doc, schema: s });
 
         // Initial order A,B,C
-        expect(m.getState().tree[0].children.map((n: any) => n.data.title)).toEqual([
-            "A",
-            "B",
-            "C",
-        ]);
+        expect(
+            m.getState().tree[0].children.map((n: any) => n.data.title),
+        ).toEqual(["A", "B", "C"]);
 
         // Move B forward to the end: A,C,B
         tree.move(b.id, root.id, 2);
         doc.commit();
         await tick();
-        expect(m.getState().tree[0].children.map((n: any) => n.data.title)).toEqual([
-            "A",
-            "C",
-            "B",
-        ]);
+        expect(
+            m.getState().tree[0].children.map((n: any) => n.data.title),
+        ).toEqual(["A", "C", "B"]);
 
         // Move B to the front: B,A,C
         tree.move(b.id, root.id, 0);
         doc.commit();
         await tick();
-        expect(m.getState().tree[0].children.map((n: any) => n.data.title)).toEqual([
-            "B",
-            "A",
-            "C",
-        ]);
+        expect(
+            m.getState().tree[0].children.map((n: any) => n.data.title),
+        ).toEqual(["B", "A", "C"]);
     });
-    it.todo("FROM_LORO: move across parents (root <-> child) preserves subtree");
+    it.todo(
+        "FROM_LORO: move across parents (root <-> child) preserves subtree",
+    );
     it.todo("FROM_LORO: delete leaf vs delete subtree remove expected nodes");
     it.todo("FROM_LORO: out-of-bounds create index clamps to valid range");
     it.todo("FROM_LORO: move with wrong indices still finds by id and moves");
     it.todo("FROM_LORO: delete with wrong index falls back to delete by id");
-    it.todo("FROM_LORO: nested containers in node.data (e.g., LoroText) propagate updates");
+    it.todo(
+        "FROM_LORO: nested containers in node.data (e.g., LoroText) propagate updates",
+    );
     it.todo("FROM_LORO: ignores own origin 'to-loro' events to avoid feedback");
 
     // TO_LORO edge cases
-    it.todo("TO_LORO: setState can create nested subtree and initialize node.data");
+    it.todo(
+        "TO_LORO: setState can create nested subtree and initialize node.data",
+    );
     it.todo("TO_LORO: setState reorders siblings to match state order");
     it.todo("TO_LORO: setState moves nodes across parents (root <-> child)");
     it("TO_LORO: setState deletes leaf and subtree nodes", async () => {
@@ -161,9 +164,7 @@ describe("LoroTree integration", () => {
 
         // Now delete subtree A by setting only B as root
         m.setState({
-            tree: [
-                { id: "", data: { title: "B" }, children: [] },
-            ],
+            tree: [{ id: "", data: { title: "B" }, children: [] }],
         } as any);
         await tick();
 
@@ -184,11 +185,17 @@ describe("LoroTree integration", () => {
         expect(st.tree[0].children.length).toBe(0);
     });
     it.todo("TO_LORO: setState updates node.data fields and nested containers");
-    it.todo("TO_LORO: explicit node ids in state are ignored; Loro assigns ids");
+    it.todo(
+        "TO_LORO: explicit node ids in state are ignored; Loro assigns ids",
+    );
     it.todo("TO_LORO: invalid tree value (non-array) throws validation error");
     it.todo("TO_LORO: invalid node shape (children not array) throws");
 
     // Nested tree container inside a map
-    it.todo("Nested Tree in Map: incremental diff yields create/move/delete (no full rebuild)");
-    it.todo("Schema registration: node.data containers are registered for nested updates");
+    it.todo(
+        "Nested Tree in Map: incremental diff yields create/move/delete (no full rebuild)",
+    );
+    it.todo(
+        "Schema registration: node.data containers are registered for nested updates",
+    );
 });

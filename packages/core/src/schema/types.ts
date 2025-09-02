@@ -173,9 +173,9 @@ export type InferType<S extends SchemaType> = S extends StringSchemaType
                   ? Array<InferType<I>>
                   : S extends LoroTreeSchema<infer M>
                     ? Array<InferTreeNodeType<M>>
-                  : S extends RootSchemaType<infer R>
-                    ? { [K in keyof R]: InferType<R[K]> }
-                    : never;
+                    : S extends RootSchemaType<infer R>
+                      ? { [K in keyof R]: InferType<R[K]> }
+                      : never;
 
 /**
  * Infer the JavaScript type from a schema definition

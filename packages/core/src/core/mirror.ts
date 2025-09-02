@@ -30,7 +30,6 @@ import {
     isLoroTreeSchema,
     LoroListSchema,
     LoroMapSchema,
-    LoroTreeSchema,
     RootSchemaType,
     SchemaType,
     validateSchema,
@@ -114,47 +113,91 @@ export type InferContainerOptions = {
     defaultMovableList?: boolean;
 };
 
-export type Change<K extends string | number = string | number> =
-    | {
-          container: ContainerID | "";
-          key: K;
-          value: unknown;
-          kind:
-              | "set"
-              | "set-container"
-              | "insert"
-              | "delete"
-              | "insert-container";
-          childContainerType?: ContainerType;
-      }
-    | {
-          container: ContainerID;
-          key: number;
-          value: unknown;
-          kind: "move";
-          fromIndex: number;
-          toIndex: number;
-          childContainerType?: ContainerType;
-      }
-    | {
-          container: ContainerID;
-          kind: "tree-create";
-          parent?: TreeID;
-          index: number;
-          value?: unknown; // initial node.data
-      }
-    | {
-          container: ContainerID;
-          kind: "tree-move";
-          target: TreeID;
-          parent?: TreeID;
-          index: number;
-      }
-    | {
-          container: ContainerID;
-          kind: "tree-delete";
-          target: TreeID;
-      };
+export type ChangeKinds = {
+    set: {
+        container: ContainerID | "";
+        key: string | number;
+        value: unknown;
+        kind: "set";
+        childContainerType?: ContainerType;
+    };
+    setContainer: {
+        container: ContainerID | "";
+        key: string | number;
+        value: unknown;
+        kind: "set-container";
+        childContainerType?: ContainerType;
+    };
+    insert: {
+        container: ContainerID | "";
+        key: string | number;
+        value: unknown;
+        kind: "insert";
+    };
+    insertContainer: {
+        container: ContainerID | "";
+        key: string | number;
+        value: unknown;
+        kind: "insert-container";
+        childContainerType?: ContainerType;
+    };
+    delete: {
+        container: ContainerID | "";
+        key: string | number;
+        value: unknown;
+        kind: "delete";
+    };
+    move: {
+        container: ContainerID;
+        key: number;
+        value: unknown;
+        kind: "move";
+        fromIndex: number;
+        toIndex: number;
+        childContainerType?: ContainerType;
+    };
+    treeCreate: {
+        container: ContainerID;
+        kind: "tree-create";
+        parent?: TreeID;
+        index: number;
+        value?: unknown; // initial node.data
+    };
+    treeMove: {
+        container: ContainerID;
+        kind: "tree-move";
+        target: TreeID;
+        parent?: TreeID;
+        index: number;
+    };
+    treeDelete: {
+        container: ContainerID;
+        kind: "tree-delete";
+        target: TreeID;
+    };
+};
+
+export type Change = ChangeKinds[keyof ChangeKinds];
+export type MapChangeKinds =
+    | ChangeKinds["insert"]
+    | ChangeKinds["insertContainer"]
+    | ChangeKinds["delete"];
+export type ListChangeKinds =
+    | ChangeKinds["insert"]
+    | ChangeKinds["insertContainer"]
+    | ChangeKinds["delete"];
+export type MovableListChangeKinds =
+    | ChangeKinds["insert"]
+    | ChangeKinds["insertContainer"]
+    | ChangeKinds["delete"]
+    | ChangeKinds["move"]
+    | ChangeKinds["set"]
+    | ChangeKinds["setContainer"];
+export type TreeChangeKinds =
+    | ChangeKinds["treeCreate"]
+    | ChangeKinds["treeMove"]
+    | ChangeKinds["treeDelete"];
+export type TextChangeKinds = ChangeKinds["insert"] | ChangeKinds["delete"];
 
 /**
  * Options for setState and sync operations
@@ -231,7 +274,7 @@ export class Mirror<S extends SchemaType> {
 
         // Initialize state with defaults and initial state
         this.state = {
-            ...(this.schema ? getDefaultValue(this.schema!) : {}),
+            ...(this.schema ? getDefaultValue(this.schema) : {}),
             ...this.options.initialState,
         } as InferType<S>;
 
@@ -251,28 +294,10 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Get the initial state of the doc
-        const currentDocState = this.doc.toJSON();
-
+        const currentDocState = toNormalizedJson(this.doc);
         // Update the state with the doc's current state
         const newState = produce<InferType<S>>((draft) => {
             Object.assign(draft, currentDocState);
-
-            // Normalize tree fields if schema present
-            if (this.schema) {
-                const rootDef = (
-                    this.schema as RootSchemaType<Record<string, ContainerSchemaType>>
-                ).definition;
-                for (const key in rootDef) {
-                    if (!Object.prototype.hasOwnProperty.call(rootDef, key)) continue;
-                    const fieldSchema = rootDef[key];
-                    if (fieldSchema?.type === "loro-tree") {
-                        const val = (currentDocState as any)[key];
-                        if (Array.isArray(val)) {
-                            (draft as any)[key] = normalizeTreeJson(val);
-                        }
-                    }
-                }
-            }
         })(this.state);
 
         this.state = newState;
@@ -313,8 +338,6 @@ export class Mirror<S extends SchemaType> {
             }
         }
     }
-
-    
 
     /**
      * Register a container with the Mirror
@@ -619,7 +642,10 @@ export class Mirror<S extends SchemaType> {
     private applyRootChanges(changes: Change[]) {
         for (const change of changes) {
             if (!("key" in change)) continue;
-            const { key, value } = change as Extract<Change, { key: string | number }>;
+            const { key, value } = change as Extract<
+                Change,
+                { key: string | number }
+            >;
             const keyStr = key.toString();
 
             const fieldSchema = (
@@ -664,7 +690,7 @@ export class Mirror<S extends SchemaType> {
                 const map = container as LoroMap;
 
                 for (const change of changes) {
-                    const { key, value, kind } = change as any;
+                    const { key, value, kind } = change as MapChangeKinds;
                     if (key === "") {
                         continue; // Skip empty key
                     }
@@ -696,7 +722,7 @@ export class Mirror<S extends SchemaType> {
                 const list = container as LoroList;
                 // Process other changes (add/remove/replace)
                 for (const change of changes) {
-                    const { key, value, kind } = change as any;
+                    const { key, value, kind } = change as ListChangeKinds;
                     if (typeof key !== "number") {
                         throw new Error(`Invalid list index: ${key}`);
                     }
@@ -734,7 +760,8 @@ export class Mirror<S extends SchemaType> {
                 const list = container as LoroMovableList;
 
                 for (const change of changes) {
-                    const { key, value, kind } = change as any;
+                    const { key, value, kind } =
+                        change as MovableListChangeKinds;
                     if (typeof key !== "number") {
                         throw new Error(`Invalid list index: ${key}`);
                     }
@@ -761,8 +788,9 @@ export class Mirror<S extends SchemaType> {
                             value,
                         );
                     } else if (kind === "move") {
-                        const fromIndex = (change as any).fromIndex as number;
-                        const toIndex = (change as any).toIndex as number;
+                        const c = change as ChangeKinds["move"];
+                        const fromIndex = c.fromIndex;
+                        const toIndex = c.toIndex;
                         list.move(fromIndex, toIndex);
                     } else if (kind === "set") {
                         list.set(index, value);
@@ -792,7 +820,7 @@ export class Mirror<S extends SchemaType> {
                 // Text containers only support direct value updates
                 for (const change of changes) {
                     if (!("value" in change)) continue;
-                    const v = (change as any).value;
+                    const v = (change as TextChangeKinds).value;
                     if (typeof v === "string") {
                         text.update(v);
                     } else {
@@ -1362,26 +1390,26 @@ export class Mirror<S extends SchemaType> {
             for (const root of roots) {
                 tree.delete(root.id);
             }
-        } catch (e) {
+        } catch {
             // Fallback: delete by enumerating nodes if roots() is unavailable
-            const nodes = (tree as any).getNodes ? (tree as any).getNodes() : [];
+            const nodes = (tree as any).getNodes
+                ? (tree as any).getNodes()
+                : [];
             // delete roots only (nodes whose parent is undefined)
             for (const node of nodes) {
                 try {
                     if (!node.parent || node.parent() === undefined) {
                         tree.delete(node.id);
                     }
-                } catch (_) {
+                } catch (e) {
+                    console.error(`Failed to delete node ${node.id}:`, e);
                     // best effort
                 }
             }
         }
 
         // Helper to recursively create nodes
-        const createNodes = (
-            nodes: any[],
-            parent?: TreeID,
-        ) => {
+        const createNodes = (nodes: any[], parent?: TreeID) => {
             for (let i = 0; i < nodes.length; i++) {
                 const n = nodes[i];
                 const created = tree.createNode(parent, i);
@@ -1390,7 +1418,7 @@ export class Mirror<S extends SchemaType> {
                     this.initializeContainer(
                         created.data,
                         nodeSchema,
-                        (n && typeof n === "object" && "data" in n)
+                        n && typeof n === "object" && "data" in n
                             ? (n as any).data
                             : {},
                     );
@@ -1591,13 +1619,33 @@ export class Mirror<S extends SchemaType> {
     }
 }
 
+/**
+ * Export the json of the doc with LoroTree containers normalized
+ * @param doc
+ * @returns
+ */
+export function toNormalizedJson(doc: LoroDoc) {
+    return doc.toJsonWithReplacer((_k, v) => {
+        if (isContainer(v) && v.kind() === "Tree") {
+            return normalizeTreeJson((v as LoroTree).toJSON());
+        }
+
+        return v;
+    });
+}
+
 // Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
 function normalizeTreeJson(input: any[]): any[] {
     if (!Array.isArray(input)) return [];
     const mapNode = (n: any): any => {
         const id = String(n?.id ?? "");
-        const data = (n && typeof n === "object" && n.meta && typeof n.meta === "object") ? n.meta : {};
-        const children = Array.isArray(n?.children) ? n.children.map(mapNode) : [];
+        const data =
+            n && typeof n === "object" && n.meta && typeof n.meta === "object"
+                ? n.meta
+                : {};
+        const children = Array.isArray(n?.children)
+            ? n.children.map(mapNode)
+            : [];
         return { id, data, children };
     };
     return input.map(mapNode);

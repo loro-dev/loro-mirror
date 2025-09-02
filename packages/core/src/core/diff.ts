@@ -4,7 +4,6 @@ import {
     isContainer,
     LoroDoc,
     LoroMap,
-    LoroTree,
     TreeID,
 } from "loro-crdt";
 import {
@@ -23,7 +22,7 @@ import {
     RootSchemaType,
     SchemaType,
 } from "../schema";
-import { InferContainerOptions, type Change } from "./mirror";
+import { ChangeKinds, InferContainerOptions, type Change } from "./mirror";
 
 import {
     containerIdToContainerType,
@@ -344,6 +343,7 @@ export function diffTree(
     walk(newArr, newInfoById);
 
     // Deletions (ids in old but not in new) – delete deepest nodes first
+    // TODO: PERF: maybe we don't need to sort by depth
     const toDelete: NodeInfo[] = [];
     for (const [id, info] of oldInfoById) {
         if (!newInfoById.has(id)) toDelete.push(info);
@@ -422,8 +422,8 @@ export function diffTree(
                 );
                 changes.push(...nested);
             }
-        } catch (_) {
-            // best effort
+        } catch (e) {
+            console.error(`Failed to diff node.data for node ${id}:`, e);
         }
     }
 
@@ -493,7 +493,7 @@ export function diffMovableList<S extends ArrayLike>(
     }
 
     // 2) Deletions (from highest index to lowest)
-    const deletions: Change[] = [];
+    const deletions: ChangeKinds['delete'][] = [];
     for (const [id, { index }] of oldMap) {
         if (!newMap.has(id)) {
             deletions.push({
@@ -504,10 +504,7 @@ export function diffMovableList<S extends ArrayLike>(
             });
         }
     }
-    // sort highest index first
-    (deletions as any).sort(
-        (a: any, b: any) => (b.key as number) - (a.key as number),
-    );
+    deletions.sort((a, b) => (b.key as number) - (a.key as number));
     changes.push(...deletions);
 
     // 3) Moves (simulate post-deletion order; place each target item)
