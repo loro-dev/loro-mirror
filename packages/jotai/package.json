@@ -25,10 +25,9 @@
     ],
     "author": "",
     "license": "MIT",
-    "dependencies": {
-        "loro-mirror": "workspace:*"
-    },
+    "dependencies": {},
     "peerDependencies": {
+        "loro-mirror": "workspace:*",
         "jotai": "^2.0.0",
         "loro-crdt": "^1.5.12"
     },
@@ -37,10 +36,7 @@
         "@testing-library/react": "^16.3.0",
         "@types/node": "^20.10.5",
         "@types/react": "^18.2.45",
-        "jotai": "^2.0.0",
         "jsdom": "^23.0.1",
-        "loro-crdt": "^1.5.12",
-        "loro-mirror": "workspace:*",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "typescript": "^5.3.3",

@@ -9,7 +9,7 @@ import { atom, WritableAtom } from 'jotai';
 
 // Import types only to avoid module resolution issues
 import type { LoroDoc } from "loro-crdt";
-import { createStore, SchemaType, Store } from "loro-mirror";
+import { createStore } from "loro-mirror";
 
 /**
  * Configuration for creating a Loro Mirror atom
@@ -85,39 +85,21 @@ export function loroMirrorAtom<T = any>(
 ): WritableAtom<T, [T | ((prev: T) => T)], void> {
     const store = createStore(config);
     const stateAtom = atom(store.getState());
-    let sub: () => void | undefined;
-    const initAtom = atom(null, async (_get, set, action: "init" | "destroy") => {
-        if (action === "init") {
-            sub = store.subscribe((state) => {
-                set(stateAtom, state);
-            });
-        } else {
-            sub?.()
-        }
-    })
-
-    initAtom.onMount = (action) => {
-        action("init");
-        return () => {
-            action("destroy");
-        }
-    }
-
     const base = atom(
         (get) => {
-            get(initAtom)
             return get(stateAtom);
         },
-        (get, _set, update) => {
+        (get, set, update) => {
             const currentState = get(stateAtom);
             if (typeof update === 'function') {
                 const newState = (update as (prev: T) => T)(currentState);
                 store.setState(newState as Partial<T>);
+                set(stateAtom, newState);
             } else {
                 store.setState(update as Partial<T>);
+                set(stateAtom, update);
             }
         }
     );
-
     return base;
 }

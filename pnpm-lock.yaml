@@ -51,6 +51,12 @@ importers:
 
   packages/jotai:
     dependencies:
+      jotai:
+        specifier: ^2.0.0
+        version: 2.13.1(@types/react@18.3.18)(react@18.3.1)
+      loro-crdt:
+        specifier: ^1.5.12
+        version: 1.5.12
       loro-mirror:
         specifier: workspace:*
         version: link:../core
@@ -67,15 +73,9 @@ importers:
       '@types/react':
         specifier: ^18.2.45
         version: 18.3.18
-      jotai:
-        specifier: ^2.0.0
-        version: 2.13.1(@types/react@18.3.18)(react@18.3.1)
       jsdom:
         specifier: ^23.0.1
         version: 23.2.0
-      loro-crdt:
-        specifier: ^1.5.12
-        version: 1.5.12
       react:
         specifier: ^18.2.0
         version: 18.3.1
