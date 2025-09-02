@@ -38,6 +38,7 @@ import {
     tryUpdateToContainer,
     isStringLike,
     isArrayLike,
+    isTreeID,
 } from "./utils";
 
 /**
@@ -334,7 +335,11 @@ export function diffTree(
                 map.set(n.id, { id: n.id, parent, index: i, node: n });
             }
             if (n && Array.isArray(n.children)) {
-                walk(n.children, map, typeof n.id === "string" ? n.id : undefined);
+                walk(
+                    n.children,
+                    map,
+                    typeof n.id === "string" ? n.id : undefined,
+                );
             }
         }
     }
@@ -372,7 +377,7 @@ export function diffTree(
     function pushCreates(arr: Node[], parent?: string) {
         for (let i = 0; i < arr.length; i++) {
             const n = arr[i];
-            const id = typeof n.id === "string" ? n.id : undefined;
+            const id = isTreeID(n.id) ? n.id : undefined;
             if (!id || !oldInfoById.has(id)) {
                 changes.push({
                     container: containerId,
@@ -383,7 +388,7 @@ export function diffTree(
                 });
             }
             if (n && Array.isArray(n.children)) {
-                const pid = typeof n.id === "string" ? n.id : undefined;
+                const pid = isTreeID(n.id) ? n.id : undefined;
                 pushCreates(n.children, pid);
             }
         }
@@ -395,7 +400,8 @@ export function diffTree(
         const oldInfo = oldInfoById.get(id);
         if (!oldInfo) continue; // created above
 
-        const parentChanged = (oldInfo.parent ?? undefined) !== (newInfo.parent ?? undefined);
+        const parentChanged =
+            (oldInfo.parent ?? undefined) !== (newInfo.parent ?? undefined);
         const indexChanged = oldInfo.index !== newInfo.index;
         if (parentChanged || indexChanged) {
             changes.push({
@@ -493,7 +499,7 @@ export function diffMovableList<S extends ArrayLike>(
     }
 
     // 2) Deletions (from highest index to lowest)
-    const deletions: ChangeKinds['delete'][] = [];
+    const deletions: ChangeKinds["delete"][] = [];
     for (const [id, { index }] of oldMap) {
         if (!newMap.has(id)) {
             deletions.push({

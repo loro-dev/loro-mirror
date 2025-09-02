@@ -8,6 +8,7 @@ import {
     LoroEventBatch,
     TreeID,
 } from "loro-crdt";
+import { isObject, isTreeID } from "./utils";
 
 // Plain JSON-like value held in Mirror state (no `any`)
 type JSONPrimitive = string | number | boolean | null | undefined;
@@ -44,7 +45,11 @@ export function applyEventBatchToState<T extends object>(
 /**
  * Apply a single event to the immer draft state
  */
-function applySingleEventToDraft(draftRoot: JSONObject, e: LoroEvent, ignoreSet: Set<ContainerID>) {
+function applySingleEventToDraft(
+    draftRoot: JSONObject,
+    e: LoroEvent,
+    ignoreSet: Set<ContainerID>,
+) {
     if (ignoreSet.has(e.target)) {
         return;
     }
@@ -69,8 +74,10 @@ function applySingleEventToDraft(draftRoot: JSONObject, e: LoroEvent, ignoreSet:
             target =
                 parent && key !== undefined ? getAt(parent, key)! : draftRoot;
         } else if (e.diff.type === "tree") {
-            if (parent && key !== undefined) setAt(parent, key, [] as JSONValue[]);
-            target = parent && key !== undefined ? getAt(parent, key)! : draftRoot;
+            if (parent && key !== undefined)
+                setAt(parent, key, [] as JSONValue[]);
+            target =
+                parent && key !== undefined ? getAt(parent, key)! : draftRoot;
         } else if (e.diff.type === "counter") {
             if (parent && key !== undefined) setAt(parent, key, 0);
             target =
@@ -170,21 +177,24 @@ function getParentKeyNodeByPath(
             // Map `meta` -> `data` only when navigating inside a tree node object
             // (i.e., parent is a node with children/id fields). Avoid changing root keys like 'meta'.
             let segKey = seg;
-            if (
-                seg === "meta" &&
-                parent &&
-                !Array.isArray(parent) &&
-                typeof (parent as any).children !== "undefined" &&
-                typeof (parent as any).id !== "undefined"
-            ) {
-                segKey = "data";
-            }
-            if (parent && Array.isArray(parent)) {
+            if (parent && Array.isArray(parent) && isTreeID(seg)) {
                 // When navigating a tree, seg may be a TreeID string; find by id in array
                 const arr = parent as JSONValue[];
-                const idx = (arr as any[]).findIndex((n) => n && (n as any).id === segKey);
+                const idx = (arr as any[]).findIndex(
+                    (n) => n && (n as any).id === segKey,
+                );
                 key = idx >= 0 ? idx : (key as any);
-                current = idx >= 0 ? (arr[idx] as JSONValue) : (undefined as unknown as JSONValue);
+                current =
+                    idx >= 0
+                        ? (arr[idx] as JSONValue)
+                        : (undefined as unknown as JSONValue);
+
+                // FIXME: 1. need to visit .children recursively to find the parent node
+                if (current && isObject(current)) {
+                    parent = current;
+                    key = "data";
+                    current = current["data"];
+                }
             } else if (parent && !Array.isArray(parent)) {
                 current = (parent as JSONObject)[segKey] as JSONValue;
             } else {
@@ -276,7 +286,12 @@ function applyTreeDiff(
     roots: JSONValue[],
     deltas: Array<
         | { action: "create"; target: TreeID; parent?: TreeID; index: number }
-        | { action: "delete"; target: TreeID; oldParent?: TreeID; oldIndex: number }
+        | {
+              action: "delete";
+              target: TreeID;
+              oldParent?: TreeID;
+              oldIndex: number;
+          }
         | {
               action: "move";
               target: TreeID;
@@ -290,7 +305,7 @@ function applyTreeDiff(
     type Node = { id: string; data: JSONObject; children: Node[] };
 
     const getChildrenArray = (parent?: TreeID): Node[] => {
-        if (!parent) return (roots as unknown as Node[]);
+        if (!parent) return roots as unknown as Node[];
         const found = findNodeAndParent(roots as unknown as Node[], parent);
         return found ? found.node.children : (roots as unknown as Node[]);
     };
@@ -298,7 +313,11 @@ function applyTreeDiff(
     for (const d of deltas) {
         if (d.action === "create") {
             const arr = getChildrenArray(d.parent);
-            const node: Node = { id: d.target as string, data: {}, children: [] };
+            const node: Node = {
+                id: d.target as string,
+                data: {},
+                children: [],
+            };
             const idx = clampIndex(d.index, arr.length + 1);
             arr.splice(idx, 0, node);
         } else if (d.action === "delete") {
@@ -320,7 +339,9 @@ function applyTreeDiff(
             if (oldIdx >= 0 && oldIdx < fromArr.length) {
                 moved = fromArr.splice(oldIdx, 1)[0];
             } else {
-                const pos = fromArr.findIndex((n) => (n as any).id === d.target);
+                const pos = fromArr.findIndex(
+                    (n) => (n as any).id === d.target,
+                );
                 if (pos >= 0) moved = fromArr.splice(pos, 1)[0];
             }
             if (!moved) continue;
@@ -341,7 +362,12 @@ function clampIndex(idx: number, len: number) {
 function findNodeAndParent(
     roots: { id: string; children?: any[] }[],
     id: string,
-): { parent: { children: any[] } | undefined; node: { id: string; children: any[] } } | undefined {
+):
+    | {
+          parent: { children: any[] } | undefined;
+          node: { id: string; children: any[] };
+      }
+    | undefined {
     const stack: Array<{ parent: any; list: any[] }> = [
         { parent: undefined, list: roots },
     ];

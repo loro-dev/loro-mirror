@@ -43,7 +43,7 @@ import {
     tryInferContainerType,
     getRootContainerByType,
 } from "./utils";
-import { diffContainer } from "./diff";
+import { diffContainer, diffTree } from "./diff";
 
 /**
  * Sync direction for handling updates
@@ -1370,66 +1370,59 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Update a Tree container with a new tree value
+     * Update a Tree container using existing tree diff to generate precise create/move/delete
+     * and nested node.data changes, then apply via container change appliers.
      */
     private updateTreeContainer(tree: LoroTree, value: unknown) {
         if (!Array.isArray(value)) {
             throw new Error("Tree value must be an array of nodes");
         }
 
-        // Determine node schema
-        let nodeSchema: ContainerSchemaType | undefined;
+        // Normalize current tree JSON from Loro to Mirror node shape
+        const current: unknown[] = normalizeTreeJson(tree.toJSON());
+        const next: unknown[] = value as unknown[];
+
+        // Optional schema to enable nested node.data diffs
         const parentSchema = this.getContainerSchema(tree.id);
-        if (parentSchema && isLoroTreeSchema(parentSchema)) {
-            nodeSchema = parentSchema.nodeSchema as ContainerSchemaType;
+        const treeSchema = parentSchema && isLoroTreeSchema(parentSchema)
+            ? parentSchema
+            : undefined;
+
+        // Compute changes
+        const changes = diffTree(
+            this.doc,
+            current,
+            next,
+            tree.id,
+            treeSchema,
+            this.options?.inferOptions,
+        );
+
+        if (changes.length === 0) return;
+
+        // Group changes by container; apply tree ops first, then nested containers
+        const grouped = new Map<ContainerID | "", Change[]>();
+        for (const ch of changes) {
+            const cid = ch.container;
+            const arr = grouped.get(cid);
+            if (arr) arr.push(ch);
+            else grouped.set(cid, [ch]);
         }
 
-        // Remove all existing roots (which removes entire subtrees)
-        try {
-            const roots = (tree as any).roots ? (tree as any).roots() : [];
-            for (const root of roots) {
-                tree.delete(root.id);
-            }
-        } catch {
-            // Fallback: delete by enumerating nodes if roots() is unavailable
-            const nodes = (tree as any).getNodes
-                ? (tree as any).getNodes()
-                : [];
-            // delete roots only (nodes whose parent is undefined)
-            for (const node of nodes) {
-                try {
-                    if (!node.parent || node.parent() === undefined) {
-                        tree.delete(node.id);
-                    }
-                } catch (e) {
-                    console.error(`Failed to delete node ${node.id}:`, e);
-                    // best effort
-                }
-            }
+        // Apply structural tree changes on the target tree first
+        const treeGroup = grouped.get(tree.id);
+        if (treeGroup && treeGroup.length) {
+            this.applyContainerChanges(tree, treeGroup);
+            grouped.delete(tree.id);
         }
 
-        // Helper to recursively create nodes
-        const createNodes = (nodes: any[], parent?: TreeID) => {
-            for (let i = 0; i < nodes.length; i++) {
-                const n = nodes[i];
-                const created = tree.createNode(parent, i);
-                if (nodeSchema) {
-                    this.registerContainer(created.data.id, nodeSchema);
-                    this.initializeContainer(
-                        created.data,
-                        nodeSchema,
-                        n && typeof n === "object" && "data" in n
-                            ? (n as any).data
-                            : {},
-                    );
-                }
-                if (n && Array.isArray((n as any).children)) {
-                    createNodes((n as any).children, created.id);
-                }
-            }
-        };
-
-        createNodes(value);
+        // Apply nested container changes (e.g., node.data maps)
+        for (const [cid, group] of grouped) {
+            if (cid === "") continue;
+            const container = this.doc.getContainerById(cid);
+            if (!container || group.length === 0) continue;
+            this.applyContainerChanges(container, group);
+        }
     }
 
     /**
