@@ -277,6 +277,46 @@ describe("LoroTree integration", () => {
         await tick();
         expect(m.getState().tree[0].data.desc).toBe("Hello World");
     });
+    it("FROM_LORO: LoroText inside LoroMap inside a depth-2 LoroTreeNode updates correctly", async () => {
+        const doc = new LoroDoc();
+        const tree = doc.getTree("tree");
+
+        // Build depth: root(0) -> child(1) -> grandchild(2)
+        const root = tree.createNode();
+        root.data.set("title", "root");
+        const child = root.createNode();
+        child.data.set("title", "child");
+        const grand = child.createNode();
+        grand.data.set("title", "grand");
+
+        // Attach a text container at grandchild.data.text
+        const text = grand.data.setContainer("text", new LoroText());
+        text.update("depth2");
+        doc.commit();
+
+        const s = schema({
+            tree: schema.LoroTree(
+                schema.LoroMap({
+                    title: schema.String(),
+                    text: schema.LoroText(),
+                }),
+            ),
+        });
+        const m = new Mirror({ doc, schema: s });
+
+        // Initial mirrored value should reflect the container content
+        expect(m.getState().tree[0].children[0].children[0].data.text).toBe(
+            "depth2",
+        );
+
+        // Update the text and ensure it propagates via event path ["tree", grand.id, "text"]
+        text.update("depth2-updated");
+        doc.commit();
+        await tick();
+        expect(m.getState().tree[0].children[0].children[0].data.text).toBe(
+            "depth2-updated",
+        );
+    });
     it("FROM_LORO: ignores own origin 'to-loro' events to avoid feedback", async () => {
         const doc = new LoroDoc();
         const s = schema({
@@ -535,7 +575,6 @@ describe("LoroTree integration", () => {
 
         expect(() =>
             m.setState({
-                // @ts-expect-error testing invalid type
                 tree: { id: "", data: { title: "X" } },
             } as any),
         ).toThrow();
@@ -553,7 +592,6 @@ describe("LoroTree integration", () => {
                     {
                         id: "",
                         data: { title: "X" },
-                        // @ts-expect-error testing invalid children type
                         children: "oops",
                     },
                 ],

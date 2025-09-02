@@ -8,13 +8,20 @@ import {
     LoroEventBatch,
     TreeID,
 } from "loro-crdt";
-import { isObject, isTreeID } from "./utils";
+import { isTreeID } from "./utils";
 
 // Plain JSON-like value held in Mirror state (no `any`)
 type JSONPrimitive = string | number | boolean | null | undefined;
 type JSONValue = JSONPrimitive | JSONObject | JSONValue[];
 interface JSONObject {
     [k: string]: JSONValue;
+}
+
+// State representation for a tree node in mirror state
+interface StateTreeNode {
+    id: string;
+    data: JSONObject;
+    children: StateTreeNode[];
 }
 
 function isJSONObject(v: unknown): v is JSONObject {
@@ -127,6 +134,8 @@ function applySingleEventToDraft(
             }
             if (isJSONArray(target)) {
                 applyTreeDiff(target, e.diff.diff);
+                // Invalidate cache for this roots array after structural change
+                ROOTS_TREE_INDEX_CACHE.delete(target as JSONValue[]);
             }
             break;
         case "counter":
@@ -141,7 +150,40 @@ function applySingleEventToDraft(
 }
 
 /**
- * Find parent object/array and the final key for a given path
+ * Resolve an event path into the mirror JSON state and return the parent, key and node.
+ *
+ * Tree node ID handling (important/tricky):
+ * - Loro events reference tree nodes by a stable TreeID (e.g. "0@123...") rather than by
+ *   positional indices. Our mirror state, however, stores trees as nested arrays of nodes
+ *   with the shape: { id: string, data: object, children: Node[] }.
+ * - When we see a path segment that looks like a TreeID and the current parent is the tree
+ *   roots array, we resolve that ID anywhere within the tree (not just the direct children).
+ *   Then we treat the resolved node's application data as the target for subsequent segments:
+ *   - If the TreeID is the final segment in the path, we consider it a reference to the
+ *     node's data map, and we return parent=node and key="data" so that diffs read/write
+ *     node.data directly.
+ *   - If there are more segments after the TreeID, we first jump into node.data and continue
+ *     resolving the remaining segments there (e.g. ["tree", "0@123...", "text"] resolves to
+ *     node.data["text"]).
+ *
+ * Why this is needed: The event path uses TreeIDs (stable) while the mirror JSON uses indices
+ * through the nested children arrays. For example:
+ * - A LoroMap on a LoroTreeNode whose LoroTree is on the root may have an event path like
+ *   ["tree", "0@123..."] but the corresponding JSON path looks like something along the lines of
+ *   ["tree", 0, "children", 0, "data"] depending on where that node sits in the hierarchy.
+ * - A LoroText inside a LoroMap on a LoroTreeNode would have an event path like
+ *   ["tree", "0@123...", "text"], while the JSON path could be
+ *   ["tree", 0, "children", 0, "data", "text"].
+ *
+ * This function bridges those two representations by:
+ * - Resolving TreeIDs to node objects via a cached index of the current roots array.
+ * - Implicitly inserting the "data" hop when a TreeID segment is encountered, so that
+ *   subsequent segments operate on the node's data map rather than the node wrapper.
+ *
+ * 中文说明（简要）：事件路径里树节点用 TreeID（如 "0@123..."）来定位，但镜像的 JSON
+ * 状态里树是按 children 层级数组存放（节点为 { id, data, children }），因此实际 JSON 路径会像
+ * ["tree", 0, "children", 0, "data", "text"] 这样。这里在遇到 TreeID 段时，会在整棵树中
+ * 定位到对应节点，并把后续的访问都指向该节点的 data（若 TreeID 是最后一段，则等价于访问 node.data）。
  */
 function getParentKeyNodeByPath(
     root: JSONObject,
@@ -161,6 +203,7 @@ function getParentKeyNodeByPath(
 
     for (let i = 0; i < path.length; i++) {
         const seg = path[i];
+        // Parent should reflect the container we will index into at this step
         parent =
             isJSONArray(current) || isJSONObject(current)
                 ? (current as JSONObject | JSONValue[])
@@ -174,26 +217,25 @@ function getParentKeyNodeByPath(
                 current = undefined as unknown as JSONValue;
             }
         } else if (typeof seg === "string") {
-            // Map `meta` -> `data` only when navigating inside a tree node object
-            // (i.e., parent is a node with children/id fields). Avoid changing root keys like 'meta'.
             let segKey = seg;
             if (parent && Array.isArray(parent) && isTreeID(seg)) {
-                // When navigating a tree, seg may be a TreeID string; find by id in array
-                const arr = parent as JSONValue[];
-                const idx = (arr as any[]).findIndex(
-                    (n) => n && (n as any).id === segKey,
-                );
-                key = idx >= 0 ? idx : (key as any);
-                current =
-                    idx >= 0
-                        ? (arr[idx] as JSONValue)
-                        : (undefined as unknown as JSONValue);
-
-                // FIXME: 1. need to visit .children recursively to find the parent node
-                if (current && isObject(current)) {
-                    parent = current;
-                    key = "data";
-                    current = current["data"];
+                // Resolve by id anywhere in the tree (recursive), not just direct children
+                const roots = parent as JSONValue[];
+                const loc = getTreeNodeLocation(roots, seg);
+                if (loc) {
+                    // If this TreeID is the final segment, treat it as the node's data map
+                    if (i === path.length - 1) {
+                        parent = loc.node;
+                        key = "data";
+                        current = getOrInitNodeData(loc.node);
+                    } else {
+                        // Otherwise, navigate into the node's data map for subsequent keys
+                        const dataObj = getOrInitNodeData(loc.node);
+                        current = dataObj;
+                    }
+                } else {
+                    // Not found
+                    current = undefined as unknown as JSONValue;
                 }
             } else if (parent && !Array.isArray(parent)) {
                 current = (parent as JSONObject)[segKey] as JSONValue;
@@ -206,6 +248,71 @@ function getParentKeyNodeByPath(
     }
 
     return { parent, key, node: current };
+}
+
+// Build or reuse a per-roots index to resolve a node by id quickly
+// PERF: this can be slow
+function getTreeNodeLocation(
+    roots: JSONValue[],
+    id: string,
+): { list: JSONValue[]; index: number; node: JSONObject } | undefined {
+    let index = ROOTS_TREE_INDEX_CACHE.get(roots);
+    if (!index) {
+        index = buildTreeIndex(roots);
+        ROOTS_TREE_INDEX_CACHE.set(roots, index);
+    }
+    let loc = index.get(id);
+    if (!loc) {
+        // If not found (e.g., structure changed earlier in this batch), rebuild once
+        index = buildTreeIndex(roots);
+        ROOTS_TREE_INDEX_CACHE.set(roots, index);
+        loc = index.get(id);
+    }
+    return loc;
+}
+
+function buildTreeIndex(
+    roots: JSONValue[],
+): Map<string, { list: JSONValue[]; index: number; node: JSONObject }> {
+    const map = new Map<
+        string,
+        { list: JSONValue[]; index: number; node: JSONObject }
+    >();
+
+    // Depth-first traversal without using any
+    const stack: Array<{ list: JSONValue[]; index: number }> = [];
+    for (let i = 0; i < roots.length; i++) {
+        stack.push({ list: roots, index: i });
+    }
+
+    while (stack.length) {
+        const item = stack.pop()!;
+        if ("list" in item) {
+            const raw = item.list[item.index];
+            if (!isJSONObject(raw)) continue;
+            const node = raw as JSONObject;
+            const idVal = node["id"] as JSONValue;
+            if (typeof idVal === "string") {
+                map.set(idVal, { list: item.list, index: item.index, node });
+            }
+            const childrenVal = node["children"] as JSONValue | undefined;
+            if (Array.isArray(childrenVal)) {
+                // push children entries
+                for (let j = 0; j < childrenVal.length; j++) {
+                    stack.push({ list: childrenVal, index: j });
+                }
+            }
+        }
+    }
+
+    return map;
+}
+
+function getOrInitNodeData(node: JSONObject): JSONObject {
+    const dataVal = node["data"] as JSONValue | undefined;
+    if (isJSONObject(dataVal)) return dataVal;
+    node["data"] = {} as JSONObject;
+    return node["data"] as JSONObject;
 }
 
 /**
@@ -302,7 +409,7 @@ function applyTreeDiff(
           }
     >,
 ) {
-    type Node = { id: string; data: JSONObject; children: Node[] };
+    type Node = StateTreeNode;
 
     const getChildrenArray = (parent?: TreeID): Node[] => {
         if (!parent) return roots as unknown as Node[];
@@ -328,27 +435,25 @@ function applyTreeDiff(
                 arr.splice(idx, 1);
             } else {
                 // fallback: search by id
-                const pos = arr.findIndex((n) => (n as any).id === d.target);
+                const pos = arr.findIndex((n) => n.id === d.target);
                 if (pos >= 0) arr.splice(pos, 1);
             }
         } else if (d.action === "move") {
             // remove from old
             const fromArr = getChildrenArray(d.oldParent);
             const oldIdx = clampIndex(d.oldIndex, fromArr.length);
-            let moved: JSONValue | undefined;
+            let moved: Node | undefined;
             if (oldIdx >= 0 && oldIdx < fromArr.length) {
                 moved = fromArr.splice(oldIdx, 1)[0];
             } else {
-                const pos = fromArr.findIndex(
-                    (n) => (n as any).id === d.target,
-                );
+                const pos = fromArr.findIndex((n) => n.id === d.target);
                 if (pos >= 0) moved = fromArr.splice(pos, 1)[0];
             }
             if (!moved) continue;
             const toArr = getChildrenArray(d.parent);
             // Use the target index as the final index in the destination
             const toIdx = clampIndex(d.index, toArr.length + 1);
-            toArr.splice(toIdx, 0, moved as unknown as Node);
+            toArr.splice(toIdx, 0, moved);
         }
     }
 }
@@ -360,26 +465,27 @@ function clampIndex(idx: number, len: number) {
 }
 
 function findNodeAndParent(
-    roots: { id: string; children?: any[] }[],
+    roots: StateTreeNode[],
     id: string,
 ):
     | {
-          parent: { children: any[] } | undefined;
-          node: { id: string; children: any[] };
+          parent: StateTreeNode | undefined;
+          node: StateTreeNode;
       }
     | undefined {
-    const stack: Array<{ parent: any; list: any[] }> = [
-        { parent: undefined, list: roots },
-    ];
+    const stack: Array<{
+        parent: StateTreeNode | undefined;
+        list: StateTreeNode[];
+    }> = [{ parent: undefined, list: roots }];
     while (stack.length) {
         const { parent, list } = stack.pop()!;
         for (let i = 0; i < list.length; i++) {
             const n = list[i];
-            if (n && (n as any).id === id) {
-                return { parent, node: n } as any;
+            if (n && n.id === id) {
+                return { parent, node: n };
             }
-            if (n && Array.isArray((n as any).children)) {
-                stack.push({ parent: n, list: (n as any).children });
+            if (n && Array.isArray(n.children)) {
+                stack.push({ parent: n, list: n.children });
             }
         }
     }
@@ -448,3 +554,9 @@ function getAt(
 
     return undefined;
 }
+
+// Module-level cache: for each roots array, map TreeID -> node location
+const ROOTS_TREE_INDEX_CACHE: WeakMap<
+    JSONValue[],
+    Map<string, { list: JSONValue[]; index: number; node: JSONObject }>
+> = new WeakMap();
