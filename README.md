@@ -31,7 +31,7 @@ pnpm add loro-mirror loro-crdt
 
 ## Quick Start
 
-### Core Usage
+### Usage
 
 ```typescript
 import { LoroDoc } from "loro-crdt";
@@ -99,27 +99,27 @@ Loro Mirror provides a declarative schema system that enables:
 - **Root Schema**: The root object defined via `schema({...})`, containing only Loro container types (Map/List/Text/MovableList).
 - **Field Schema**: A combination of primitive types (string, number, boolean), ignore fields, and Loro containers.
 - **Schema Options (`SchemaOptions`)**:
-  - **`required?: boolean`**: Whether the field is required (default: `true`).
-  - **`defaultValue?: unknown`**: Default value for the field.
-  - **`description?: string`**: Description of the field.
-  - **`validate?: (value) => boolean | string`**: Custom validation function. Return `true` for valid values, or a string as error message for invalid ones.
+    - **`required?: boolean`**: Whether the field is required (default: `true`).
+    - **`defaultValue?: unknown`**: Default value for the field.
+    - **`description?: string`**: Description of the field.
+    - **`validate?: (value) => boolean | string`**: Custom validation function. Return `true` for valid values, or a string as error message for invalid ones.
 
 #### Schema Definition API
 
 - **Primitive Types**:
-  - `schema.String<T extends string = string>(options?)` - String type with optional generic constraint
-  - `schema.Number(options?)` - Number type
-  - `schema.Boolean(options?)` - Boolean type
-  - `schema.Ignore(options?)` - Field that won't sync with Loro, useful for local computed fields
+    - `schema.String<T extends string = string>(options?)` - String type with optional generic constraint
+    - `schema.Number(options?)` - Number type
+    - `schema.Boolean(options?)` - Boolean type
+    - `schema.Ignore(options?)` - Field that won't sync with Loro, useful for local computed fields
 
 - **Container Types**:
-  - `schema.LoroMap(definition, options?)` - Object container that can nest arbitrary field schemas
-    - Supports dynamic key-value definition with `catchall`: `schema.LoroMap({...}).catchall(valueSchema)`
-  - `schema.LoroMapRecord(valueSchema, options?)` - Equivalent to `LoroMap({}).catchall(valueSchema)` for homogeneous maps
-  - `schema.LoroList(itemSchema, idSelector?, options?)` - Ordered list container
-    - Providing an `idSelector` (e.g., `(item) => item.id`) enables minimal add/remove/update/move diffs
-  - `schema.LoroMovableList(itemSchema, idSelector, options?)` - List with native move operations, requires an `idSelector`
-  - `schema.LoroText(options?)` - Collaborative text editing container
+    - `schema.LoroMap(definition, options?)` - Object container that can nest arbitrary field schemas
+        - Supports dynamic key-value definition with `catchall`: `schema.LoroMap({...}).catchall(valueSchema)`
+    - `schema.LoroMapRecord(valueSchema, options?)` - Equivalent to `LoroMap({}).catchall(valueSchema)` for homogeneous maps
+    - `schema.LoroList(itemSchema, idSelector?, options?)` - Ordered list container
+        - Providing an `idSelector` (e.g., `(item) => item.id`) enables minimal add/remove/update/move diffs
+    - `schema.LoroMovableList(itemSchema, idSelector, options?)` - List with native move operations, requires an `idSelector`
+    - `schema.LoroText(options?)` - Collaborative text editing container
 
 #### Type Inference
 
@@ -128,7 +128,7 @@ Automatically derive strongly-typed state from your schema:
 ```ts
 import { schema } from "loro-mirror";
 
-type UserId = string & { __brand: "userId" }
+type UserId = string & { __brand: "userId" };
 const appSchema = schema({
     user: schema.LoroMap({
         id: schema.String<UserId>(),
@@ -151,7 +151,9 @@ type AppState = InferType<typeof appSchema>;
 For `LoroMap` with dynamic key-value pairs:
 
 ```ts
-const mapWithCatchall = schema.LoroMap({ fixed: schema.Number() }).catchall(schema.String());
+const mapWithCatchall = schema
+    .LoroMap({ fixed: schema.Number() })
+    .catchall(schema.String());
 // Type: { fixed: number } & { [k: string]: string }
 
 const record = schema.LoroMapRecord(schema.Boolean());
@@ -164,11 +166,11 @@ When a field has `required: false`, the corresponding type becomes optional (uni
 
 - Explicitly specified `defaultValue` takes the highest precedence.
 - Built-in defaults for fields without `defaultValue` and `required: true`:
-  - **String / LoroText** → `""`
-  - **Number** → `0`
-  - **Boolean** → `false`
-  - **LoroList** → `[]`
-  - **LoroMap / Root** → Recursively aggregated defaults from child fields
+    - **String / LoroText** → `""`
+    - **Number** → `0`
+    - **Boolean** → `false`
+    - **LoroList** → `[]`
+    - **LoroMap / Root** → Recursively aggregated defaults from child fields
 
 #### Runtime Validation
 
@@ -305,7 +307,7 @@ function AddTodoForm() {
 
 For detailed documentation, see the README files in each package:
 
-- [Core Documentation](./packages/core/README.md)
+- [Loro Mirror Documentation](./packages/core/README.md)
 - [React Documentation](./packages/react/README.md)
 - [Jotai Documentation](./packages/jotai/README.md)
 
