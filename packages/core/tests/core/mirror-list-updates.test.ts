@@ -486,4 +486,41 @@ describe("Mirror List Update Optimization", () => {
             mirrorMovable.getState().items,
         );
     });
+
+    it("push new LoroText to list", async () => {
+        const withSchema = schema({
+            session: schema.LoroMap({
+                items: schema.LoroList(
+                    schema.LoroMap({
+                        data: schema.LoroText(),
+                        timestamp: schema.String(),
+                    }),
+                ),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const m = new Mirror({
+            schema: withSchema,
+            doc,
+            initialState: { session: { items: [] } },
+            checkStateConsistency: true,
+        });
+        m.setState((s) => {
+            s.session.items.push({ data: "he", timestamp: "123" });
+        });
+        m.setState((s) => {
+            s.session.items.push({ data: "12345678890", timestamp: "123" });
+        });
+        const docB = new LoroDoc();
+        const m1 = new Mirror({
+            schema: withSchema,
+            doc: docB,
+            initialState: { session: { items: [] } },
+            checkStateConsistency: true,
+        });
+        docB.import(doc.export({ mode: "snapshot" }));
+        await Promise.resolve();
+        expect(m1.getState()).toStrictEqual(m.getState());
+    });
 });

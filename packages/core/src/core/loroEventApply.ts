@@ -39,11 +39,17 @@ function isJSONArray(v: unknown): v is JSONValue[] {
 export function applyEventBatchToState<T extends object>(
     currentState: T,
     event: LoroEventBatch,
+    getContainerById?: (id: ContainerID) => Container | undefined,
 ): T {
     const next = produce<T>((draft) => {
         const ignoreSet = new Set<ContainerID>();
         for (const e of event.events) {
-            applySingleEventToDraft(draft as JSONObject, e, ignoreSet);
+            applySingleEventToDraft(
+                draft as JSONObject,
+                e,
+                ignoreSet,
+                getContainerById,
+            );
         }
     })(currentState);
     return next;
@@ -56,8 +62,9 @@ function applySingleEventToDraft(
     draftRoot: JSONObject,
     e: LoroEvent,
     ignoreSet: Set<ContainerID>,
+    getContainerById?: (id: ContainerID) => Container | undefined,
 ) {
-    if (ignoreSet.has(e.target)) {
+    if (isIgnoredByAncestor(e.target, ignoreSet, getContainerById)) {
         return;
     }
 
@@ -106,7 +113,7 @@ function applySingleEventToDraft(
                         : draftRoot;
             }
             if (isJSONObject(target)) {
-                applyMapDiff(target, e.diff.updated);
+                applyMapDiff(target, e.diff.updated, ignoreSet);
             }
             break;
         case "list":
@@ -315,10 +322,31 @@ function getOrInitNodeData(node: JSONObject): JSONObject {
     return node["data"] as JSONObject;
 }
 
+// Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
+function normalizeTreeJson(input: any[]): any[] {
+    if (!Array.isArray(input)) return [];
+    const mapNode = (n: any): any => {
+        const id = String(n?.id ?? "");
+        const data =
+            n && typeof n === "object" && n.meta && typeof n.meta === "object"
+                ? n.meta
+                : {};
+        const children = Array.isArray(n?.children)
+            ? n.children.map(mapNode)
+            : [];
+        return { id, data, children };
+    };
+    return input.map(mapNode);
+}
+
 /**
  * Apply Map updates to a plain object
  */
-function applyMapDiff(targetObj: JSONObject, updated: Record<string, unknown>) {
+function applyMapDiff(
+    targetObj: JSONObject,
+    updated: Record<string, unknown>,
+    ignoreSet: Set<ContainerID>,
+) {
     if (!isJSONObject(targetObj)) return;
     for (const [k, v] of Object.entries(updated)) {
         // In Loro map diffs, `undefined` signals deletion. `null` is a valid value
@@ -329,22 +357,10 @@ function applyMapDiff(targetObj: JSONObject, updated: Record<string, unknown>) {
         }
 
         if (isContainer(v)) {
-            // Initialize a neutral baseline; subsequent container events will populate.
-            const kind = (v as Container).kind();
-            if (kind === "Text") {
-                targetObj[k] = "";
-            } else if (kind === "List" || kind === "MovableList") {
-                targetObj[k] = [] as JSONValue[];
-            } else if (kind === "Map") {
-                targetObj[k] = {} as JSONObject;
-            } else if (kind === "Counter") {
-                targetObj[k] = 0;
-            } else if (kind === "Tree") {
-                targetObj[k] = [] as JSONValue[];
-            } else {
-                // Fallback: leave as empty object
-                targetObj[k] = {} as JSONObject;
-            }
+            const c = v as Container;
+            // Mark this child container so its own events are ignored later in this batch
+            ignoreSet.add(c.id);
+            targetObj[k] = containerToMirrorJson(c) as JSONValue;
             continue;
         }
 
@@ -372,11 +388,10 @@ function applyListDelta(
         } else if (d.insert !== undefined) {
             const items = d.insert.map((it) => {
                 if (isContainer(it)) {
-                    ignoreSet.add(it.id);
                     const c = it as Container;
-                    const kind = c.kind();
-                    if (kind === "Counter") return c.getShallowValue();
-                    return (c as Exclude<Container, LoroCounter>).toJSON();
+                    // Mark this child container so its own events are ignored later in this batch
+                    ignoreSet.add(c.id);
+                    return containerToMirrorJson(c) as JSONValue;
                 }
                 return it as JSONValue;
             });
@@ -560,3 +575,38 @@ const ROOTS_TREE_INDEX_CACHE: WeakMap<
     JSONValue[],
     Map<string, { list: JSONValue[]; index: number; node: JSONObject }>
 > = new WeakMap();
+
+// Convert a loro container into mirror JSON value consistently
+function containerToMirrorJson(c: Container): JSONValue {
+    const kind = c.kind();
+    if (kind === "Counter") {
+        return (c as LoroCounter).getShallowValue() as unknown as JSONValue;
+    }
+    if (kind === "Tree") {
+        const raw = (c as Exclude<Container, LoroCounter>).toJSON() as any[];
+        return normalizeTreeJson(raw) as unknown as JSONValue;
+    }
+    return (
+        c as Exclude<Container, LoroCounter>
+    ).toJSON() as unknown as JSONValue;
+}
+
+// Check if a target or any of its ancestors is in ignore set
+function isIgnoredByAncestor(
+    id: ContainerID,
+    ignoreSet: Set<ContainerID>,
+    getContainerById?: (id: ContainerID) => Container | undefined,
+): boolean {
+    if (ignoreSet.has(id)) return true;
+    if (!getContainerById) return false;
+    const start = getContainerById(id);
+    let cur = start;
+    // Walk up through parents; if any ancestor id is ignored, skip
+    while (cur) {
+        const p = cur.parent();
+        if (!p) break;
+        if (ignoreSet.has(p.id)) return true;
+        cur = p;
+    }
+    return false;
+}

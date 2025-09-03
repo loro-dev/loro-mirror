@@ -158,7 +158,7 @@ describe("LoroTree integration", () => {
             return roots;
         };
 
-        const runOnce = (seed: number) => {
+        const runOnce = async (seed: number) => {
             const rng = mulberry32(seed);
             const doc = new LoroDoc();
             const s = schema({
@@ -172,6 +172,12 @@ describe("LoroTree integration", () => {
                 doc,
                 schema: s,
                 checkStateConsistency: true,
+            });
+
+            const docB = new LoroDoc();
+            const mB = new Mirror({
+                doc: docB,
+                schema: s,
             });
 
             // 1) Create an initial random tree
@@ -217,12 +223,18 @@ describe("LoroTree integration", () => {
                 );
                 // If the move is a no-op (same parent + index), skip sometimes to avoid churn
                 m.setState({ tree: nextTree } as any);
+                docB.import(
+                    doc.export({ mode: "update", from: docB.version() }),
+                );
+                await Promise.resolve();
+                expect(mB.getState()).toStrictEqual(m.getState());
+                mB.checkStateConsistency();
             }
         };
 
         // Try multiple seeds
         for (const seed of [1, 42, 2025]) {
-            runOnce(seed);
+            await runOnce(seed);
         }
     });
 
