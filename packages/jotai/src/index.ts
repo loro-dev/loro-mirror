@@ -85,8 +85,22 @@ export function loroMirrorAtom<T = any>(
 ): WritableAtom<T, [T | ((prev: T) => T)], void> {
     const store = createStore(config);
     const stateAtom = atom(store.getState());
+    const subAtom = atom(null, (_get, set, update) => {
+        set(stateAtom, update);
+    });
+
+    subAtom.onMount = (set) => {
+        const sub = store.subscribe((state) => {
+            set(state);
+        });
+        return () => {
+            sub?.();
+        }
+    }
+
     const base = atom(
         (get) => {
+            get(subAtom);
             return get(stateAtom);
         },
         (get, set, update) => {

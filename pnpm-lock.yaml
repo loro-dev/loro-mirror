@@ -38,13 +38,13 @@ importers:
       immer:
         specifier: ^10.0.3
         version: 10.1.1
+      loro-crdt:
+        specifier: ^1.6.0
+        version: 1.6.0
     devDependencies:
       '@types/node':
         specifier: ^20.10.5
         version: 20.17.19
-      loro-crdt:
-        specifier: ^1.5.12
-        version: 1.5.12
       typescript:
         specifier: ^5.3.3
         version: 5.7.3
@@ -55,8 +55,8 @@ importers:
         specifier: ^2.0.0
         version: 2.13.1(@types/react@18.3.18)(react@18.3.1)
       loro-crdt:
-        specifier: ^1.5.12
-        version: 1.5.12
+        specifier: ^1.6.0
+        version: 1.6.0
       loro-mirror:
         specifier: workspace:*
         version: link:../core
@@ -91,6 +91,9 @@ importers:
 
   packages/react:
     dependencies:
+      loro-crdt:
+        specifier: ^1.6.0
+        version: 1.6.0
       loro-mirror:
         specifier: workspace:*
         version: link:../core
@@ -101,9 +104,6 @@ importers:
       '@types/react':
         specifier: ^18.2.45
         version: 18.3.18
-      loro-crdt:
-        specifier: ^1.5.12
-        version: 1.5.12
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -1380,8 +1380,8 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
-  loro-crdt@1.5.12:
-    resolution: {integrity: sha512-mT615hwQhrweGiAqrW6dyKzIdAV68WdRdathivYmzbWW2O+Mvtm1fD/eHGRyzmlJaVZyqiFg8pCou+/TApJ+mA==}
+  loro-crdt@1.6.0:
+    resolution: {integrity: sha512-Jdtjo3GITCncKxFU9LbK1ykGwZ4zOmlhPtJFA1vzRYuy3tYpuu/gU6rXx0nZ3pSuDNv0ZklS+7mm1cSEjouOqQ==}
 
   loupe@2.3.7:
     resolution: {integrity: sha512-zSMINGVYkdpYSOBmLi0D1Uo7JU9nVdQKrHxC8eYlV+9YKK9WePqAlL7lSlorG/U2Fw1w0hTBmaa/jrQ3UbPHtA==}
@@ -3160,7 +3160,7 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
-  loro-crdt@1.5.12: {}
+  loro-crdt@1.6.0: {}
 
   loupe@2.3.7:
     dependencies:
