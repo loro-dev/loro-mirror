@@ -140,7 +140,7 @@ function applySingleEventToDraft(
                 target = parent && key !== undefined ? getAt(parent, key)! : [];
             }
             if (isJSONArray(target)) {
-                applyTreeDiff(target, e.diff.diff, ignoreSet);
+                applyTreeDiff(target, e.diff.diff);
                 // Invalidate cache for this roots array after structural change
                 ROOTS_TREE_INDEX_CACHE.delete(target as JSONValue[]);
             }
@@ -423,7 +423,6 @@ function applyTreeDiff(
               oldIndex: number;
           }
     >,
-    ignoreSet: Set<ContainerID>,
 ) {
     type Node = StateTreeNode;
 
@@ -443,7 +442,6 @@ function applyTreeDiff(
             };
             const idx = clampIndex(d.index, arr.length + 1);
             arr.splice(idx, 0, node);
-            ignoreSet.add(`cid:${d.target}:Map`);
         } else if (d.action === "delete") {
             const arr = getChildrenArray(d.oldParent);
             if (!arr) continue;
