@@ -12,6 +12,7 @@ import {
     LoroMapSchemaWithCatchall,
     LoroMovableListSchema,
     LoroTextSchemaType,
+    LoroTreeSchema,
     NumberSchemaType,
     RootSchemaDefinition,
     RootSchemaType,
@@ -197,4 +198,24 @@ schema.LoroText = function <O extends SchemaOptions = {}>(options?: O): LoroText
             return "Text";
         },
     } as LoroTextSchemaType & { options: O };
+};
+
+/**
+ * Define a Loro tree
+ *
+ * Each tree node has a `data` map described by `nodeSchema`.
+ */
+// oxlint-disable-next-line no-explicit-any
+schema.LoroTree = function <T extends Record<string, SchemaType>>(
+    nodeSchema: LoroMapSchema<T>,
+    options?: SchemaOptions,
+): LoroTreeSchema<T> {
+    return {
+        type: "loro-tree" as const,
+        nodeSchema,
+        options: options || {},
+        getContainerType() {
+            return "Tree";
+        },
+    };
 };

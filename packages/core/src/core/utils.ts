@@ -179,6 +179,8 @@ export function getRootContainerByType(
         return doc.getMovableList(key);
     } else if (type === "Map") {
         return doc.getMap(key);
+    } else if (type === "Tree") {
+        return doc.getTree(key);
     } else {
         throw new Error();
     }
@@ -226,12 +228,7 @@ export function tryUpdateToContainer(
         return change;
     }
 
-    let containerOp: Change["kind"];
-    if (change.kind === "insert") {
-        containerOp = "insert-container";
-    } else if (change.kind === "set") {
-        containerOp = "set-container";
-    } else {
+    if (change.kind !== "insert" && change.kind !== "set") {
         return change;
     }
 
@@ -243,8 +240,26 @@ export function tryUpdateToContainer(
         return change;
     }
 
-    change.kind = containerOp;
-    change.childContainerType = containerType;
+    if (change.kind === "insert") {
+        return {
+            container: change.container,
+            key: change.key,
+            value: change.value,
+            kind: "insert-container",
+            childContainerType: containerType,
+        };
+    }
+
+    if (change.kind === "set") {
+        return {
+            container: change.container,
+            key: change.key,
+            value: change.value,
+            kind: "set-container",
+            childContainerType: containerType,
+        };
+    }
+
     return change;
 }
 
@@ -285,10 +300,13 @@ export function isValueOfContainerType(
     switch (containerType) {
         case "MovableList":
         case "List":
+            return typeof value === "object" && Array.isArray(value);
         case "Map":
             return typeof value === "object" && value !== null;
         case "Text":
             return typeof value === "string" && value !== null;
+        case "Tree":
+            return typeof value === "object" && Array.isArray(value);
         default:
             return false;
     }
@@ -351,4 +369,10 @@ export function isStateAndSchemaOfType<
         stateGuard(values.newState) &&
         (!values.schema || schemaGuard(values.schema))
     );
+}
+
+export function isTreeID(id: unknown): boolean {
+    if (!(typeof id === "string")) return false;
+    const r = /[0-9]+@[0-9]+/;
+    return !!id.match(r);
 }

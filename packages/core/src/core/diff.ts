@@ -4,6 +4,7 @@ import {
     isContainer,
     LoroDoc,
     LoroMap,
+    TreeID,
 } from "loro-crdt";
 import {
     ContainerSchemaType,
@@ -11,15 +12,17 @@ import {
     isLoroMapSchema,
     isLoroMovableListSchema,
     isLoroTextSchema,
+    isLoroTreeSchema,
     isRootSchemaType,
     LoroListSchema,
     LoroMapSchema,
     LoroMovableListSchema,
     LoroTextSchemaType,
+    LoroTreeSchema,
     RootSchemaType,
     SchemaType,
 } from "../schema";
-import { InferContainerOptions, type Change } from "./mirror";
+import { ChangeKinds, InferContainerOptions, type Change } from "./mirror";
 
 import {
     containerIdToContainerType,
@@ -35,6 +38,7 @@ import {
     tryUpdateToContainer,
     isStringLike,
     isArrayLike,
+    isTreeID,
 } from "./utils";
 
 /**
@@ -242,6 +246,26 @@ export function diffContainer(
                 containerId,
             );
             break;
+        case "Tree":
+            if (
+                !isStateAndSchemaOfType<
+                    ArrayLike,
+                    LoroTreeSchema<Record<string, SchemaType>>
+                >(stateAndSchema, isArrayLike, isLoroTreeSchema)
+            ) {
+                throw new Error(
+                    "Failed to diff container(tree). Old and new state must be arrays",
+                );
+            }
+            changes = diffTree(
+                doc,
+                stateAndSchema.oldState,
+                stateAndSchema.newState,
+                containerId,
+                stateAndSchema.schema,
+                inferOptions,
+            );
+            break;
         default:
             throw new Error(`Unsupported container type: ${containerType}`);
     }
@@ -274,6 +298,186 @@ export function diffText(
             kind: "insert",
         },
     ];
+}
+
+/**
+ * Diffs a LoroTree between two states
+ *
+ * Produces structural tree operations (create/move/delete) and per-node data updates.
+ */
+export function diffTree(
+    doc: LoroDoc,
+    oldState: ArrayLike,
+    newState: ArrayLike,
+    containerId: ContainerID,
+    schema: LoroTreeSchema<Record<string, SchemaType>> | undefined,
+    inferOptions?: InferContainerOptions,
+): Change[] {
+    const changes: Change[] = [];
+    if (oldState === newState) return changes;
+
+    type Node = { id?: string; data?: unknown; children?: any[] };
+
+    const toArray = (arr: ArrayLike) => arr as unknown as Node[];
+    const oldArr = toArray(oldState);
+    const newArr = toArray(newState);
+
+    // Walk helpers
+    type NodeInfo = { id: string; parent?: string; index: number; node: Node };
+
+    const oldInfoById = new Map<string, NodeInfo>();
+    const newInfoById = new Map<string, NodeInfo>();
+
+    function walk(arr: Node[], map: Map<string, NodeInfo>, parent?: string) {
+        for (let i = 0; i < arr.length; i++) {
+            const n = arr[i];
+            if (n && typeof n === "object" && typeof n.id === "string") {
+                map.set(n.id, { id: n.id, parent, index: i, node: n });
+            }
+            if (n && Array.isArray(n.children)) {
+                walk(
+                    n.children,
+                    map,
+                    typeof n.id === "string" ? n.id : undefined,
+                );
+            }
+        }
+    }
+
+    walk(oldArr, oldInfoById);
+    walk(newArr, newInfoById);
+
+    // Deletions (ids in old but not in new) – delete deepest nodes first
+    // TODO: PERF: maybe we don't need to sort by depth
+    const toDelete: NodeInfo[] = [];
+    for (const [id, info] of oldInfoById) {
+        if (!newInfoById.has(id)) toDelete.push(info);
+    }
+
+    // Compute depth for stable deletion order
+    const depth = (info: NodeInfo): number => {
+        let d = 0;
+        let p = info.parent ? oldInfoById.get(info.parent) : undefined;
+        while (p) {
+            d++;
+            p = p.parent ? oldInfoById.get(p.parent) : undefined;
+        }
+        return d;
+    };
+    toDelete.sort((a, b) => depth(b) - depth(a));
+    for (const info of toDelete) {
+        changes.push({
+            container: containerId,
+            kind: "tree-delete",
+            target: info.id as TreeID,
+        });
+    }
+
+    // Creates (nodes in new but not in old) – create parents before children (preorder)
+    //
+    // Why this is tricky for trees:
+    // - New nodes don't have stable IDs yet. Loro assigns a TreeID only when we actually
+    //   call `tree.createNode(...)`. But our app state must contain that ID afterwards so
+    //   that subsequent diffs and FROM_LORO events can reference it correctly.
+    // - When creating a parent and its children in the same batch, children's `parent`
+    //   TreeID is unknown at diff time (because the parent has not been created yet).
+    //
+    // Design:
+    // - We schedule a `tree-create` change per new node and attach an `onCreate(id)`
+    //   callback. When the create is applied, `onCreate` receives the real TreeID assigned
+    //   by Loro. We then:
+    //     1) write that ID back into the newState node (so user state now carries the
+    //        correct, canonical ID), and
+    //     2) patch any pending child creates so their `parent` field becomes this new ID.
+    // - This introduces an ordering requirement: apply tree creates one-by-one and invoke
+    //   `onCreate` immediately so downstream child creates have the right parent.
+    function pushCreates(
+        arr: Node[],
+        parent: string | undefined,
+        notifyWhenParentCreated?: ChangeKinds["treeCreate"][],
+    ) {
+        for (let i = 0; i < arr.length; i++) {
+            const n = arr[i];
+            const id = isTreeID(n.id) ? n.id : undefined;
+            const needCreate = !id || !oldInfoById.has(id);
+            const notifySet: ChangeKinds["treeCreate"][] = [];
+            if (needCreate) {
+                const c: ChangeKinds["treeCreate"] = {
+                    container: containerId,
+                    kind: "tree-create",
+                    parent: parent as TreeID | undefined,
+                    index: i,
+                    value: n?.data,
+                    // When Loro assigns the concrete TreeID for this newly created node,
+                    // we immediately:
+                    // - store it back onto the node in the newState (so future diffs/events
+                    //   use a consistent ID), and
+                    // - update any pending child create ops so their `parent` now refers to
+                    //   this new ID.
+                    onCreate: (id) => {
+                        n.id = id;
+                        for (const c of notifySet) {
+                            c.parent = id;
+                        }
+                    },
+                };
+                changes.push(c);
+                notifyWhenParentCreated?.push(c);
+            }
+
+            if (n && Array.isArray(n.children)) {
+                const pid = isTreeID(n.id) ? n.id : undefined;
+                if (needCreate) {
+                    // We don't yet know the parent's ID; collect children's create ops so
+                    // we can patch their `parent` after the parent is created.
+                    pushCreates(n.children, pid, notifySet);
+                } else {
+                    pushCreates(n.children, pid);
+                }
+            }
+        }
+    }
+
+    pushCreates(newArr, undefined);
+    // Moves and data updates for common nodes
+    for (const [id, newInfo] of newInfoById) {
+        const oldInfo = oldInfoById.get(id);
+        if (!oldInfo) continue; // created above
+
+        const parentChanged =
+            (oldInfo.parent ?? undefined) !== (newInfo.parent ?? undefined);
+        const indexChanged = oldInfo.index !== newInfo.index;
+        if (parentChanged || indexChanged) {
+            changes.push({
+                container: containerId,
+                kind: "tree-move",
+                target: id as TreeID,
+                parent: newInfo.parent as TreeID | undefined,
+                index: newInfo.index,
+            });
+        }
+
+        // Data updates: diff node.data via its map container id
+        try {
+            const tree = doc.getTree(containerId);
+            const node = tree.getNodeByID(id as TreeID);
+            if (node && schema) {
+                const nested = diffContainer(
+                    doc,
+                    oldInfo.node?.data,
+                    newInfo.node?.data,
+                    node.data.id,
+                    schema.nodeSchema,
+                    inferOptions,
+                );
+                changes.push(...nested);
+            }
+        } catch (e) {
+            console.error(`Failed to diff node.data for node ${id}:`, e);
+        }
+    }
+
+    return changes;
 }
 
 /**
@@ -339,14 +543,14 @@ export function diffMovableList<S extends ArrayLike>(
     }
 
     // 2) Deletions (from highest index to lowest)
-    const deletions: Change[] = [];
+    const deletions: ChangeKinds["delete"][] = [];
     for (const [id, { index }] of oldMap) {
         if (!newMap.has(id)) {
             deletions.push({
                 container: containerId,
                 key: index,
                 value: undefined,
-                kind: "delete",
+                kind: "delete" as const,
             });
         }
     }
