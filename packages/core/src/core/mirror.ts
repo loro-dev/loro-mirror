@@ -162,6 +162,13 @@ export type ChangeKinds = {
         parent?: TreeID;
         index: number;
         value?: unknown; // initial node.data
+        // Called immediately after the node is created in Loro so we can:
+        // 1) write the assigned TreeID back onto the newState node (users cannot know it ahead of time), and
+        // 2) patch any queued child `tree-create` ops to point to this node as their `parent`.
+        //
+        // Note: this implies an ordering requirement when applying changes — tree creates must be
+        // applied one-by-one and `onCreate` invoked right away to ensure children have the correct parent.
+        onCreate(id: TreeID): void;
     };
     treeMove: {
         container: ContainerID;
@@ -844,6 +851,9 @@ export class Mirror<S extends SchemaType> {
                             change.parent,
                             change.index,
                         );
+                        // Propagate the concrete TreeID back into the in-memory newState and
+                        // fix up any pending child creates that depend on this parent's ID.
+                        change.onCreate(newNode.id);
                         if (nodeSchema) {
                             this.registerContainer(newNode.data.id, nodeSchema);
                             this.initializeContainer(
@@ -1384,9 +1394,10 @@ export class Mirror<S extends SchemaType> {
 
         // Optional schema to enable nested node.data diffs
         const parentSchema = this.getContainerSchema(tree.id);
-        const treeSchema = parentSchema && isLoroTreeSchema(parentSchema)
-            ? parentSchema
-            : undefined;
+        const treeSchema =
+            parentSchema && isLoroTreeSchema(parentSchema)
+                ? parentSchema
+                : undefined;
 
         // Compute changes
         const changes = diffTree(
@@ -1398,9 +1409,15 @@ export class Mirror<S extends SchemaType> {
             this.options?.inferOptions,
         );
 
+        if (this.options.debug) {
+            console.log("[updateTreeContainer] changes", changes);
+        }
+
         if (changes.length === 0) return;
 
-        // Group changes by container; apply tree ops first, then nested containers
+        // Group changes by container; apply tree ops first, then nested containers.
+        // The order here matters for trees: child creates may depend on a parent's freshly
+        // assigned ID (filled via `onCreate`), so we must apply creates in order.
         const grouped = new Map<ContainerID | "", Change[]>();
         for (const ch of changes) {
             const cid = ch.container;
@@ -1545,10 +1562,20 @@ export class Mirror<S extends SchemaType> {
             : undefined;
 
         // Update Loro based on new state
+        // Refresh in-memory state from Doc to capture assigned IDs (e.g., TreeIDs)
+        // and any canonical normalization (like Tree meta->data mapping).
         this.updateLoro(newState);
-
-        // Update the in-memory state
         this.state = newState;
+        if (this.options.debug) {
+            if (!deepEqual(newState, toNormalizedJson(this.doc))) {
+                console.error(
+                    "State diverged",
+                    JSON.stringify(newState, null, 2),
+                    JSON.stringify(toNormalizedJson(this.doc), null, 2),
+                );
+                throw new Error("[InternalError] State diverged");
+            }
+        }
 
         // Notify subscribers
         this.notifySubscribers(SyncDirection.TO_LORO, tags);

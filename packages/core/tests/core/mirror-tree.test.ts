@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroText } from "loro-crdt";
 import { Mirror } from "../../src/core/mirror";
+import { applyEventBatchToState } from "../../src/core/loroEventApply";
 import { schema } from "../../src/schema";
 
 // Small helper to wait for microtasks (mirror commits async)
@@ -244,9 +245,132 @@ describe("LoroTree integration", () => {
         st = m.getState();
         expect(st.tree.map((n: any) => n.data.title)).toEqual(["B"]);
     });
-    it.todo("FROM_LORO: out-of-bounds create index clamps to valid range");
-    it.todo("FROM_LORO: move with wrong indices still finds by id and moves");
-    it.todo("FROM_LORO: delete with wrong index falls back to delete by id");
+    it("FROM_LORO: out-of-bounds create index clamps to valid range", () => {
+        // Start with empty tree state
+        let state: any = { tree: [] };
+
+        // Create with very large index -> should clamp to end (index 0 when empty)
+        state = applyEventBatchToState(state, {
+            by: "local",
+            events: [
+                {
+                    target: "cid:root-tree:Tree" as any,
+                    path: ["tree"],
+                    diff: {
+                        type: "tree",
+                        diff: [
+                            {
+                                action: "create",
+                                target: "1@1" as any,
+                                parent: undefined,
+                                index: 1000,
+                            },
+                        ],
+                    },
+                } as any,
+            ],
+            from: [],
+            to: [],
+        } as any);
+        expect(state.tree.map((n: any) => n.id)).toEqual(["1@1"]);
+
+        // Create with negative index -> should clamp to 0 (insert at front)
+        state = applyEventBatchToState(state, {
+            by: "local",
+            events: [
+                {
+                    target: "cid:root-tree:Tree" as any,
+                    path: ["tree"],
+                    diff: {
+                        type: "tree",
+                        diff: [
+                            {
+                                action: "create",
+                                target: "2@1" as any,
+                                parent: undefined,
+                                index: -100,
+                            },
+                        ],
+                    },
+                } as any,
+            ],
+            from: [],
+            to: [],
+        } as any);
+        expect(state.tree.map((n: any) => n.id)).toEqual(["2@1", "1@1"]);
+    });
+    it("FROM_LORO: move with wrong indices still finds by id and moves", () => {
+        // Pre-populate state with three roots
+        let state: any = {
+            tree: [
+                { id: "1@1", data: {}, children: [] },
+                { id: "2@1", data: {}, children: [] },
+                { id: "3@1", data: {}, children: [] },
+            ],
+        };
+
+        // Move target "2@1" to front but provide a bogus oldIndex
+        state = applyEventBatchToState(state, {
+            by: "local",
+            events: [
+                {
+                    target: "cid:root-tree:Tree" as any,
+                    path: ["tree"],
+                    diff: {
+                        type: "tree",
+                        diff: [
+                            {
+                                action: "move",
+                                target: "2@1" as any,
+                                parent: undefined,
+                                index: 0,
+                                oldParent: undefined,
+                                oldIndex: 999, // wrong, should fall back to id search
+                            },
+                        ],
+                    },
+                } as any,
+            ],
+            from: [],
+            to: [],
+        } as any);
+        expect(state.tree.map((n: any) => n.id)).toEqual(["2@1", "1@1", "3@1"]);
+    });
+    it("FROM_LORO: delete with wrong index falls back to delete by id", () => {
+        // Pre-populate state with three roots
+        let state: any = {
+            tree: [
+                { id: "1@1", data: {}, children: [] },
+                { id: "2@1", data: {}, children: [] },
+                { id: "3@1", data: {}, children: [] },
+            ],
+        };
+
+        // Delete target "2@1" but pass an out-of-range oldIndex
+        state = applyEventBatchToState(state, {
+            by: "local",
+            events: [
+                {
+                    target: "cid:root-tree:Tree" as any,
+                    path: ["tree"],
+                    diff: {
+                        type: "tree",
+                        diff: [
+                            {
+                                action: "delete",
+                                target: "2@1" as any,
+                                oldParent: undefined,
+                                oldIndex: 999, // wrong, should fall back to id search
+                            },
+                        ],
+                    },
+                } as any,
+            ],
+            from: [],
+            to: [],
+        } as any);
+        expect(state.tree.map((n: any) => n.id)).toEqual(["1@1", "3@1"]);
+    });
     it("FROM_LORO: nested containers in node.data (e.g., LoroText) propagate updates", async () => {
         const doc = new LoroDoc();
         const tree = doc.getTree("tree");
@@ -317,6 +441,90 @@ describe("LoroTree integration", () => {
             "depth2-updated",
         );
     });
+    it("FROM_LORO: move and update in same batch resolves TreeID to new location", async () => {
+        const doc = new LoroDoc();
+        const tree = doc.getTree("tree");
+
+        // Initial structure: [A, B]
+        const a = tree.createNode();
+        a.data.set("title", "A");
+        const b = tree.createNode();
+        b.data.set("title", "B");
+        doc.commit();
+
+        const s = schema({
+            tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
+        });
+        const m = new Mirror({ doc, schema: s });
+
+        // In one batch: move A after B, then update A.title
+        tree.move(a.id, undefined, 1); // target order: [B, A]
+        a.data.set("title", "A-updated");
+        doc.commit();
+        await tick();
+
+        const titles = m.getState().tree.map((n: any) => n.data.title);
+        expect(titles).toEqual(["B", "A-updated"]);
+    });
+    it("FROM_LORO: Tree nested in Map uses TreeID path to write into node.data", async () => {
+        const doc = new LoroDoc();
+        const rootMap = doc.getMap("root");
+        const tree = rootMap.setContainer("tree", doc.getTree("inner"));
+
+        // Create a node and update its data in one commit
+        const node = tree.createNode();
+        node.data.set("label", "n1");
+        doc.commit();
+
+        const s = schema({
+            root: schema.LoroMap({
+                tree: schema.LoroTree(
+                    schema.LoroMap({ label: schema.String() }),
+                ),
+            }),
+        });
+
+        const m = new Mirror({ doc, schema: s });
+        const state = m.getState() as any;
+        // Expect path mapping: state.root.tree[0].data.label
+        expect(state.root.tree).toBeTruthy();
+        expect(state.root.tree[0].data.label).toBe("n1");
+
+        // Update the node's data and ensure it propagates
+        node.data.set("label", "n1*");
+        doc.commit();
+        await tick();
+        expect(m.getState().root.tree[0].data.label).toBe("n1*");
+    });
+    it('FROM_LORO: LoroList in node.data applies list deltas via ["tree", TreeID, "tags"] path', async () => {
+        const doc = new LoroDoc();
+        const tree = doc.getTree("tree");
+        const n = tree.createNode();
+        // Attach a list container in node.data
+        const tags = n.data.setContainer("tags", doc.getList("tags"));
+        tags.push("x");
+        tags.push("y");
+        doc.commit();
+
+        const s = schema({
+            tree: schema.LoroTree(
+                schema.LoroMap({
+                    tags: schema.LoroList(schema.String()),
+                }),
+            ),
+        });
+        const m = new Mirror({ doc, schema: s });
+
+        // Initial mirror should show ["x","y"]
+        expect(m.getState().tree[0].data.tags).toEqual(["x", "y"]);
+
+        // Modify the list and ensure deltas are applied
+        tags.insert(1, "mid"); // ["x","mid","y"]
+        tags.delete(0, 1); // ["mid","y"]
+        doc.commit();
+        await tick();
+        expect(m.getState().tree[0].data.tags).toEqual(["mid", "y"]);
+    });
     it("FROM_LORO: ignores own origin 'to-loro' events to avoid feedback", async () => {
         const doc = new LoroDoc();
         const s = schema({
@@ -349,15 +557,12 @@ describe("LoroTree integration", () => {
             ),
         });
         const m = new Mirror({ doc, schema: s });
-
         m.setState({
             tree: [
                 {
-                    id: "",
                     data: { title: "A", done: false },
                     children: [
                         {
-                            id: "",
                             data: { title: "A1", done: true },
                             children: [],
                         },
@@ -600,11 +805,108 @@ describe("LoroTree integration", () => {
     });
 
     // Nested tree container inside a map
-    // Leaving the following as TODOs as they depend on finer-grained diffing for nested trees
-    it.todo(
-        "Nested Tree in Map: incremental diff yields create/move/delete (no full rebuild)",
-    );
-    it.todo(
-        "Schema registration: node.data containers are registered for nested updates",
-    );
+    it("Nested Tree in Map: incremental diff yields create/move/delete (no full rebuild)", async () => {
+        const doc = new LoroDoc();
+        const s = schema({
+            root: schema.LoroMap({
+                tree: schema.LoroTree(
+                    schema.LoroMap({ title: schema.String() }),
+                ),
+            }),
+        });
+        const m = new Mirror({ doc, schema: s });
+
+        // Initial state: three root nodes A, B, C under root.tree
+        m.setState({
+            root: {
+                tree: [
+                    { id: "", data: { title: "A" }, children: [] },
+                    { id: "", data: { title: "B" }, children: [] },
+                    { id: "", data: { title: "C" }, children: [] },
+                ],
+            },
+        } as any);
+        await tick();
+
+        // Grab ids from mirror state to preserve identity across update
+        const st0: any = m.getState();
+        const [A, B, C] = st0.root.tree;
+        expect([A, B, C].map((n: any) => typeof n.id === "string")).toEqual([
+            true,
+            true,
+            true,
+        ]);
+
+        // Collect only the next TO_LORO event's tree diffs
+        let lastTreeOps: any[] = [];
+        const unsub = doc.subscribe((batch) => {
+            // Mirror commits with origin "to-loro" for setState updates
+            if (batch.origin !== "to-loro") return;
+            for (const e of batch.events) {
+                if (e.diff.type === "tree") {
+                    lastTreeOps.push(...e.diff.diff);
+                }
+            }
+        });
+
+        // New state: reorder to C, A, B (by ids) – expect only moves, not full delete+create
+        m.setState({
+            root: {
+                tree: [C, A, B],
+            },
+        } as any);
+        await tick();
+        unsub();
+
+        // Validate we only saw move operations (no full rebuild)
+        expect(lastTreeOps.length).toBeGreaterThan(0);
+        expect(lastTreeOps.every((op) => op.action === "move")).toBe(true);
+        // And final state order matches
+        expect(m.getState().root.tree.map((n: any) => n.data.title)).toEqual([
+            "C",
+            "A",
+            "B",
+        ]);
+    });
+    it("Schema registration: node.data containers are registered for nested updates", async () => {
+        const doc = new LoroDoc();
+        const s = schema({
+            root: schema.LoroMap({
+                tree: schema.LoroTree(
+                    schema.LoroMap({
+                        title: schema.String(),
+                        desc: schema.LoroText(),
+                    }),
+                ),
+            }),
+        });
+        const m = new Mirror({ doc, schema: s });
+
+        // Create a single node with a LoroText under data.desc via setState
+        m.setState({
+            root: {
+                tree: [
+                    {
+                        id: "",
+                        data: { title: "A", desc: "hello" },
+                        children: [],
+                    },
+                ],
+            },
+        } as any);
+        await tick();
+
+        // Ensure initial state reflects text value
+        expect(m.getState().root.tree[0].data.desc).toBe("hello");
+
+        // Update desc via LoroText container and ensure FROM_LORO event updates state
+        const tree = doc.getMap("root").get("tree") as any; // LoroTree
+        const node = tree.getNodes()[0];
+        const descText = node.data.get("desc") as LoroText;
+        descText.update("world");
+        doc.commit();
+        await tick();
+
+        expect(m.getState().root.tree[0].data.desc).toBe("world");
+    });
 });

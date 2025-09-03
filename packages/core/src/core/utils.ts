@@ -300,10 +300,13 @@ export function isValueOfContainerType(
     switch (containerType) {
         case "MovableList":
         case "List":
+            return typeof value === "object" && Array.isArray(value);
         case "Map":
             return typeof value === "object" && value !== null;
         case "Text":
             return typeof value === "string" && value !== null;
+        case "Tree":
+            return typeof value === "object" && Array.isArray(value);
         default:
             return false;
     }

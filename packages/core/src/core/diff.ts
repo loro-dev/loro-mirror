@@ -374,27 +374,71 @@ export function diffTree(
     }
 
     // Creates (nodes in new but not in old) – create parents before children (preorder)
-    function pushCreates(arr: Node[], parent?: string) {
+    //
+    // Why this is tricky for trees:
+    // - New nodes don't have stable IDs yet. Loro assigns a TreeID only when we actually
+    //   call `tree.createNode(...)`. But our app state must contain that ID afterwards so
+    //   that subsequent diffs and FROM_LORO events can reference it correctly.
+    // - When creating a parent and its children in the same batch, children's `parent`
+    //   TreeID is unknown at diff time (because the parent has not been created yet).
+    //
+    // Design:
+    // - We schedule a `tree-create` change per new node and attach an `onCreate(id)`
+    //   callback. When the create is applied, `onCreate` receives the real TreeID assigned
+    //   by Loro. We then:
+    //     1) write that ID back into the newState node (so user state now carries the
+    //        correct, canonical ID), and
+    //     2) patch any pending child creates so their `parent` field becomes this new ID.
+    // - This introduces an ordering requirement: apply tree creates one-by-one and invoke
+    //   `onCreate` immediately so downstream child creates have the right parent.
+    function pushCreates(
+        arr: Node[],
+        parent: string | undefined,
+        notifyWhenParentCreated?: ChangeKinds["treeCreate"][],
+    ) {
         for (let i = 0; i < arr.length; i++) {
             const n = arr[i];
             const id = isTreeID(n.id) ? n.id : undefined;
-            if (!id || !oldInfoById.has(id)) {
-                changes.push({
+            const needCreate = !id || !oldInfoById.has(id);
+            const notifySet: ChangeKinds["treeCreate"][] = [];
+            if (needCreate) {
+                const c: ChangeKinds["treeCreate"] = {
                     container: containerId,
                     kind: "tree-create",
                     parent: parent as TreeID | undefined,
                     index: i,
                     value: n?.data,
-                });
+                    // When Loro assigns the concrete TreeID for this newly created node,
+                    // we immediately:
+                    // - store it back onto the node in the newState (so future diffs/events
+                    //   use a consistent ID), and
+                    // - update any pending child create ops so their `parent` now refers to
+                    //   this new ID.
+                    onCreate: (id) => {
+                        n.id = id;
+                        for (const c of notifySet) {
+                            c.parent = id;
+                        }
+                    },
+                };
+                changes.push(c);
+                notifyWhenParentCreated?.push(c);
             }
+
             if (n && Array.isArray(n.children)) {
                 const pid = isTreeID(n.id) ? n.id : undefined;
-                pushCreates(n.children, pid);
+                if (needCreate) {
+                    // We don't yet know the parent's ID; collect children's create ops so
+                    // we can patch their `parent` after the parent is created.
+                    pushCreates(n.children, pid, notifySet);
+                } else {
+                    pushCreates(n.children, pid);
+                }
             }
         }
     }
-    pushCreates(newArr);
 
+    pushCreates(newArr, undefined);
     // Moves and data updates for common nodes
     for (const [id, newInfo] of newInfoById) {
         const oldInfo = oldInfoById.get(id);
