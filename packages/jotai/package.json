@@ -1,13 +1,11 @@
 {
-    "name": "loro-mirror-react",
+    "name": "loro-mirror-jotai",
     "version": "0.1.0",
-    "description": "React integration for Loro Mirror - a state management library with Loro CRDT synchronization",
-    "type": "module",
+    "description": "Jotai integration for Loro Mirror - a state management library with Loro CRDT synchronization",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "files": [
-        "dist",
-        "src"
+        "dist"
     ],
     "scripts": {
         "build": "tsc -p .",
@@ -23,22 +21,25 @@
         "management",
         "sync",
         "mirror",
-        "react",
-        "hooks"
+        "jotai"
     ],
     "author": "",
     "license": "MIT",
-    "dependencies": {
-        "loro-mirror": "workspace:*"
-    },
+    "dependencies": {},
     "peerDependencies": {
-        "loro-crdt": "^1.6.0",
-        "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
+        "loro-mirror": "workspace:*",
+        "jotai": "^2.0.0",
+        "loro-crdt": "^1.6.0"
     },
     "devDependencies": {
+        "@testing-library/jest-dom": "^6.1.5",
+        "@testing-library/react": "^16.3.0",
         "@types/node": "^20.10.5",
         "@types/react": "^18.2.45",
+        "jsdom": "^23.0.1",
         "react": "^18.2.0",
-        "typescript": "^5.3.3"
+        "react-dom": "^18.2.0",
+        "typescript": "^5.3.3",
+        "vitest": "^1.0.4"
     }
 }

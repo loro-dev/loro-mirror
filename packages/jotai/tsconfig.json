@@ -5,7 +5,6 @@
         "rootDir": "./src",
         "composite": true,
         "noEmit": false,
-        "inlineSources": true
     },
     "include": [
         "src/**/*"
@@ -13,6 +12,12 @@
     "exclude": [
         "node_modules",
         "dist",
-        "**/*.test.ts"
+        "**/*.test.ts",
+        "**/*.test.tsx"
+    ],
+    "references": [
+        {
+            "path": "../core"
+        }
     ]
 }
