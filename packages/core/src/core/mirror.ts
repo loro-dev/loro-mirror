@@ -103,6 +103,14 @@ export interface MirrorOptions<S extends SchemaType> {
     debug?: boolean;
 
     /**
+     * When enabled, performs an internal consistency check after setState
+     * to ensure in-memory state equals the normalized LoroDoc JSON.
+     * This throws on divergence but does not emit the verbose debug logs.
+     * @default false
+     */
+    checkStateConsistency?: boolean;
+
+    /**
      * Default values for new containers
      */
     inferOptions?: InferContainerOptions;
@@ -276,6 +284,7 @@ export class Mirror<S extends SchemaType> {
             validateUpdates: options.validateUpdates !== false,
             throwOnValidationError: options.throwOnValidationError || false,
             debug: options.debug || false,
+            checkStateConsistency: options.checkStateConsistency || false,
             inferOptions: options.inferOptions || {},
         };
 
@@ -1566,15 +1575,17 @@ export class Mirror<S extends SchemaType> {
         // and any canonical normalization (like Tree meta->data mapping).
         this.updateLoro(newState);
         this.state = newState;
-        if (this.options.debug) {
-            if (!deepEqual(newState, toNormalizedJson(this.doc))) {
+        const shouldCheck =
+            this.options.debug || this.options.checkStateConsistency;
+        if (shouldCheck && !deepEqual(newState, toNormalizedJson(this.doc))) {
+            if (this.options.debug) {
                 console.error(
                     "State diverged",
                     JSON.stringify(newState, null, 2),
                     JSON.stringify(toNormalizedJson(this.doc), null, 2),
                 );
-                throw new Error("[InternalError] State diverged");
             }
+            throw new Error("[InternalError] State diverged");
         }
 
         // Notify subscribers

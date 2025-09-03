@@ -38,6 +38,194 @@ describe("LoroTree integration", () => {
         expect(st.tree[0].children[0].data.title).toBe("child");
     });
 
+    it("FUZZ: setState with random tree moves (deterministic, consistency check only)", async () => {
+        // Deterministic PRNG (mulberry32)
+        const mulberry32 = (seed: number) => () => {
+            let t = (seed += 0x6d2b79f5);
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+
+        type Node = { id: string; data: { title: string }; children: Node[] };
+
+        const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+        const pick = <T>(rng: () => number, arr: T[]): T =>
+            arr[Math.floor(rng() * arr.length)]!;
+
+        const allNodes = (roots: Node[]): Node[] => {
+            const out: Node[] = [];
+            const walk = (ns: Node[]) => {
+                for (const n of ns) {
+                    out.push(n);
+                    if (n.children.length) walk(n.children);
+                }
+            };
+            walk(roots);
+            return out;
+        };
+
+        const findParent = (
+            roots: Node[],
+            id: string,
+        ): {
+            parentChildren: Node[];
+            index: number;
+            parentId?: string;
+        } | null => {
+            const stack: { parent?: Node; list: Node[] }[] = [{ list: roots }];
+            while (stack.length) {
+                const { parent, list } = stack.pop()!;
+                for (let i = 0; i < list.length; i++) {
+                    const n = list[i];
+                    if (n.id === id) {
+                        return {
+                            parentChildren: list,
+                            index: i,
+                            parentId: parent?.id,
+                        };
+                    }
+                    if (n.children.length)
+                        stack.push({ parent: n, list: n.children });
+                }
+            }
+            return null;
+        };
+
+        const isDescendant = (
+            roots: Node[],
+            ancestorId: string,
+            maybeChildId: string,
+        ) => {
+            if (ancestorId === undefined || maybeChildId === undefined)
+                return false;
+            const parent = findParent(roots, maybeChildId);
+            let curParentId = parent?.parentId;
+            while (curParentId) {
+                if (curParentId === ancestorId) return true;
+                curParentId = findParent(roots, curParentId)?.parentId;
+            }
+            return false;
+        };
+
+        const moveNode = (
+            roots: Node[],
+            nodeId: string,
+            newParentId: string | undefined,
+            newIndex: number,
+        ): Node[] => {
+            const tree = clone(roots);
+            const from = findParent(tree, nodeId);
+            if (!from) return tree; // shouldn't happen
+            const [node] = from.parentChildren.splice(from.index, 1);
+            // Compute destination list
+            let destList: Node[];
+            if (!newParentId) {
+                destList = tree;
+            } else {
+                const parentLoc = findParent(tree, newParentId);
+                if (!parentLoc) return tree;
+                destList = parentLoc.parentChildren[parentLoc.index].children;
+            }
+            // Clamp index
+            const idx = Math.max(0, Math.min(newIndex, destList.length));
+            destList.splice(idx, 0, node);
+            return tree;
+        };
+
+        const buildInitial = (rng: () => number, count: number): Node[] => {
+            const nodes: Node[] = Array.from({ length: count }, (_, i) => ({
+                id: "",
+                data: { title: `n${i}` },
+                children: [],
+            }));
+            const roots: Node[] = [];
+            for (let i = 0; i < nodes.length; i++) {
+                const parentPick = Math.floor(rng() * (i + 1)) - 1; // -1 => root
+                const n = nodes[i];
+                if (parentPick < 0) {
+                    const pos = Math.floor(rng() * (roots.length + 1));
+                    roots.splice(pos, 0, n);
+                } else {
+                    const parent = nodes[parentPick];
+                    const pos = Math.floor(
+                        rng() * (parent.children.length + 1),
+                    );
+                    parent.children.splice(pos, 0, n);
+                }
+            }
+            return roots;
+        };
+
+        const runOnce = (seed: number) => {
+            const rng = mulberry32(seed);
+            const doc = new LoroDoc();
+            const s = schema({
+                tree: schema.LoroTree(
+                    schema.LoroMap({
+                        title: schema.String(),
+                    }),
+                ),
+            });
+            const m = new Mirror({
+                doc,
+                schema: s,
+                checkStateConsistency: true,
+            });
+
+            // 1) Create an initial random tree
+            const initial = buildInitial(rng, 12);
+            m.setState({ tree: initial } as any);
+
+            // 2) Apply a sequence of random moves by producing next state trees
+            const steps = 60;
+            for (let step = 0; step < steps; step++) {
+                const cur = m.getState() as any;
+                const roots: Node[] = cur.tree as Node[];
+                const nodes = allNodes(roots);
+                if (nodes.length <= 1) continue;
+
+                // Choose a node to move
+                const src = pick(rng, nodes);
+
+                // Choose a new parent (possibly root); avoid cycles
+                const parentCandidates: (string | undefined)[] = [undefined];
+                for (const n of nodes) {
+                    if (n.id !== src.id && !isDescendant(roots, src.id, n.id)) {
+                        parentCandidates.push(n.id);
+                    }
+                }
+                const targetParentId = pick(rng, parentCandidates);
+
+                // Choose a target index in the parent
+                let targetSiblingsLen = 0;
+                if (!targetParentId) {
+                    targetSiblingsLen = roots.length;
+                } else {
+                    const loc = findParent(roots, targetParentId)!;
+                    targetSiblingsLen =
+                        loc.parentChildren[loc.index].children.length;
+                }
+                const targetIndex = Math.floor(rng() * (targetSiblingsLen + 1));
+
+                const nextTree = moveNode(
+                    roots,
+                    src.id,
+                    targetParentId,
+                    targetIndex,
+                );
+                // If the move is a no-op (same parent + index), skip sometimes to avoid churn
+                m.setState({ tree: nextTree } as any);
+            }
+        };
+
+        // Try multiple seeds
+        for (const seed of [1, 42, 2025]) {
+            runOnce(seed);
+        }
+    });
+
     it("TO_LORO: creates nodes and initializes data", async () => {
         const doc = new LoroDoc();
         const s = schema({
