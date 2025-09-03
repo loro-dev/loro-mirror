@@ -478,7 +478,11 @@ export class Mirror<S extends SchemaType> {
         this.syncing = true;
         try {
             // Incrementally update state using event deltas
-            this.state = applyEventBatchToState(this.state, event);
+            this.state = applyEventBatchToState(
+                this.state,
+                event,
+                (id) => this.doc.getContainerById(id),
+            );
             // Notify subscribers of the update
             this.notifySubscribers(SyncDirection.FROM_LORO);
         } finally {
@@ -1577,19 +1581,23 @@ export class Mirror<S extends SchemaType> {
         this.state = newState;
         const shouldCheck =
             this.options.debug || this.options.checkStateConsistency;
-        if (shouldCheck && !deepEqual(newState, toNormalizedJson(this.doc))) {
-            if (this.options.debug) {
-                console.error(
-                    "State diverged",
-                    JSON.stringify(newState, null, 2),
-                    JSON.stringify(toNormalizedJson(this.doc), null, 2),
-                );
-            }
-            throw new Error("[InternalError] State diverged");
+        if (shouldCheck) {
+            this.checkStateConsistency(newState);
         }
 
         // Notify subscribers
         this.notifySubscribers(SyncDirection.TO_LORO, tags);
+    }
+
+    checkStateConsistency(newState: InferType<S>) {
+        if (!deepEqual(newState, toNormalizedJson(this.doc))) {
+            console.error(
+                "State diverged",
+                JSON.stringify(newState, null, 2),
+                JSON.stringify(toNormalizedJson(this.doc), null, 2),
+            );
+            throw new Error("[InternalError] State diverged");
+        }
     }
 
     /**

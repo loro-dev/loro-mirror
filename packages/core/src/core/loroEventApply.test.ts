@@ -17,7 +17,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const m = doc.getMap("m");
@@ -37,7 +39,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const l = doc.getList("l");
@@ -57,7 +61,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const t = doc.getText("t");
@@ -74,7 +80,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const m = doc.getMap("m");
@@ -93,7 +101,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const m = doc.getMap("m");
@@ -114,7 +124,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const list = doc.getList("list");
@@ -135,7 +147,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const ml = doc.getMovableList("ml");
@@ -154,7 +168,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const rootMap = doc.getMap("root");
@@ -173,7 +189,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const m = doc.getMap("m");
@@ -195,7 +213,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const c = doc.getCounter("count");
@@ -212,7 +232,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const m = doc.getMap("m");
@@ -234,7 +256,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const ml = doc.getMovableList("ml");
@@ -257,7 +281,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const root = doc.getMap("root");
@@ -279,7 +305,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const l = doc.getList("l");
@@ -300,7 +328,9 @@ describe("applyEventBatchToState (inline)", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         const t = doc.getText("t");
@@ -328,7 +358,9 @@ describe("applyEventBatchToState (inline)", () => {
         const b = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = b.subscribe((batch) => {
-            state = applyEventBatchToState(state, batch);
+            state = applyEventBatchToState(state, batch, (id) =>
+                b.getContainerById(id),
+            );
         });
 
         // author edits on a
@@ -427,7 +459,9 @@ describe("applyEventBatchToState (inline)", () => {
         const unsub = doc.subscribe((b) => {
             // console.log("state", JSON.stringify(state, null, 2));
             // console.log("batch", JSON.stringify(b, null, 2));
-            state = applyEventBatchToState(state, b);
+            state = applyEventBatchToState(state, b, (id) =>
+                doc.getContainerById(id),
+            );
         });
 
         // Seeded PRNG for reproducibility
