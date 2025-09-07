@@ -42,6 +42,8 @@ export interface CreateStoreOptions<S extends SchemaType> {
      * @default false
      */
     debug?: boolean;
+
+    checkStateConsistency?: boolean;
 }
 
 /**
@@ -89,6 +91,7 @@ export function createStore<S extends SchemaType>(
         validateUpdates: options.validateUpdates,
         throwOnValidationError: options.throwOnValidationError ?? true,
         debug: options.debug,
+        checkStateConsistency: options.checkStateConsistency,
     });
 
     return {
@@ -108,14 +111,12 @@ export function createStore<S extends SchemaType>(
 export function createReducer<
     S extends SchemaType,
     A extends Record<string, unknown>,
->(
-    actionHandlers: {
-        [K in keyof A]: (
-            state: import("immer").Draft<InferType<S>>,
-            payload: A[K],
-        ) => void;
-    },
-) {
+>(actionHandlers: {
+    [K in keyof A]: (
+        state: import("immer").Draft<InferType<S>>,
+        payload: A[K],
+    ) => void;
+}) {
     return (store: Store<S>) => {
         // Return a dispatch function that takes an action and payload
         return <K extends keyof A>(actionType: K, payload: A[K]) => {
@@ -125,11 +126,12 @@ export function createReducer<
             }
 
             store.setState((state) =>
-                produce<InferType<S>>(state, (
-                    draft: import("immer").Draft<InferType<S>>,
-                ) => {
-                    handler(draft, payload);
-                }),
+                produce<InferType<S>>(
+                    state,
+                    (draft: import("immer").Draft<InferType<S>>) => {
+                        handler(draft, payload);
+                    },
+                ),
             );
         };
     };

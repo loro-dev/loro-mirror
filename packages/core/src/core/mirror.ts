@@ -1577,8 +1577,7 @@ export class Mirror<S extends SchemaType> {
         // and any canonical normalization (like Tree meta->data mapping).
         this.updateLoro(newState);
         this.state = newState;
-        const shouldCheck =
-            this.options.debug || this.options.checkStateConsistency;
+        const shouldCheck = this.options.checkStateConsistency;
         if (shouldCheck) {
             this.checkStateConsistency();
         }
@@ -1594,6 +1593,7 @@ export class Mirror<S extends SchemaType> {
                 "State diverged",
                 JSON.stringify(state, null, 2),
                 JSON.stringify(toNormalizedJson(this.doc), null, 2),
+                JSON.stringify(this.doc.toJSON(), null, 2),
             );
             throw new Error("[InternalError] State diverged");
         }
