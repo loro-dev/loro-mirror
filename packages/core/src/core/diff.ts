@@ -998,8 +998,9 @@ export function diffMap<S extends ObjectLike>(
             childSchema?.getContainerType() ??
             tryInferContainerType(newItem, inferOptions);
 
-        // added new key
-        if (!oldItem) {
+        // Added new key: detect by property presence, not truthiness.
+        // Using `!oldItem` breaks for valid falsy values like "" or null.
+        if (!(key in oldStateObj)) {
             // Inserted a new container
             if (containerType) {
                 changes.push({
