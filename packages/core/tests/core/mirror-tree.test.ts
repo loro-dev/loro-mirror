@@ -264,7 +264,7 @@ describe("LoroTree integration", () => {
         const titles = nodes
             .filter((n) => n.parent() === undefined)
             .map((n) => n.data.get("title"));
-        expect(titles.sort()).toEqual(["A", "B"]);
+        expect(titles.sort((a, b) => a.localeCompare(b))).toEqual(["A", "B"]);
     });
 
     // FROM_LORO edge cases
@@ -978,11 +978,11 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-        expect(() =>
-            m.setState({
-                tree: { id: "", data: { title: "X" } },
-            } as any),
-        ).toThrow();
+            expect(() => {
+                m.setState({
+                    tree: { id: "", data: { title: "X" } },
+                } as any);
+            }).toThrow();
     });
     it("TO_LORO: invalid node shape (children not array) throws", async () => {
         const doc = new LoroDoc();
@@ -991,17 +991,17 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-        expect(() =>
-            m.setState({
-                tree: [
-                    {
-                        id: "",
-                        data: { title: "X" },
-                        children: "oops",
-                    },
-                ],
-            } as any),
-        ).toThrow();
+            expect(() => {
+                m.setState({
+                    tree: [
+                        {
+                            id: "",
+                            data: { title: "X" },
+                            children: "oops",
+                        },
+                    ],
+                } as any);
+            }).toThrow();
     });
 
     // Nested tree container inside a map

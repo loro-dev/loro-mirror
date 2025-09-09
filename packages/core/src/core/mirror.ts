@@ -749,7 +749,7 @@ export class Mirror<S extends SchemaType> {
     private applyContainerChanges(
         container: Container,
         changes: Change[],
-        pendingState?: InferType<S>,
+        _pendingState?: InferType<S>,
     ) {
         // Apply changes in bulk by container type
         switch (container.kind()) {
@@ -787,9 +787,7 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "delete") {
                         map.delete(key as string);
                     } else {
-                        throw new Error(
-                            `Unsupported change kind for map: ${kind}`,
-                        );
+                        throw new Error('Unsupported change kind for map');
                     }
                 }
                 break;
@@ -825,9 +823,7 @@ export class Mirror<S extends SchemaType> {
                             value,
                         );
                     } else {
-                        throw new Error(
-                            `Unsupported change kind for list: ${kind}`,
-                        );
+                        throw new Error('Unsupported change kind for list');
                     }
                 }
                 break;

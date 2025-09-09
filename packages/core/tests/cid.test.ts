@@ -131,7 +131,7 @@ describe("withCid: state injection and write ignoring", () => {
         const doc = new LoroDoc();
         const root = doc.getMap("root");
         const child = new LoroMap();
-        const attached = root.setContainer("child", child);
+        root.setContainer("child", child);
         doc.commit();
 
         const s = schema({
@@ -153,7 +153,7 @@ describe("withCid: state injection and write ignoring", () => {
         const doc = new LoroDoc();
         const root = doc.getMap("root");
         const child = new LoroMap();
-        const attached = root.setContainer("child", child);
+        root.setContainer("child", child);
         doc.commit();
 
         const s = schema({
@@ -165,7 +165,8 @@ describe("withCid: state injection and write ignoring", () => {
         const st = m.getState() as any;
 
         expect(st.root[CID_KEY]).toBeUndefined();
-        expect(st.root.child[CID_KEY]).toBe(String((attached ?? child).id));
+        const attachedChild = root.get("child") as LoroMap;
+        expect(st.root.child[CID_KEY]).toBe(String(attachedChild.id));
     });
 
     it("FROM_LORO: map.setContainer inserts nested map that gets $cid", async () => {

@@ -527,27 +527,27 @@ describe("MovableList", () => {
 
     it("movable list throws on missing item id", async () => {
         const { mirror } = await initTestMirror();
-        expect(() =>
-            mirror.setState({
-                list: [
-                    // missing id
-                    // @ts-expect-error testing runtime validation
-                    { text: "no id" },
-                ],
-            }),
-        ).toThrow();
+            expect(() => {
+                mirror.setState({
+                    list: [
+                        // missing id
+                        // @ts-expect-error testing runtime validation
+                        { text: "no id" },
+                    ],
+                });
+            }).toThrow();
     });
 
     it("movable list throws on duplicate ids in new state", async () => {
         const { mirror } = await initTestMirror();
-        expect(() =>
-            mirror.setState({
-                list: [
-                    { id: "X", text: "1" },
-                    { id: "X", text: "2" },
-                ],
-            }),
-        ).toThrow();
+            expect(() => {
+                mirror.setState({
+                    list: [
+                        { id: "X", text: "1" },
+                        { id: "X", text: "2" },
+                    ],
+                });
+            }).toThrow();
     });
 
     it("movable list fuzz: large shuffles preserve container ids and text", async () => {

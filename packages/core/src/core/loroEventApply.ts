@@ -229,7 +229,7 @@ function applySingleEventToDraft(
  */
 function getParentKeyNodeByPath(
     root: JSONObject,
-    path: (string | number | TreeID)[],
+    path: (string | number)[],
 ): {
     parent: JSONObject | JSONValue[] | undefined;
     key: string | number | undefined;
@@ -285,7 +285,7 @@ function getParentKeyNodeByPath(
                 current = undefined as unknown as JSONValue;
             }
         } else {
-            throw new Error(`Unsupported path segment: ${seg}`);
+            throw new Error(`Unsupported path segment: ${String(seg)}`);
         }
     }
 
