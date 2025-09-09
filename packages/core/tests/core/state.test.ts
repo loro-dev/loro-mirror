@@ -252,10 +252,10 @@ describe("Core State Management", () => {
             // Wait for sync to complete - add extra microtasks to ensure subscriber is called
             await waitForSync();
 
-            expect(subscriber).toHaveBeenCalledWith(
-                expect.any(Object),
-                { direction: SyncDirection.TO_LORO, tags: undefined },
-            );
+            expect(subscriber).toHaveBeenCalledWith(expect.any(Object), {
+                direction: SyncDirection.TO_LORO,
+                tags: undefined,
+            });
             expect(subscriber).toHaveBeenCalledTimes(1);
 
             // Verify name was updated in the callback state
@@ -394,11 +394,13 @@ describe("Core State Management", () => {
                     count: schema.Number({ defaultValue: 0 }),
                     text: schema.String({ defaultValue: "" }),
                 }),
-                todos: schema.LoroList(schema.LoroMap({
-                    id: schema.String({ required: true }),
-                    text: schema.String({ required: true }),
-                    completed: schema.Boolean({ defaultValue: false }),
-                })),
+                todos: schema.LoroList(
+                    schema.LoroMap({
+                        id: schema.String({ required: true }),
+                        text: schema.String({ required: true }),
+                        completed: schema.Boolean({ defaultValue: false }),
+                    }),
+                ),
             });
 
             // Initialize containers with the same names as in schema
