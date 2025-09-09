@@ -115,7 +115,9 @@ Loro Mirror provides a declarative schema system that enables:
 - **Container Types**:
     - `schema.LoroMap(definition, options?)` - Object container that can nest arbitrary field schemas
         - Supports dynamic key-value definition with `catchall`: `schema.LoroMap({...}).catchall(valueSchema)`
+        - Supports `withCid: true` (in `options`) to inject a read-only `$cid` field in mirrored state equal to the underlying Loro container id. Applies uniformly to root maps, nested maps, list items, and tree node `data` maps.
     - `schema.LoroMapRecord(valueSchema, options?)` - Equivalent to `LoroMap({}).catchall(valueSchema)` for homogeneous maps
+        - Also supports `withCid: true` to inject `$cid` into each record entry’s mirrored state.
     - `schema.LoroList(itemSchema, idSelector?, options?)` - Ordered list container
         - Providing an `idSelector` (e.g., `(item) => item.id`) enables minimal add/remove/update/move diffs
     - `schema.LoroMovableList(itemSchema, idSelector, options?)` - List with native move operations, requires an `idSelector`
@@ -162,6 +164,16 @@ const record = schema.LoroMapRecord(schema.Boolean());
 
 When a field has `required: false`, the corresponding type becomes optional (union with `undefined`).
 
+With `withCid: true` on a `LoroMap` or `LoroMapRecord`, the inferred type gains a `$cid: string` field. For example:
+
+```ts
+const user = schema.LoroMap({ name: schema.String() }, { withCid: true });
+// InferType<typeof user> => { name: string; $cid: string }
+
+// In lists, `$cid` is handy as a stable idSelector:
+const users = schema.LoroList(user, (x) => x.$cid);
+```
+
 #### Default Values & Creation
 
 - Explicitly specified `defaultValue` takes the highest precedence.
@@ -207,6 +219,10 @@ const todoSchema = schema({
 #### Ignored Fields
 
 - Fields defined with `schema.Ignore()` won't sync with Loro, commonly used for derived/cached fields. Runtime validation always passes for these fields.
+
+#### Reserved Field: `$cid`
+
+- `$cid` is a reserved, read-only field injected into mirrored state for maps with `withCid: true`. It is never written back to Loro and will be ignored by diffs and updates. Use it as a stable identifier where helpful (e.g., list `idSelector`).
 
 ### React Usage
 

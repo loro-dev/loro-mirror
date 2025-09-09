@@ -44,6 +44,7 @@ import {
     getRootContainerByType,
 } from "./utils";
 import { diffContainer, diffTree } from "./diff";
+import { CID_KEY } from "../constants";
 
 /**
  * Sync direction for handling updates
@@ -309,16 +310,7 @@ export class Mirror<S extends SchemaType> {
             throw new Error('Root schema must be of type "schema"');
         }
 
-        // Get the initial state of the doc
-        const currentDocState = toNormalizedJson(this.doc);
-        // Update the state with the doc's current state
-        const newState = produce<InferType<S>>((draft) => {
-            Object.assign(draft, currentDocState);
-        })(this.state);
-
-        this.state = newState;
-
-        // Register root containers
+        // Register root containers first so registry is ready
         if (this.schema) {
             for (const key in this.schema.definition) {
                 if (
@@ -353,6 +345,14 @@ export class Mirror<S extends SchemaType> {
                 }
             }
         }
+
+        // Build initial state snapshot
+        const currentDocState = this.buildRootStateSnapshot();
+        const newState = produce<InferType<S>>((draft) => {
+            Object.assign(draft, currentDocState);
+        })(this.state);
+
+        this.state = newState;
     }
 
     /**
@@ -477,10 +477,25 @@ export class Mirror<S extends SchemaType> {
         if (event.origin === "to-loro") return;
         this.syncing = true;
         try {
+            // Pre-register any containers referenced in this batch
+            this.registerContainersFromLoroEvent(event);
             // Incrementally update state using event deltas
-            this.state = applyEventBatchToState(this.state, event, (id) =>
-                this.doc.getContainerById(id),
-            );
+            this.state = applyEventBatchToState(this.state, event, {
+                getContainerById: (id) => this.doc.getContainerById(id),
+                containerToJson: (c) => this.containerToStateJson(c),
+                nodeDataWithCid: (treeId) => {
+                    const s = this.getContainerSchema(treeId);
+                    return !!(s && isLoroTreeSchema(s) && (s.nodeSchema as any)?.options?.withCid);
+                },
+                getNodeDataCid: (treeId, nodeId) => {
+                    try {
+                        const node = this.doc.getTree(treeId).getNodeByID(nodeId);
+                        return node ? String(node.data.id) : undefined;
+                    } catch {
+                        return undefined;
+                    }
+                },
+            });
             // Notify subscribers of the update
             this.notifySubscribers(SyncDirection.FROM_LORO);
         } finally {
@@ -570,6 +585,8 @@ export class Mirror<S extends SchemaType> {
             }
         }
     }
+
+    // Tree node $cid injection happens during event application
 
     /**
      * Update Loro based on state changes
@@ -1275,6 +1292,8 @@ export class Mirror<S extends SchemaType> {
                 return;
             }
             for (const [key, val] of Object.entries(value)) {
+                // Skip injected CID field
+                if (key === CID_KEY) continue;
                 const fieldSchema = (
                     schema as
                         | LoroMapSchema<Record<string, SchemaType>>
@@ -1473,6 +1492,7 @@ export class Mirror<S extends SchemaType> {
 
             // Process each field in the new value
             for (const [key, val] of Object.entries(value)) {
+                if (key === CID_KEY) continue; // Skip CID
                 this.updateMapEntry(map, key, val, schema);
                 currentKeys.delete(key);
             }
@@ -1495,6 +1515,7 @@ export class Mirror<S extends SchemaType> {
         value: unknown,
         schema: SchemaType | null,
     ) {
+        if (key === CID_KEY) return; // Ignore CID in writes
         // Check if this field should be a container according to schema
         if (schema && schema.type === "loro-map" && schema.definition) {
             const fieldSchema = schema.definition[key];
@@ -1589,14 +1610,119 @@ export class Mirror<S extends SchemaType> {
 
     checkStateConsistency() {
         const state = this.state;
-        if (!deepEqual(state, toNormalizedJson(this.doc))) {
+        if (!deepEqual(state, this.buildRootStateSnapshot())) {
             console.error(
                 "State diverged",
                 JSON.stringify(state, null, 2),
-                JSON.stringify(toNormalizedJson(this.doc), null, 2),
+                JSON.stringify(this.buildRootStateSnapshot(), null, 2),
             );
             throw new Error("[InternalError] State diverged");
         }
+    }
+
+    // Plain JSON-like types for state snapshot generation
+    private containerToStateJson(c: Container): any {
+        const kind = c.kind();
+        if (kind === "Map") {
+            const m = c as LoroMap;
+            const obj: Record<string, any> = {};
+            for (const k of m.keys()) {
+                const v = m.get(k) as unknown;
+                obj[k] = isContainer(v)
+                    ? this.containerToStateJson(v as Container)
+                    : (v as any);
+            }
+            const schema = this.getContainerSchema(c.id);
+            if (schema && isLoroMapSchema(schema) && (schema as any).options?.withCid) {
+                obj[CID_KEY] = String(c.id);
+            }
+            return obj;
+        } else if (kind === "List" || kind === "MovableList") {
+            const arr: any[] = [];
+            const l = c as unknown as LoroList | LoroMovableList;
+            const len = l.length;
+            for (let i = 0; i < len; i++) {
+                const v = l.get(i) as unknown;
+                arr.push(isContainer(v)
+                    ? this.containerToStateJson(v as Container)
+                    : (v as any));
+            }
+            return arr;
+        } else if (kind === "Text") {
+            // LoroText toJSON returns a string
+            return (c as LoroText).toJSON();
+        } else if (kind === "Tree") {
+            const t = c as LoroTree;
+            // Normalize via toJSON first
+            const normalized = normalizeTreeJson(t.toJSON());
+            // Optionally inject $cid per node.data using an id->cid map from live nodes
+            const schema = this.getContainerSchema(t.id);
+            const withCid = schema && isLoroTreeSchema(schema) && (schema.nodeSchema as any)?.options?.withCid;
+            if (withCid) {
+                const idToCid = new Map<string, string>();
+                // Best-effort: collect from runtime nodes if API available
+                const nodes: any[] = ((t as any).getNodes?.() as any[]) || [];
+                for (const n of nodes) {
+                    try {
+                        idToCid.set(String(n.id), String(n.data?.id));
+                    } catch {
+                        // ignore
+                    }
+                }
+                const stamp = (arr: any[]) => {
+                    for (const node of arr) {
+                        const cid = idToCid.get(String(node.id));
+                        if (cid) {
+                            if (!node.data || typeof node.data !== "object") node.data = {};
+                            (node.data as any)[CID_KEY] = cid;
+                        }
+                        if (Array.isArray(node.children)) stamp(node.children);
+                    }
+                };
+                stamp(normalized);
+            }
+            return normalized;
+        }
+        // Fallback
+        return (c as any).toJSON();
+    }
+
+    private buildRootStateSnapshot(): any {
+        if (!this.schema || (this.schema as any).type !== "schema") {
+            // Fallback to previous normalization if no schema
+            return toNormalizedJson(this.doc);
+        }
+
+        const root: Record<string, any> = {};
+        const rootSchema = this.schema as RootSchemaType<Record<string, ContainerSchemaType>>;
+        for (const key in rootSchema.definition) {
+            const fieldSchema = rootSchema.definition[key];
+            const containerType = schemaToContainerType(fieldSchema);
+            if (!containerType) continue;
+            const container = getRootContainerByType(this.doc, key, containerType);
+            // Emulate doc.toJSON root omission for empty containers unless we must inject $cid
+            if (containerType === "Map") {
+                const m = container as LoroMap;
+                const withCid = (fieldSchema as any)?.options?.withCid === true;
+                if (m.keys().length === 0 && !withCid) continue;
+                root[key] = this.containerToStateJson(container);
+            } else if (containerType === "List" || containerType === "MovableList") {
+                const l = container as unknown as LoroList | LoroMovableList;
+                if (l.length === 0) continue;
+                root[key] = this.containerToStateJson(container);
+            } else if (containerType === "Text") {
+                const t = container as LoroText;
+                if ((t.toJSON() as string) === "") continue;
+                root[key] = this.containerToStateJson(container);
+            } else if (containerType === "Tree") {
+                const arr = this.containerToStateJson(container) as any[];
+                if (!Array.isArray(arr) || arr.length === 0) continue;
+                root[key] = arr;
+            } else {
+                root[key] = this.containerToStateJson(container);
+            }
+        }
+        return root;
     }
 
     /**
