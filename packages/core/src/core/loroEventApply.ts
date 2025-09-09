@@ -83,7 +83,10 @@ function applySingleEventToDraft(
     getContainerById?: (id: ContainerID) => Container | undefined,
     containerToJson?: (c: Container) => JSONValue,
     nodeDataWithCid?: (treeId: ContainerID) => boolean,
-    getNodeDataCid?: (treeId: ContainerID, nodeId: TreeID) => string | undefined,
+    getNodeDataCid?: (
+        treeId: ContainerID,
+        nodeId: TreeID,
+    ) => string | undefined,
 ) {
     if (isIgnoredByAncestor(e.target, ignoreSet, getContainerById)) {
         return;
@@ -134,7 +137,12 @@ function applySingleEventToDraft(
                         : draftRoot;
             }
             if (isJSONObject(target)) {
-                applyMapDiff(target, e.diff.updated, ignoreSet, containerToJson);
+                applyMapDiff(
+                    target,
+                    e.diff.updated,
+                    ignoreSet,
+                    containerToJson,
+                );
             }
             break;
         case "list":
@@ -388,9 +396,9 @@ function applyMapDiff(
             const c = v as Container;
             // Mark this child container so its own events are ignored later in this batch
             ignoreSet.add(c.id);
-            targetObj[k] = (containerToJson
+            targetObj[k] = containerToJson
                 ? containerToJson(c)
-                : containerToMirrorJson(c)) as JSONValue;
+                : containerToMirrorJson(c);
             continue;
         }
 
@@ -422,9 +430,9 @@ function applyListDelta(
                     const c = it as Container;
                     // Mark this child container so its own events are ignored later in this batch
                     ignoreSet.add(c.id);
-                    return (containerToJson
+                    return containerToJson
                         ? containerToJson(c)
-                        : containerToMirrorJson(c)) as JSONValue;
+                        : containerToMirrorJson(c);
                 }
                 return it as JSONValue;
             });
@@ -458,7 +466,10 @@ function applyTreeDiff(
     >,
     treeId?: ContainerID,
     nodeDataWithCid?: (treeId: ContainerID) => boolean,
-    getNodeDataCid?: (treeId: ContainerID, nodeId: TreeID) => string | undefined,
+    getNodeDataCid?: (
+        treeId: ContainerID,
+        nodeId: TreeID,
+    ) => string | undefined,
 ) {
     type Node = StateTreeNode;
 
@@ -478,7 +489,7 @@ function applyTreeDiff(
             };
             if (treeId && nodeDataWithCid?.(treeId)) {
                 const cid = getNodeDataCid?.(treeId, d.target);
-                if (cid) (node.data as any)[CID_KEY] = cid;
+                if (cid) node.data[CID_KEY] = cid;
             }
             const idx = clampIndex(d.index, arr.length + 1);
             arr.splice(idx, 0, node);

@@ -13,9 +13,6 @@
 - Test all: `pnpm test` (Vitest across packages).
 - Lint all: `pnpm lint` (ESLint on `src` in each package).
 - Type check: `pnpm typecheck` (TS `--noEmit`).
-- Per-package examples:
-  - Core build: `pnpm --filter loro-mirror build`
-  - React tests (watch): `pnpm --filter loro-mirror-react test:watch`
 
 ## Coding Style & Naming Conventions
 
@@ -23,6 +20,7 @@
 - Formatting: Prettier (tabWidth 4). Keep imports ordered logically and avoid unused vars (underscore- prefix is ignored by lint).
 - Linting: ESLint with `@typescript-eslint`, `react`, and `react-hooks`. Run `pnpm lint` before pushing.
 - Structure: Export public APIs from each package’s `src/index.ts`. Keep tests mirroring source folder layout.
+- Do not use 'any' type in typescript
 
 ## Testing Guidelines
 
