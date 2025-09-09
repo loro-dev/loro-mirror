@@ -496,7 +496,7 @@ export class Mirror<S extends SchemaType> {
                         const node = this.doc
                             .getTree(treeId)
                             .getNodeByID(nodeId);
-                        return node ? String(node.data.id) : undefined;
+                        return node ? node.data.id : undefined;
                     } catch {
                         return undefined;
                     }
@@ -727,10 +727,7 @@ export class Mirror<S extends SchemaType> {
                 (fieldSchema as any).options?.withCid &&
                 pendingState
             ) {
-                const rootObj = pendingState as unknown as Record<
-                    string,
-                    unknown
-                >;
+                const rootObj = pendingState as Record<string, unknown>;
                 const child = rootObj[keyStr];
                 if (isObject(child)) {
                     (child as Record<string, unknown>)[CID_KEY] = container.id;
@@ -1557,7 +1554,7 @@ export class Mirror<S extends SchemaType> {
 
             // If this map has withCid enabled, stamp $cid on the pending value
             if ((schema as any).options?.withCid && isObject(value)) {
-                (value as Record<string, unknown>)[CID_KEY] = String(map.id);
+                value[CID_KEY] = map.id;
             }
 
             // Get current keys
@@ -1711,7 +1708,7 @@ export class Mirror<S extends SchemaType> {
                 isLoroMapSchema(schema) &&
                 (schema as any).options?.withCid
             ) {
-                obj[CID_KEY] = String(c.id);
+                obj[CID_KEY] = c.id;
             }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
@@ -1743,10 +1740,17 @@ export class Mirror<S extends SchemaType> {
             if (withCid) {
                 const idToCid = new Map<string, string>();
                 // Best-effort: collect from runtime nodes if API available
-                const nodes: any[] = ((t as any).getNodes?.() as any[]) || [];
-                for (const n of nodes) {
+                const nodes: unknown[] = ((t as any).getNodes?.() as unknown[]) || [];
+                for (const raw of nodes) {
                     try {
-                        idToCid.set(String(n.id), String(n.data?.id));
+                        const n = raw as { id?: unknown; data?: unknown };
+                        const id = typeof n.id === "string" ? n.id : undefined;
+                        let dataId: string | undefined;
+                        if (n.data && typeof n.data === "object") {
+                            const d = n.data as { id?: unknown };
+                            dataId = typeof d.id === "string" ? d.id : undefined;
+                        }
+                        if (id && dataId) idToCid.set(id, dataId);
                     } catch {
                         // ignore
                     }
@@ -1758,13 +1762,13 @@ export class Mirror<S extends SchemaType> {
                             data?: unknown;
                             children?: unknown;
                         };
-                        const cid = idToCid.get(String(n.id));
+                        const cid = typeof n.id === "string" ? idToCid.get(n.id) : undefined;
                         if (cid) {
                             if (!n.data || typeof n.data !== "object") {
                                 (n as { data: Record<string, unknown> }).data =
                                     {};
                             }
-                            (n.data as unknown as Record<string, unknown>)[
+                            (n.data as Record<string, unknown>)[
                                 CID_KEY
                             ] = cid;
                         }
