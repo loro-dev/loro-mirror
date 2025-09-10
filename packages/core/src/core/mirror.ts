@@ -292,17 +292,78 @@ export class Mirror<S extends SchemaType> {
             inferOptions: options.inferOptions || {},
         };
 
-        // Initialize state with defaults and initial state
-        this.state = {
-            ...(this.schema ? getDefaultValue(this.schema) : {}),
-            ...this.options.initialState,
-        } as InferType<S>;
+        // Pre-create root containers hinted by initialState (no-op in Loro for roots)
+        // so that doc.toJSON() reflects empty shapes and matches normalized state.
+        this.ensureRootContainersFromInitialState();
+
+        // Initialize in-memory state without writing to LoroDoc:
+        // 1) Start from schema defaults (if any)
+        // 2) Overlay current LoroDoc snapshot (normalized)
+        // 3) Fill any missing top-level keys hinted by initialState with a normalized empty shape
+        //    (arrays -> [], strings -> '', objects -> {}), but do NOT override existing values
+        //    from the doc/defaults. This keeps doc pristine while providing a predictable state shape.
+        const baseState: Record<string, unknown> = {};
+        const defaults = (this.schema ? getDefaultValue(this.schema) : undefined) as
+            | Record<string, unknown>
+            | undefined;
+        if (defaults && typeof defaults === "object") {
+            Object.assign(baseState, defaults);
+        }
+
+        // Overlay the current doc snapshot so real data takes precedence over defaults
+        const docSnapshot = this.buildRootStateSnapshot();
+        if (docSnapshot && typeof docSnapshot === "object") {
+            Object.assign(baseState, docSnapshot as Record<string, unknown>);
+        }
+
+        // Merge initialState with awareness of schema:
+        // - Respect Ignore fields by keeping their values in memory only
+        // - For container fields, fill missing base keys with normalized empties ([], "", {})
+        // - For primitives, use provided initial values if doc/defaults do not provide them
+        const initForMerge = (this.options.initialState || {}) as Record<string, unknown>;
+        if (this.schema && (this.schema as any).type === "schema") {
+            mergeInitialIntoBaseWithSchema(
+                baseState,
+                initForMerge,
+                this.schema as RootSchemaType<Record<string, ContainerSchemaType>>,
+            );
+        } else {
+            const hinted = normalizeInitialShapeShallow(initForMerge);
+            for (const [k, v] of Object.entries(hinted)) {
+                if (!(k in baseState)) baseState[k] = v;
+            }
+        }
+
+        this.state = baseState as InferType<S>;
 
         // Initialize Loro containers and setup subscriptions
         this.initializeContainers();
 
         // Subscribe to the root doc for global updates
         this.subscriptions.push(this.doc.subscribe(this.handleLoroEvent));
+    }
+
+    /**
+     * Ensure root containers exist for keys hinted by initialState.
+     * Creating root containers is a no-op in Loro (no operations are recorded),
+     * but it makes them visible in doc JSON, staying consistent with Mirror state.
+     */
+    private ensureRootContainersFromInitialState() {
+        const init = (this.options?.initialState || {}) as Record<string, unknown>;
+        for (const [key, value] of Object.entries(init)) {
+            let container: Container | null = null;
+            if (Array.isArray(value)) {
+                container = this.doc.getList(key);
+            } else if (typeof value === "string") {
+                container = this.doc.getText(key);
+            } else if (isObject(value)) {
+                container = this.doc.getMap(key);
+            }
+            if (container) {
+                this.rootPathById.set(container.id, [key]);
+                this.registerContainerWithRegistry(container.id, undefined);
+            }
+        }
     }
 
     /**
@@ -762,7 +823,11 @@ export class Mirror<S extends SchemaType> {
                     if (key === "") {
                         continue; // Skip empty key
                     }
-
+                    // If schema marks this key as Ignore, skip writing to Loro
+                    const fieldSchema = this.getSchemaForChild(container.id, key);
+                    if (fieldSchema && (fieldSchema as any).type === "ignore") {
+                        continue;
+                    }
                     if (kind === "insert") {
                         map.set(key as string, value);
                     } else if (kind === "insert-container") {
@@ -1583,6 +1648,10 @@ export class Mirror<S extends SchemaType> {
         // Check if this field should be a container according to schema
         if (schema && schema.type === "loro-map" && schema.definition) {
             const fieldSchema = schema.definition[key];
+            if (fieldSchema && (fieldSchema as any).type === "ignore") {
+                // Skip ignore fields: they live only in mirrored state
+                return;
+            }
             if (fieldSchema && isContainerSchema(fieldSchema)) {
                 const ct = schemaToContainerType(fieldSchema);
                 if (ct && isValueOfContainerType(ct, value)) {
@@ -1896,6 +1965,30 @@ export function toNormalizedJson(doc: LoroDoc) {
     });
 }
 
+// Normalize a shallow object shape from provided initialState by converting
+// container-like primitives to empty shapes without carrying data:
+// - arrays -> []
+// - strings -> ''
+// - plain objects -> {}
+// Other primitive types are passed through (number, boolean, null/undefined).
+function normalizeInitialShapeShallow(
+    input: Record<string, unknown>,
+): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input)) {
+        if (Array.isArray(value)) {
+            out[key] = [];
+        } else if (typeof value === "string") {
+            out[key] = "";
+        } else if (isObject(value)) {
+            out[key] = {};
+        } else {
+            out[key] = value;
+        }
+    }
+    return out;
+}
+
 // Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
 function normalizeTreeJson(input: any[]): any[] {
     if (!Array.isArray(input)) return [];
@@ -1911,4 +2004,76 @@ function normalizeTreeJson(input: any[]): any[] {
         return { id, data, children };
     };
     return input.map(mapNode);
+}
+
+// Deep merge initialState into a base state with awareness of the provided root schema.
+// - Does not override values already present in base (doc/defaults take precedence)
+// - For Ignore fields, copies values verbatim into in-memory state only
+// - For container fields, fills missing keys with normalized empty shape when initialState hints at presence
+// - For primitive fields, uses initial values if base lacks them
+function mergeInitialIntoBaseWithSchema(
+    base: Record<string, unknown>,
+    init: Record<string, unknown>,
+    rootSchema: RootSchemaType<Record<string, ContainerSchemaType>>,
+) {
+    for (const [k, initVal] of Object.entries(init)) {
+        const fieldSchema = rootSchema.definition[k];
+        if (!fieldSchema) {
+            // Unknown field at root: hint shape only
+            if (!(k in base)) {
+                if (Array.isArray(initVal)) base[k] = [];
+                else if (typeof initVal === "string") base[k] = "";
+                else if (isObject(initVal)) base[k] = {};
+            }
+            continue;
+        }
+
+        const t = (fieldSchema as any).type as string;
+        if (t === "ignore") {
+            base[k] = initVal;
+            continue;
+        }
+        if (t === "loro-map") {
+            // Ensure object
+            if (!(k in base) || !isObject(base[k])) base[k] = {};
+            const nestedBase = base[k] as Record<string, unknown>;
+            const nestedInit = isObject(initVal)
+                ? (initVal as Record<string, unknown>)
+                : {};
+            const nestedSchema = fieldSchema as unknown as LoroMapSchema<
+                Record<string, any>
+            >; // actual types are not used at runtime
+            // Recurse
+            mergeInitialIntoBaseWithSchema(
+                nestedBase,
+                nestedInit,
+                ({
+                    type: "schema",
+                    definition: nestedSchema.definition as Record<
+                        string,
+                        ContainerSchemaType
+                    >,
+                    options: {},
+                    getContainerType() {
+                        return "Map";
+                    },
+                } as unknown) as RootSchemaType<
+                    Record<string, ContainerSchemaType>
+                >,
+            );
+            continue;
+        }
+        if (t === "loro-list" || t === "loro-movable-list") {
+            if (!(k in base)) base[k] = [];
+            continue;
+        }
+        if (t === "loro-text") {
+            if (!(k in base)) base[k] = "";
+            continue;
+        }
+        if (t === "string" || t === "number" || t === "boolean") {
+            if (!(k in base)) base[k] = initVal;
+            continue;
+        }
+    }
 }
