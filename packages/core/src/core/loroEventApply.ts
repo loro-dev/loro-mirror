@@ -9,6 +9,7 @@ import {
     TreeID,
 } from "loro-crdt";
 import { isTreeID } from "./utils";
+import { CID_KEY } from "../constants";
 
 // Plain JSON-like value held in Mirror state (no `any`)
 type JSONPrimitive = string | number | boolean | null | undefined;
@@ -39,8 +40,22 @@ function isJSONArray(v: unknown): v is JSONValue[] {
 export function applyEventBatchToState<T extends object>(
     currentState: T,
     event: LoroEventBatch,
-    getContainerById?: (id: ContainerID) => Container | undefined,
+    options?:
+        | ((id: ContainerID) => Container | undefined)
+        | {
+              getContainerById?: (id: ContainerID) => Container | undefined;
+              containerToJson?: (c: Container) => JSONValue;
+              nodeDataWithCid?: (treeId: ContainerID) => boolean;
+              getNodeDataCid?: (
+                  treeId: ContainerID,
+                  nodeId: TreeID,
+              ) => string | undefined;
+          },
 ): T {
+    const opts =
+        typeof options === "function"
+            ? { getContainerById: options }
+            : options || {};
     const next = produce<T>((draft) => {
         const ignoreSet = new Set<ContainerID>();
         for (const e of event.events) {
@@ -48,7 +63,10 @@ export function applyEventBatchToState<T extends object>(
                 draft as JSONObject,
                 e,
                 ignoreSet,
-                getContainerById,
+                opts.getContainerById,
+                opts.containerToJson,
+                opts.nodeDataWithCid,
+                opts.getNodeDataCid,
             );
         }
     })(currentState);
@@ -63,6 +81,12 @@ function applySingleEventToDraft(
     e: LoroEvent,
     ignoreSet: Set<ContainerID>,
     getContainerById?: (id: ContainerID) => Container | undefined,
+    containerToJson?: (c: Container) => JSONValue,
+    nodeDataWithCid?: (treeId: ContainerID) => boolean,
+    getNodeDataCid?: (
+        treeId: ContainerID,
+        nodeId: TreeID,
+    ) => string | undefined,
 ) {
     if (isIgnoredByAncestor(e.target, ignoreSet, getContainerById)) {
         return;
@@ -113,7 +137,12 @@ function applySingleEventToDraft(
                         : draftRoot;
             }
             if (isJSONObject(target)) {
-                applyMapDiff(target, e.diff.updated, ignoreSet);
+                applyMapDiff(
+                    target,
+                    e.diff.updated,
+                    ignoreSet,
+                    containerToJson,
+                );
             }
             break;
         case "list":
@@ -124,7 +153,7 @@ function applySingleEventToDraft(
                 target = parent && key !== undefined ? getAt(parent, key)! : [];
             }
             if (isJSONArray(target)) {
-                applyListDelta(target, e.diff.diff, ignoreSet);
+                applyListDelta(target, e.diff.diff, ignoreSet, containerToJson);
             }
             break;
         case "text": {
@@ -140,7 +169,13 @@ function applySingleEventToDraft(
                 target = parent && key !== undefined ? getAt(parent, key)! : [];
             }
             if (isJSONArray(target)) {
-                applyTreeDiff(target, e.diff.diff);
+                applyTreeDiff(
+                    target,
+                    e.diff.diff,
+                    e.target,
+                    nodeDataWithCid,
+                    getNodeDataCid,
+                );
                 // Invalidate cache for this roots array after structural change
                 ROOTS_TREE_INDEX_CACHE.delete(target as JSONValue[]);
             }
@@ -194,7 +229,7 @@ function applySingleEventToDraft(
  */
 function getParentKeyNodeByPath(
     root: JSONObject,
-    path: (string | number | TreeID)[],
+    path: (string | number)[],
 ): {
     parent: JSONObject | JSONValue[] | undefined;
     key: string | number | undefined;
@@ -250,7 +285,7 @@ function getParentKeyNodeByPath(
                 current = undefined as unknown as JSONValue;
             }
         } else {
-            throw new Error(`Unsupported path segment: ${seg}`);
+            throw new Error(`Unsupported path segment: ${String(seg)}`);
         }
     }
 
@@ -346,6 +381,7 @@ function applyMapDiff(
     targetObj: JSONObject,
     updated: Record<string, unknown>,
     ignoreSet: Set<ContainerID>,
+    containerToJson?: (c: Container) => JSONValue,
 ) {
     if (!isJSONObject(targetObj)) return;
     for (const [k, v] of Object.entries(updated)) {
@@ -360,7 +396,9 @@ function applyMapDiff(
             const c = v as Container;
             // Mark this child container so its own events are ignored later in this batch
             ignoreSet.add(c.id);
-            targetObj[k] = containerToMirrorJson(c) as JSONValue;
+            targetObj[k] = containerToJson
+                ? containerToJson(c)
+                : containerToMirrorJson(c);
             continue;
         }
 
@@ -375,6 +413,7 @@ function applyListDelta(
     targetArr: JSONValue[],
     deltas: Array<{ insert?: unknown[]; delete?: number; retain?: number }>,
     ignoreSet: Set<ContainerID>,
+    containerToJson?: (c: Container) => JSONValue,
 ) {
     let index = 0;
     for (const d of deltas) {
@@ -391,7 +430,9 @@ function applyListDelta(
                     const c = it as Container;
                     // Mark this child container so its own events are ignored later in this batch
                     ignoreSet.add(c.id);
-                    return containerToMirrorJson(c) as JSONValue;
+                    return containerToJson
+                        ? containerToJson(c)
+                        : containerToMirrorJson(c);
                 }
                 return it as JSONValue;
             });
@@ -423,6 +464,12 @@ function applyTreeDiff(
               oldIndex: number;
           }
     >,
+    treeId?: ContainerID,
+    nodeDataWithCid?: (treeId: ContainerID) => boolean,
+    getNodeDataCid?: (
+        treeId: ContainerID,
+        nodeId: TreeID,
+    ) => string | undefined,
 ) {
     type Node = StateTreeNode;
 
@@ -440,6 +487,10 @@ function applyTreeDiff(
                 data: {},
                 children: [],
             };
+            if (treeId && nodeDataWithCid?.(treeId)) {
+                const cid = getNodeDataCid?.(treeId, d.target);
+                if (cid) node.data.$cid = cid;
+            }
             const idx = clampIndex(d.index, arr.length + 1);
             arr.splice(idx, 0, node);
         } else if (d.action === "delete") {

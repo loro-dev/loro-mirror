@@ -136,25 +136,29 @@ export function validateSchema<S extends SchemaType>(
         case "loro-map":
             if (!isObject(value)) {
                 errors.push("Value must be an object");
-            } else if (isLoroMapSchema(schema)) {
-                // Validate each property in the map
-                for (const key in schema.definition) {
-                    if (
-                        Object.prototype.hasOwnProperty.call(
-                            schema.definition,
-                            key,
-                        )
-                    ) {
-                        const propSchema = schema.definition[key];
-                        const propValue = value[key as keyof typeof value];
+            } else {
+                if (isLoroMapSchema(schema)) {
+                    // Validate each property in the map
+                    for (const key in schema.definition) {
+                        if (
+                            Object.prototype.hasOwnProperty.call(
+                                schema.definition,
+                                key,
+                            )
+                        ) {
+                            const propSchema = schema.definition[key];
+                            const propValue = (value as Record<string, unknown>)[
+                                key
+                            ];
 
-                        const result = validateSchema(propSchema, propValue);
-                        if (!result.valid && result.errors) {
-                            // Prepend property name to each error
-                            const prefixedErrors = result.errors.map((err) =>
-                                `${key}: ${err}`
-                            );
-                            errors.push(...prefixedErrors);
+                            const result = validateSchema(propSchema, propValue);
+                            if (!result.valid && result.errors) {
+                                // Prepend property name to each error
+                                const prefixedErrors = result.errors.map(
+                                    (err) => `${key}: ${err}`,
+                                );
+                                errors.push(...prefixedErrors);
+                            }
                         }
                     }
                 }
@@ -214,13 +218,15 @@ export function validateSchema<S extends SchemaType>(
                 if (!Array.isArray(n.children)) {
                     errors.push(`${path}: children must be an array`);
                 } else {
-                    n.children.forEach((child, idx) =>
-                        validateNode(child, `${path}.children[${idx}]`),
-                    );
+                    n.children.forEach((child, idx) => {
+                        validateNode(child, `${path}.children[${idx}]`);
+                    });
                 }
             };
 
-            value.forEach((node, i) => validateNode(node, `node[${i}]`));
+            (value as unknown[]).forEach((node, i) => {
+                validateNode(node, `node[${i}]`);
+            });
             break;
         }
 
@@ -240,7 +246,9 @@ export function validateSchema<S extends SchemaType>(
                             )
                         ) {
                             const propSchema = schema.definition[key];
-                            const propValue = value[key as keyof typeof value];
+                            const propValue = (value as Record<string, unknown>)[
+                                key
+                            ];
 
                             const result = validateSchema(
                                 propSchema,
@@ -420,4 +428,3 @@ export function createValueFromSchema<S extends SchemaType>(
     // For complex types, pass through as is
     return value as InferType<S>;
 }
-
