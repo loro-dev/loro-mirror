@@ -29,7 +29,7 @@
     "peerDependencies": {
         "loro-mirror": "workspace:*",
         "jotai": "^2.0.0",
-        "loro-crdt": "^1.7.0"
+        "loro-crdt": "^1.7.1"
     },
     "devDependencies": {
         "@testing-library/jest-dom": "^6.1.5",
