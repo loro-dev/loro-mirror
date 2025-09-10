@@ -302,6 +302,19 @@ export class Mirror<S extends SchemaType> {
 
         // Subscribe to the root doc for global updates
         this.subscriptions.push(this.doc.subscribe(this.handleLoroEvent));
+
+        // If the caller provided an initial state, apply it via setState so
+        // Loro is seeded consistently using the regular diff/apply pipeline.
+        if (this.options.initialState && Object.keys(this.options.initialState).length > 0) {
+            // Shallow apply the provided initial state
+            const prevCheck = this.options.checkStateConsistency;
+            this.options.checkStateConsistency = false;
+            try {
+                this.setState(this.options.initialState as Partial<InferType<S>>);
+            } finally {
+                this.options.checkStateConsistency = prevCheck;
+            }
+        }
     }
 
     /**
@@ -350,7 +363,7 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
-        // Build initial state snapshot
+        // Build initial state snapshot from the current document
         const currentDocState = this.buildRootStateSnapshot();
         const newState = produce<InferType<S>>((draft) => {
             Object.assign(draft, currentDocState);
@@ -1805,12 +1818,10 @@ export class Mirror<S extends SchemaType> {
                 containerType === "List" ||
                 containerType === "MovableList"
             ) {
-                const l = container as unknown as LoroList | LoroMovableList;
-                if (l.length === 0) continue;
+                // Always include lists, even if empty, to match Mirror's state shape
                 root[key] = this.containerToStateJson(container);
             } else if (containerType === "Text") {
-                const t = container as LoroText;
-                if ((t.toJSON() as string) === "") continue;
+                // Always include text, even if empty, to match Mirror's state shape
                 root[key] = this.containerToStateJson(container);
             } else if (containerType === "Tree") {
                 const arr = this.containerToStateJson(container) as any[];

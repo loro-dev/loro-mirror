@@ -282,6 +282,7 @@ describe("Core State Management", () => {
                 doc,
                 schema: testSchema,
                 throwOnValidationError: true,
+                checkStateConsistency: true,
             });
 
             // Wait for initial sync to complete
@@ -312,30 +313,22 @@ describe("Core State Management", () => {
                 meta: { ...state.meta, name: "Test Name", count: 42 },
             }));
 
+            doc.commit();
             // Wait for sync to propagate changes
             await waitForSync();
 
             // Now simulate a change directly to Loro document
             const profileMap = doc.getMap("profile");
             profileMap.set("bio", "Updated from Loro");
+            doc.setNextCommitOrigin("");
             doc.commit(); // Important: Commit changes to the doc
-
-            // Wait for sync to complete
             await waitForSync();
-            await waitForSync(); // Extra wait to ensure changes propagate
-
             // Sync should update the state
             const syncedState = store.getState() as TestState;
-
-            // Wait for sync to process
-            await waitForSync();
-
-            // Verify the bio was updated from Loro
-            expect(syncedState.profile.bio).toBe("Updated from Loro");
-
-            // These should match what we set earlier
             expect(syncedState.meta.name).toBe("Test Name");
             expect(syncedState.meta.count).toBe(42);
+            // Verify the bio was updated from Loro
+            expect(syncedState.profile.bio).toBe("Updated from Loro");
         });
     });
 

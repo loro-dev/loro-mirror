@@ -1011,15 +1011,31 @@ export function diffMap<S extends ObjectLike>(
         if (childSchema && childSchema.type === "ignore") {
             continue;
         }
-        const containerType =
+
+        // Determine container type with schema-first, but respect actual value.
+        // If schema suggests a container but the provided value doesn't match it,
+        // log a warning and fall back to inferring from the value to avoid divergence.
+        let containerType =
             childSchema?.getContainerType() ??
             tryInferContainerType(newItem, inferOptions);
+        if (
+            childSchema?.getContainerType() &&
+            containerType &&
+            !isValueOfContainerType(containerType, newItem)
+        ) {
+            console.warn(
+                `Schema mismatch on key "${key}": expected ${childSchema.getContainerType()} but got value ${JSON.stringify(
+                    newItem,
+                )}. Falling back to value-based inference to avoid divergence.`,
+            );
+            containerType = tryInferContainerType(newItem, inferOptions);
+        }
 
         // Added new key: detect by property presence, not truthiness.
         // Using `!oldItem` breaks for valid falsy values like "" or null.
         if (!(key in oldStateObj)) {
             // Inserted a new container
-            if (containerType) {
+            if (containerType && isValueOfContainerType(containerType, newItem)) {
                 changes.push({
                     container: containerId,
                     key,

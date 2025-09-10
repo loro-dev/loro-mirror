@@ -7,7 +7,7 @@ exports[`MovableList > movable list handles basic sets 1`] = `
       "deps": [],
       "id": "0@0",
       "lamport": 0,
-      "msg": undefined,
+      "msg": null,
       "ops": [
         {
           "container": "cid:root-list:MovableList",
