@@ -23,7 +23,11 @@ describe("Jotai README example", () => {
         });
 
         const doc = new LoroDoc();
-        const atom = loroMirrorAtom({ doc, schema: todoSchema, initialState: { todos: [] } });
+        const atom = loroMirrorAtom({
+            doc,
+            schema: todoSchema,
+            initialState: { todos: [] },
+        });
 
         const { result } = renderHook(() => useAtom(atom));
 

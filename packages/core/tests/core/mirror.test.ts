@@ -850,7 +850,7 @@ describe("Mirror - State Consistency", () => {
         const doc = new LoroDoc();
         doc.getText("text").insert(0, "hello");
         doc.getList("list").push(0);
-        const mirror = new Mirror({
+        const _mirror = new Mirror({
             doc,
             schema: schema({
                 list: schema.LoroList(schema.LoroMap({})),
@@ -865,5 +865,26 @@ describe("Mirror - State Consistency", () => {
             list: [0],
             text: "hello",
         });
+    });
+
+    it("should not write into LoroDoc with initState", async () => {
+        const someState = {
+            list: [{}],
+            text: "some string",
+        };
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            initialState: someState,
+        });
+
+        await waitForSync();
+        expect(doc.toJSON()).toStrictEqual({
+            list: [],
+            text: "",
+        });
+        expect(doc.frontiers().length).toBe(0);
+        expect(doc.toJSON()).toStrictEqual(mirror.getState());
     });
 });
