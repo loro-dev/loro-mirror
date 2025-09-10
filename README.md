@@ -40,11 +40,15 @@ import { schema, createStore } from "loro-mirror";
 // Define your schema
 const todoSchema = schema({
     todos: schema.LoroList(
-        schema.LoroMap({
-            id: schema.String(),
-            text: schema.String(),
-            completed: schema.Boolean({ defaultValue: false }),
-        }),
+        schema.LoroMap(
+            {
+                text: schema.String(),
+                completed: schema.Boolean({ defaultValue: false }),
+            },
+            { withCid: true },
+        ),
+        // Use `$cid` (reuses Loro container id; explained later)
+        (t) => t.$cid,
     ),
 });
 
@@ -63,7 +67,6 @@ store.setState((s) => ({
     todos: [
         ...s.todos,
         {
-            id: Date.now().toString(),
             text: "Learn Loro Mirror",
             completed: false,
         },
@@ -73,11 +76,11 @@ store.setState((s) => ({
 // Or: draft-style updates (mutate a draft)
 store.setState((state) => {
     state.todos.push({
-        id: Date.now().toString(),
         text: "Learn Loro Mirror",
         completed: false,
     });
-    // no return needed
+    // `$cid` is injected automatically for withCid maps
+    // and reuses the underlying Loro container id (explained later)
 });
 
 // Subscribe to state changes
@@ -132,23 +135,25 @@ import { schema } from "loro-mirror";
 
 type UserId = string & { __brand: "userId" };
 const appSchema = schema({
-    user: schema.LoroMap({
-        id: schema.String<UserId>(),
-        name: schema.String(),
-        age: schema.Number({ required: false }),
-    }),
+    user: schema.LoroMap(
+        {
+            name: schema.String(),
+            age: schema.Number({ required: false }),
+        },
+        { withCid: true },
+    ),
     tags: schema.LoroList(schema.String()),
 });
 
 // Inferred state type:
 // type AppState = {
-//   user: { id: UserId; name: string; age: number | undefined };
+//   user: { $cid: string; name: string; age: number | undefined };
 //   tags: string[];
 // }
 type AppState = InferType<typeof appSchema>;
 ```
 
-> **Note**: If you need optional custom string types like `{ id?: UserId }`, you currently need to explicitly define it as `schema.String<UserId>({ required: false })`
+> **Note**: If you need optional custom string types with generics (e.g., `{ status?: Status }`), explicitly define them as `schema.String<Status>({ required: false })`.
 
 For `LoroMap` with dynamic key-value pairs:
 
@@ -206,12 +211,14 @@ const result = validateSchema(appSchema, {
 ```ts
 const todoSchema = schema({
     todos: schema.LoroMovableList(
-        schema.LoroMap({
-            id: schema.String(),
-            text: schema.String(),
-            completed: schema.Boolean({ defaultValue: false }),
-        }),
-        (t) => t.id,
+        schema.LoroMap(
+            {
+                text: schema.String(),
+                completed: schema.Boolean({ defaultValue: false }),
+            },
+            { withCid: true },
+        ),
+        (t) => t.$cid, // stable id from Loro container id ($cid)
     ),
 });
 ```
@@ -232,14 +239,17 @@ import { LoroDoc } from "loro-crdt";
 import { schema } from "loro-mirror";
 import { createLoroContext } from "loro-mirror-react";
 
-// Define your schema
+// Define your schema (use `$cid` from withCid maps)
 const todoSchema = schema({
     todos: schema.LoroList(
-        schema.LoroMap({
-            id: schema.String({ required: true }),
-            text: schema.String({ required: true }),
-            completed: schema.Boolean({ defaultValue: false }),
-        }),
+        schema.LoroMap(
+            {
+                text: schema.String({ required: true }),
+                completed: schema.Boolean({ defaultValue: false }),
+            },
+            { withCid: true },
+        ),
+        (t) => t.$cid, // uses Loro container id; see "$cid" section below
     ),
 });
 
@@ -262,19 +272,19 @@ function App() {
 // Todo list component
 function TodoList() {
     const todos = useLoroSelector((state) => state.todos);
-    const toggleTodo = useLoroAction((s, id: string) => {
-        const i = s.todos.findIndex((t) => t.id === id);
+    const toggleTodo = useLoroAction((s, cid: string) => {
+        const i = s.todos.findIndex((t) => t.$cid === cid);
         if (i !== -1) s.todos[i].completed = !s.todos[i].completed;
     }, []);
 
     return (
         <ul>
             {todos.map((todo) => (
-                <li key={todo.id}>
+                <li key={todo.$cid}>
                     <input
                         type="checkbox"
                         checked={todo.completed}
-                        onChange={() => toggleTodo(todo.id)}
+                        onChange={() => toggleTodo(todo.$cid)} // `$cid` is the Loro container id
                     />
                     <span>{todo.text}</span>
                 </li>
@@ -290,7 +300,6 @@ function AddTodoForm() {
     const addTodo = useLoroAction(
         (state) => {
             state.todos.push({
-                id: Date.now().toString(),
                 text: text.trim(),
                 completed: false,
             });
@@ -394,12 +403,14 @@ import { Mirror, schema, SyncDirection } from "loro-mirror";
 
 const todoSchema = schema({
     todos: schema.LoroList(
-        schema.LoroMap({
-            id: schema.String({ required: true }),
-            text: schema.String({ required: true }),
-            completed: schema.Boolean({ defaultValue: false }),
-        }),
-        (t) => t.id,
+        schema.LoroMap(
+            {
+                text: schema.String({ required: true }),
+                completed: schema.Boolean({ defaultValue: false }),
+            },
+            { withCid: true },
+        ),
+        (t) => t.$cid, // stable id from Loro container id ($cid)
     ),
 });
 
@@ -419,13 +430,18 @@ const unsubscribe = mirror.subscribe((state, { direction, tags }) => {
 mirror.setState(
     (s) => {
         s.todos.push({
-            id: Date.now().toString(),
             text: "Write docs",
             completed: false,
         });
     },
     { tags: ["ui:add"] },
 );
+
+### How `$cid` Works
+
+- Every Loro container has a stable container ID provided by Loro (e.g., a map’s `container.id`).
+- When you enable `withCid: true` on `schema.LoroMap(...)`, Mirror injects a read-only `$cid` field into the mirrored state that equals the underlying Loro container ID.
+- `$cid` lives only in the app state and is never written back to the document. Mirror uses it for efficient diffs; you can use it as a stable list selector: `schema.LoroList(item, (x) => x.$cid)`.
 
 // Cleanup
 unsubscribe();

@@ -25,13 +25,15 @@ import { useLoroStore } from 'loro-mirror-react';
 // Define your schema
 const todoSchema = schema({
   todos: schema.LoroList(
-    schema.LoroMap({
-      id: schema.String({ required: true }),
-      text: schema.String({ required: true }),
-      completed: schema.Boolean({ defaultValue: false }),
-    }),
-    // ID selector for the list items
-    (item) => item.id
+    schema.LoroMap(
+      {
+        text: schema.String({ required: true }),
+        completed: schema.Boolean({ defaultValue: false }),
+      },
+      { withCid: true },
+    ),
+    // Use `$cid` (reuses Loro container id; explained below)
+    (item) => item.$cid,
   ),
   filter: schema.String({ defaultValue: 'all' }),
 });
@@ -53,7 +55,7 @@ function TodoApp() {
       ...s,
       todos: [
         ...s.todos,
-        { id: Date.now().toString(), text, completed: false },
+        { text, completed: false },
       ],
     }));
   };
@@ -73,11 +75,14 @@ import { createLoroContext } from 'loro-mirror-react';
 // Define your schema
 const todoSchema = schema({
   todos: schema.LoroList(
-    schema.LoroMap({
-      id: schema.String({ required: true }),
-      text: schema.String({ required: true }),
-      completed: schema.Boolean({ defaultValue: false }),
-    })
+    schema.LoroMap(
+      {
+        text: schema.String({ required: true }),
+        completed: schema.Boolean({ defaultValue: false }),
+      },
+      { withCid: true },
+    ),
+    (t) => t.$cid, // stable id from Loro container id
   ),
 });
 
@@ -110,7 +115,7 @@ function TodoList() {
   return (
     <ul>
       {todos.map(todo => (
-        <TodoItem key={todo.id} todo={todo} />
+        <TodoItem key={todo.$cid /* stable key from Loro container id */} todo={todo} />
       ))}
     </ul>
   );
@@ -119,7 +124,7 @@ function TodoList() {
 // Todo item component
 function TodoItem({ todo }) {
   const toggleTodo = useLoroAction(state => {
-    const todoIndex = state.todos.findIndex(t => t.id === todo.id);
+    const todoIndex = state.todos.findIndex(t => t.$cid === todo.$cid); // compare by `$cid`
     if (todoIndex !== -1) {
       state.todos[todoIndex].completed = !state.todos[todoIndex].completed;
     }
@@ -171,11 +176,7 @@ Creates a callback that updates a Loro Mirror store.
 const addTodo = useLoroCallback(
   store,
   (state, text) => {
-    state.todos.push({
-      id: Date.now().toString(),
-      text,
-      completed: false,
-    });
+    state.todos.push({ text, completed: false }); // `$cid` is injected from Loro container id
   },
   [/* dependencies */]
 );
@@ -246,14 +247,15 @@ Hook to create an action that updates the state.
 ```tsx
 const addTodo = useLoroAction(
   (state, text) => {
-    state.todos.push({
-      id: Date.now().toString(),
-      text,
-      completed: false,
-    });
+    state.todos.push({ text, completed: false }); // `$cid` comes from Loro container id
   },
   [/* dependencies */]
 );
+
+### `$cid` and list keys/selectors
+
+- Enable `withCid: true` on `schema.LoroMap(...)` to inject a read-only `$cid` that mirrors the underlying Loro container id.
+- Use `$cid` for React `key` and as the list `idSelector` for stable identity across edits and moves: `schema.LoroList(item, x => x.$cid)`.
 
 // Usage
 addTodo('New todo');

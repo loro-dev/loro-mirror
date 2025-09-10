@@ -16,13 +16,15 @@ const appSchema = schema({
         title: schema.String({ defaultValue: "Docs" }),
         darkMode: schema.Boolean({ defaultValue: false }),
     }),
-    // LoroList: array of items (ID selector optional but recommended)
+    // LoroList: array of items (use `$cid` from withCid maps)
     todos: schema.LoroList(
-        schema.LoroMap({
-            id: schema.String({ required: true }),
-            text: schema.String(),
-        }),
-        (t) => t.id,
+        schema.LoroMap(
+            {
+                text: schema.String(),
+            },
+            { withCid: true },
+        ),
+        (t) => t.$cid, // `$cid` reuses Loro container id (explained later)
     ),
     // LoroText: collaborative text (string in state)
     notes: schema.LoroText(),
@@ -37,13 +39,13 @@ const state = store.getState();
 store.setState({
     ...state,
     settings: { ...state.settings, darkMode: true },
-    todos: [...state.todos, { id: "a", text: "Add milk" }],
+    todos: [...state.todos, { text: "Add milk" }],
     notes: "Hello, team!",
 });
 
 // Or mutate a draft (Immer-style)
 store.setState((s) => {
-    s.todos.push({ id: "b", text: "Ship" });
+    s.todos.push({ text: "Ship" });
     s.settings.title = "Project";
 });
 
@@ -163,8 +165,8 @@ import { LoroDoc } from "loro-crdt";
 
 const todosSchema = schema({
     todos: schema.LoroList(
-        schema.LoroMap({ id: schema.String(), text: schema.String() }),
-        (t) => t.id,
+        schema.LoroMap({ text: schema.String() }, { withCid: true }),
+        (t) => t.$cid, // list selector uses `$cid` (Loro container id)
     ),
 });
 
@@ -178,7 +180,7 @@ export function App() {
             <button
                 onClick={() =>
                     setState((s) => {
-                        s.todos.push({ id: crypto.randomUUID(), text: "New" });
+                        s.todos.push({ text: "New" });
                     })
                 }
             >
@@ -186,7 +188,7 @@ export function App() {
             </button>
             <ul>
                 {state.todos.map((t) => (
-                    <li key={t.id}>{t.text}</li>
+                    <li key={t.$cid /* stable key from Loro container id */}>{t.text}</li>
                 ))}
             </ul>
         </div>

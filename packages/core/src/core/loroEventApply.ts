@@ -489,7 +489,7 @@ function applyTreeDiff(
             };
             if (treeId && nodeDataWithCid?.(treeId)) {
                 const cid = getNodeDataCid?.(treeId, d.target);
-                if (cid) node.data[CID_KEY] = cid;
+                if (cid) node.data.$cid = cid;
             }
             const idx = clampIndex(d.index, arr.length + 1);
             arr.splice(idx, 0, node);
