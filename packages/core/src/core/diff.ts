@@ -23,6 +23,7 @@ import {
     SchemaType,
 } from "../schema";
 import { ChangeKinds, InferContainerOptions, type Change } from "./mirror";
+import { CID_KEY } from "../constants";
 
 import {
     containerIdToContainerType,
@@ -963,6 +964,14 @@ export function diffMap<S extends ObjectLike>(
 
     // Check for removed keys
     for (const key in oldStateObj) {
+        // Skip synthetic CID field for maps with withCid option
+        if (
+            key === CID_KEY &&
+            (schema as LoroMapSchema<Record<string, SchemaType>> | undefined)
+                ?.options?.withCid
+        ) {
+            continue;
+        }
         // Skip ignored fields defined in schema
         const childSchemaForDelete = (
             schema as LoroMapSchema<Record<string, SchemaType>> | undefined
@@ -982,6 +991,14 @@ export function diffMap<S extends ObjectLike>(
 
     // Check for added or modified keys
     for (const key in newStateObj) {
+        // Skip synthetic CID field for maps with withCid option
+        if (
+            key === CID_KEY &&
+            (schema as LoroMapSchema<Record<string, SchemaType>> | undefined)
+                ?.options?.withCid
+        ) {
+            continue;
+        }
         const oldItem = oldStateObj[key];
         const newItem = newStateObj[key];
 
@@ -1014,7 +1031,8 @@ export function diffMap<S extends ObjectLike>(
             containerType = tryInferContainerType(newItem, inferOptions);
         }
 
-        // added new key (use presence, not truthiness — null is a valid value)
+        // Added new key: detect by property presence, not truthiness.
+        // Using `!oldItem` breaks for valid falsy values like "" or null.
         if (!(key in oldStateObj)) {
             // Inserted a new container
             if (containerType && isValueOfContainerType(containerType, newItem)) {
