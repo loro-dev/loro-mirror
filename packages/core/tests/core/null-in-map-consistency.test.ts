@@ -67,7 +67,9 @@ describe("setState consistency with null fields in LoroMap", () => {
         });
 
         // No-op update should not throw or change representation
-        expect(() => mirror.setState((s) => s)).not.toThrow();
+        expect(() => {
+            mirror.setState((s) => s);
+        }).not.toThrow();
         expect(mirror.getState()).toEqual(toNormalizedJson(doc));
         expect((mirror.getState() as any).root.list[0].child).toBeNull();
     });

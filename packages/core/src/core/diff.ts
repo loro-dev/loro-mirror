@@ -1024,7 +1024,7 @@ export function diffMap<S extends ObjectLike>(
             !isValueOfContainerType(containerType, newItem)
         ) {
             console.warn(
-                `Schema mismatch on key \"${key}\": expected ${childSchema.getContainerType()} but got value ${JSON.stringify(
+                `Schema mismatch on key "${key}": expected ${childSchema.getContainerType()} but got value ${JSON.stringify(
                     newItem,
                 )}. Falling back to value-based inference to avoid divergence.`,
             );
