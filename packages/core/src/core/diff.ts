@@ -680,17 +680,16 @@ export function diffListWithIdSelector<S extends ArrayLike>(
         const id = idSelector(item);
         if (id) {
             oldItemsById.set(id, { item, index });
-        } else {
-            throw new Error("Item ID cannot be null");
         }
     }
 
+    // Note: Items in the NEW state may legitimately be missing an ID when
+    // using withCid; IDs are stamped during apply. Treat them as new inserts
+    // later instead of throwing here.
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
         if (id) {
             newItemsById.set(id, { item, newIndex });
-        } else {
-            throw new Error("Item ID cannot be null");
         }
     }
 

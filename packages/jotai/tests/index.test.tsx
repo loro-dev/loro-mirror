@@ -23,11 +23,11 @@ describe('loro-mirror-jotai', () => {
         const testAtom = loroMirrorAtom({
             doc,
             schema: testSchema,
-            initialState: { text: 'hello' },
+            initialState: { text: '' },
         });
 
         const { result } = renderHook(() => useAtom(testAtom));
-        expect(result.current[0]).toEqual({ text: 'hello' });
+        expect(result.current[0]).toEqual({ text: '' });
     });
 
     it('should update loro doc when atom state changes', async () => {
