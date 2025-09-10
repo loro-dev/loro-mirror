@@ -1,11 +1,84 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import { LoroDoc, LoroMap } from "loro-crdt";
 import { Mirror } from "../src/core/mirror";
 import { schema } from "../src/schema";
+import { InferType } from "../src";
 import { CID_KEY } from "../src/constants";
 import { diffMap } from "../src/core/diff";
 
 describe("withCid: state injection and write ignoring", () => {
+    it("types: LoroMap with withCid includes $cid; without excludes", () => {
+        const withCidMap = schema.LoroMap(
+            { name: schema.String() },
+            { withCid: true },
+        );
+        const withoutCidMap = schema.LoroMap({ name: schema.String() });
+
+        type WithCid = InferType<typeof withCidMap>;
+        type WithoutCid = InferType<typeof withoutCidMap>;
+
+        expectTypeOf<WithCid>().toEqualTypeOf<{ name: string; $cid: string }>();
+        expectTypeOf<WithoutCid>().toEqualTypeOf<{ name: string }>();
+    });
+
+    it("types: root schema fields reflect $cid option per LoroMap", () => {
+        const rootSchema = schema({
+            a: schema.LoroMap({ title: schema.String() }, { withCid: true }),
+            b: schema.LoroMap({ title: schema.String() }),
+        });
+        type RootState = InferType<typeof rootSchema>;
+
+        expectTypeOf<RootState["a"]>().toEqualTypeOf<{
+            title: string;
+            $cid: string;
+        }>();
+        expectTypeOf<RootState["b"]>().toEqualTypeOf<{
+            title: string;
+        }>();
+    });
+
+    it("types: list items pick up $cid when item map has withCid", () => {
+        const withItem = schema.LoroList(
+            schema.LoroMap({ value: schema.Number() }, { withCid: true }),
+        );
+        type WithItem = InferType<typeof withItem>;
+        expectTypeOf<WithItem>().toEqualTypeOf<Array<{ value: number; $cid: string }>>();
+
+        const withoutItem = schema.LoroList(
+            schema.LoroMap({ value: schema.Number() }),
+        );
+        type WithoutItem = InferType<typeof withoutItem>;
+        expectTypeOf<WithoutItem>().toEqualTypeOf<Array<{ value: number }>>();
+    });
+
+    it("types: nested child map with withCid has $cid; parent may not", () => {
+        const nested = schema.LoroMap({
+            child: schema.LoroMap({ name: schema.String() }, { withCid: true }),
+        });
+        type Nested = InferType<typeof nested>;
+        expectTypeOf<Nested["child"]>().toEqualTypeOf<{
+            name: string;
+            $cid: string;
+        }>();
+    });
+
+    it("types: tree node data includes $cid when node schema has withCid", () => {
+        const node = schema.LoroMap({ label: schema.String() }, { withCid: true });
+        const tree = schema.LoroTree(node);
+        type Tree = InferType<typeof tree>;
+        // Check element type's data shape to avoid recursive assertion
+        expectTypeOf<Tree[number]["data"]>().toEqualTypeOf<{
+            label: string;
+            $cid: string;
+        }>();
+
+        const nodeNo = schema.LoroMap({ label: schema.String() });
+        const treeNo = schema.LoroTree(nodeNo);
+        type TreeNo = InferType<typeof treeNo>;
+        expectTypeOf<TreeNo[number]["data"]>().toEqualTypeOf<{
+            label: string;
+        }>();
+    });
     it("injects $cid on initial snapshot for maps and tree node.data", () => {
         const doc = new LoroDoc();
         // Root containers
