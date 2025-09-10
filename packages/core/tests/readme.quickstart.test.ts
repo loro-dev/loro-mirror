@@ -1,0 +1,133 @@
+import { describe, it, expect } from "vitest";
+import { LoroDoc } from "loro-crdt";
+import { createStore, schema, validateSchema } from "../src";
+
+describe("README Quick Start examples", () => {
+    it("creates a store, updates immutably and via draft, and injects cid", async () => {
+        const todoSchema = schema({
+            todos: schema.LoroList(
+                schema.LoroMap(
+                    {
+                        text: schema.String(),
+                        completed: schema.Boolean({ defaultValue: false }),
+                    },
+                    { withCid: true },
+                ),
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const store = createStore({
+            doc,
+            schema: todoSchema,
+            initialState: { todos: [] },
+        });
+
+        // immutable update
+        store.setState((s) => ({
+            ...s,
+            todos: [
+                ...s.todos,
+                { text: "Learn Loro Mirror", completed: false },
+            ],
+        }));
+
+        let state = store.getState();
+        expect(state.todos.length).toBe(1);
+        expect(state.todos[0].text).toBe("Learn Loro Mirror");
+        // $cid should be injected when withCid: true
+        expect(typeof (state.todos[0] as any).$cid).toBe("string");
+
+        // draft-style update
+        store.setState((draft) => {
+            draft.todos.push({ text: "Second", completed: false });
+        });
+
+        state = store.getState();
+        expect(state.todos.length).toBe(2);
+        expect(state.todos[1].text).toBe("Second");
+
+        // subscribe should receive updates
+        let calls = 0;
+        const unsubscribe = store.getMirror().subscribe(() => {
+            calls++;
+        });
+        store.setState((draft) => {
+            draft.todos[0].completed = true;
+        });
+        expect(calls).toBeGreaterThan(0);
+        unsubscribe();
+    });
+
+    it("validateSchema example returns valid:true for a correct value", () => {
+        const appSchema = schema({
+            user: schema.LoroMap(
+                {
+                    name: schema.String(),
+                    age: schema.Number({ required: false }),
+                },
+                { withCid: true },
+            ),
+            tags: schema.LoroList(schema.String()),
+        });
+
+        const result = validateSchema(appSchema, {
+            user: { name: "Alice", age: 18, $cid: "mock" },
+            tags: ["a", "b"],
+        });
+        expect(result.valid).toBe(true);
+    });
+
+    it("validateSchema reports errors for wrong types", () => {
+        const appSchema = schema({
+            user: schema.LoroMap({ name: schema.String() }),
+            tags: schema.LoroList(schema.String()),
+        });
+
+        const result = validateSchema(appSchema, {
+            user: { name: 123 }, // wrong type
+            tags: ["ok", 5], // wrong type in list
+        } as any);
+
+        expect(result.valid).toBe(false);
+        expect(Array.isArray(result.errors)).toBe(true);
+        expect(result.errors && result.errors.length).toBeGreaterThan(0);
+    });
+
+    it("Ignore fields do not sync and validation passes", () => {
+        const s = schema({
+            user: schema.LoroMap({
+                name: schema.String(),
+                // local-only cache
+                cache: schema.Ignore<{ hits: number }>(),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const store = createStore({
+            doc,
+            schema: s,
+            initialState: { user: { name: "A", cache: { hits: 0 } } },
+        });
+
+        // Update a synced field to materialize the container in Loro
+        store.setState((draft) => {
+            draft.user.name = "A1";
+        });
+
+        // Update ignore field; it should not appear in doc JSON
+        store.setState((draft) => {
+            draft.user.cache.hits += 1;
+        });
+
+        const json: any = doc.getDeepValueWithID();
+        expect(json.user.value.name).toBe("A1");
+        expect(json.user.value.cache).toBeUndefined();
+
+        // Direct validation should also ignore the field
+        const validation = validateSchema(s, {
+            user: { name: "A1", cache: { hits: 5 } },
+        } as any);
+        expect(validation.valid).toBe(true);
+    });
+});

@@ -1,7 +1,8 @@
 /**
  * Mirror core functionality for bidirectional sync between app state and Loro CRDT
  */
-import { produce } from "immer";
+import { produce, setAutoFreeze } from "immer";
+setAutoFreeze(false);
 import {
     Container,
     ContainerID,
@@ -302,19 +303,6 @@ export class Mirror<S extends SchemaType> {
 
         // Subscribe to the root doc for global updates
         this.subscriptions.push(this.doc.subscribe(this.handleLoroEvent));
-
-        // If the caller provided an initial state, apply it via setState so
-        // Loro is seeded consistently using the regular diff/apply pipeline.
-        if (this.options.initialState && Object.keys(this.options.initialState).length > 0) {
-            // Shallow apply the provided initial state
-            const prevCheck = this.options.checkStateConsistency;
-            this.options.checkStateConsistency = false;
-            try {
-                this.setState(this.options.initialState as Partial<InferType<S>>);
-            } finally {
-                this.options.checkStateConsistency = prevCheck;
-            }
-        }
     }
 
     /**
@@ -800,7 +788,7 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "delete") {
                         map.delete(key as string);
                     } else {
-                        throw new Error('Unsupported change kind for map');
+                        throw new Error("Unsupported change kind for map");
                     }
                 }
                 break;
@@ -836,7 +824,7 @@ export class Mirror<S extends SchemaType> {
                             value,
                         );
                     } else {
-                        throw new Error('Unsupported change kind for list');
+                        throw new Error("Unsupported change kind for list");
                     }
                 }
                 break;
@@ -1562,7 +1550,10 @@ export class Mirror<S extends SchemaType> {
                 this.updateMapEntry(map, key, val, schema);
             } else {
                 // Infer whether this is a container
-                const ct = tryInferContainerType(val, this.options?.inferOptions);
+                const ct = tryInferContainerType(
+                    val,
+                    this.options?.inferOptions,
+                );
                 if (ct && isValueOfContainerType(ct, val)) {
                     // No child schema; insert with inferred container type
                     this.insertContainerIntoMap(map, undefined, key, val);
@@ -1635,13 +1626,11 @@ export class Mirror<S extends SchemaType> {
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
                       // Allow updater to either mutate draft or return a new state
-                      const maybeResult = (
-                          updater as (s: InferType<S>) => InferType<S> | void
-                      )(draft as InferType<S>);
+                      const maybeResult = updater(draft as InferType<S>);
                       if (maybeResult && maybeResult !== draft) {
                           // Replace if updater returned a new state object
                           // Immer interprets a return value as replacement
-                          return maybeResult as unknown as InferType<S>;
+                          return maybeResult;
                       }
                   })
                 : { ...this.state, ...updater };
