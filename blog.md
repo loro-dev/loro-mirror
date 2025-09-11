@@ -16,31 +16,22 @@ Teams building on Loro often end up writing the same glue code: mapping Loro (CR
 - Keep your habits: continue using familiar React setState/hooks (and similar patterns elsewhere); Mirror handles the deltas.
 - Scales with change, not size: work is O(km), where k is the number of changed items and m is the average number of child elements per item; avoids full‑state traversals and matches React‑style render complexity.
 
-## What Loro brings
+## How to use
 
-- Collaboration: Multiple people can edit the same state, and changes merge automatically (CRDT).
-- Offline‑first: Keep working without a network; changes sync later.
-- Flexible sync (incl. P2P): Send updates over WebSocket, HTTP, or WebRTC. Works with servers or peer‑to‑peer. See [Sync](https://loro.dev/docs/tutorial/sync).
-- History you can use: Local undo/redo with [Undo](https://loro.dev/docs/advanced/undo) and full time travel with [Time travel](https://loro.dev/docs/tutorial/time_travel).
+1. 声明 schema
+2. 绑定 loro 文档和 Loro Mirror
+3. 通过 setState 更新状态，通过 subscribe 获取状态（或者通过 loro-mirror-react 的 hook 完成）
+4. 实时协作就被支持啦！
 
-## When to use it
+---
 
-- Shared state across tabs or devices.
-- Real‑time or async collaboration in editors, boards, or dashboards.
-- Offline editing with automatic merge later.
+TODO: Example here
 
-## When not to use it
+### Basic Example
 
-- You need strict, single‑winner rules (e.g., bookings, payments).
-- You need strong consistency enforced.
+TODO:
 
-## How it works (in short)
-
-- Mirror maps your state to Loro containers (List, Map, Text, Tree, MovableList).
-- When you change state, Mirror creates minimal CRDT ops (insert, delete, move, text edits).
-- Remote changes import into the doc and Mirror updates your state.
-
-## Quick start (React example)
+### React Example
 
 ```tsx
 import React, { useMemo } from "react";
@@ -145,32 +136,10 @@ What you get
 - [Offline-first sync](https://loro.dev/docs/tutorial/sync) via updates or snapshots with deterministic conflict resolution over any transport (HTTP, WebSocket, P2P)
 - [Collaborative undo/redo](https://loro.dev/docs/advanced/undo) across clients
 
-## Core building blocks
+## Future
 
-- Lists and Movable Lists: Use MovableList when you need reliable moves/replace under concurrency. See [List and MovableList](https://loro.dev/docs/tutorial/list).
-- Tree: Create, move, and delete hierarchical nodes without cycles; order siblings when you need to. See [Tree](https://loro.dev/docs/tutorial/tree).
-- Text: Fast text insert/delete. See [Text](https://loro.dev/docs/tutorial/text).
-
-## Undo and history
-
-- Undo/redo with `UndoManager` (does not undo other people’s edits). See [Undo](https://loro.dev/docs/advanced/undo).
-- Time travel with `doc.checkout(frontiers)` and return with `doc.attach()`. See [Time travel](https://loro.dev/docs/tutorial/time_travel) and [Versioning deep dive](https://loro.dev/docs/advanced/version_deep_dive).
-
-## Save and load
-
-- Updates (diffs): `doc.export({ mode: 'update', from })` for network sync. See [Export modes](https://loro.dev/docs/tutorial/encoding).
-- Full snapshot: `doc.export({ mode: 'snapshot' })` to save everything. See [Export modes](https://loro.dev/docs/tutorial/encoding).
-- Shallow snapshot: keep current state and only recent history to save space. See [Shallow snapshots](https://loro.dev/docs/concepts/shallow_snapshots).
-
-## Cursors and presence
-
-- Stable cursors: store caret/selection that survives edits. See [Cursor](https://loro.dev/docs/tutorial/cursor).
-- Ephemeral Store: send presence (like cursors) as small key/value updates. See [Ephemeral Store](https://loro.dev/docs/tutorial/ephemeral).
-
-## Learn more about Loro
-
-- [Getting started](https://loro.dev/docs/tutorial/get_started)
-- [Sync guide](https://loro.dev/docs/tutorial/sync)
-- [Text](https://loro.dev/docs/tutorial/text), [List & MovableList](https://loro.dev/docs/tutorial/list), [Tree](https://loro.dev/docs/tutorial/tree)
-- [Undo](https://loro.dev/docs/advanced/undo)
-- [Versioning deep dive](https://loro.dev/docs/advanced/version_deep_dive)
+- 因为和 App state 的双向映射也由我们完成，所以我们能够交付更多价值了，用户的使用成本也更低
+    - 例如对 LoroText 的分行格式的支持。在 App State 上常常需要将文本拆分成行来渲染，但是 LoroText 提供的接口是 index-based 的，这需要用户自行进行额外的转换。而我们的数据结构通过简单调整就可以生成基于 line-based 的事件。但这些优化在缺少 loro-mirror 配合时所带来的价值就并不高，因为用户要去学习使用这样的特殊 diff 结构的成本很高。
+    - 例如 LoroTree 会变得好用得多，因为用户不用关心如何转换事件到 app state 上执行 diff
+    - 例如我们也可以在 List 上支持 Slice 的行为来支持 UI 上的虚拟滚动
+- 如果对你的工作有帮助，请考虑 sponsor 我们
