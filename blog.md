@@ -2,16 +2,15 @@
 
 Loro Mirror keeps your UI state and a Loro document in sync. You keep writing normal UI code. Mirror figures out what changed, applies small CRDT updates under the hood. This gives you live collaboration, offline edits, and history you can travel through.
 
-## What it is
+## Why
 
-- Loro is a CRDT engine. CRDTs are data types that merge changes from many places without conflicts.
-- Loro Mirror is a small layer that ties your immutable state to a Loro document.
+Teams building on Loro often end up writing the same glue code: mapping Loro (CRDT) state into app state, diffing app‑state edits back into minimal CRDT updates, and applying Loro events as deltas to update app state. CRDTs guarantee convergence between documents, but they don’t keep your app state in sync with the CRDT document. That consistency boundary is exactly what Loro Mirror addresses.
 
-## Why it matters
-
-- Keep your current React patterns (setState, hooks).
-- Add multiplayer and offline editing support without custom patch logic.
-- Get collaborative undo/redo and time travel based on real edit history.
+- Declarative mapping: define a schema once; Mirror keeps an immutable app‑state view in sync with your Loro document.
+- Event → state: Loro events automatically update the immutable state.
+- State → CRDT: setState diffs are turned into minimal CRDT changesets (insert/delete/move/text edits) — no manual patching.
+- Keep your habits: continue using familiar React setState/hooks (and similar patterns elsewhere); Mirror handles the deltas.
+- Scales with change, not size: work is O(km), where k is the number of changed items and m is the average number of child elements per item; avoids full‑state traversals and matches React‑style render complexity.
 
 ## What Loro brings
 
