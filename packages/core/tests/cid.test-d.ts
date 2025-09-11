@@ -17,7 +17,7 @@ describe("withCid: state injection and write ignoring", () => {
         type WithCid = InferType<typeof withCidMap>;
         type WithoutCid = InferType<typeof withoutCidMap>;
 
-        expectTypeOf<WithCid>().toEqualTypeOf<{ name: string; $cid: string }>();
+        expectTypeOf<WithCid>().toEqualTypeOf<{ name: string } & { $cid: string }>();
         expectTypeOf<WithoutCid>().toEqualTypeOf<{ name: string }>();
     });
 
@@ -30,6 +30,7 @@ describe("withCid: state injection and write ignoring", () => {
 
         expectTypeOf<RootState["a"]>().toEqualTypeOf<{
             title: string;
+        } & {
             $cid: string;
         }>();
         expectTypeOf<RootState["b"]>().toEqualTypeOf<{
@@ -42,7 +43,7 @@ describe("withCid: state injection and write ignoring", () => {
             schema.LoroMap({ value: schema.Number() }, { withCid: true }),
         );
         type WithItem = InferType<typeof withItem>;
-        expectTypeOf<WithItem>().toEqualTypeOf<Array<{ value: number; $cid: string }>>();
+        expectTypeOf<WithItem>().toEqualTypeOf<Array<{ value: number; } & { $cid: string }>>();
 
         const withoutItem = schema.LoroList(
             schema.LoroMap({ value: schema.Number() }),
@@ -58,6 +59,7 @@ describe("withCid: state injection and write ignoring", () => {
         type Nested = InferType<typeof nested>;
         expectTypeOf<Nested["child"]>().toEqualTypeOf<{
             name: string;
+        } & {
             $cid: string;
         }>();
     });
@@ -69,6 +71,7 @@ describe("withCid: state injection and write ignoring", () => {
         // Check element type's data shape to avoid recursive assertion
         expectTypeOf<Tree[number]["data"]>().toEqualTypeOf<{
             label: string;
+        } & {
             $cid: string;
         }>();
 
