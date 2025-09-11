@@ -1,6 +1,10 @@
 # Loro Mirror: Make UI State Collaborative by Mirroring to CRDTs
 
-Loro Mirror keeps your UI state and a Loro document in sync. You keep writing normal UI code. Mirror figures out what changed, applies small CRDT updates under the hood. This gives you live collaboration, offline edits, and history you can travel through.
+Loro is a high‑performance CRDT engine for local‑first apps. It merges concurrent edits without conflicts, works offline with later sync, and provides versioning/time‑travel plus compact updates and snapshots across rich containers (Text, Map, List/MovableList, Tree).
+
+However, wiring Loro to application state typically involves a lot of repetitive boilerplate (mapping state, diffing changes, handling event deltas).
+
+Loro Mirror makes bidirectional sync between your App State and the Loro document effortless. Keep your normal React setState patterns; Mirror computes minimal CRDT deltas for local edits and applies remote event deltas back to state. You get live collaboration, offline edits, and history you can travel through.
 
 ## Why
 
