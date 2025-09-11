@@ -40,6 +40,7 @@ Loro Mirror keeps your UI state and a Loro document in sync. You keep writing no
 ## Quick start (React example)
 
 ```tsx
+import React, { useMemo } from "react";
 import { LoroDoc } from "loro-crdt";
 import { schema } from "loro-mirror";
 import { useLoroStore } from "loro-mirror-react";
@@ -50,15 +51,16 @@ const todoSchema = schema({
     todos: schema.LoroMovableList(
         schema.LoroMap(
             { text: schema.String(), status: schema.String<TodoStatus>() },
-            { withCid: true }, // auto‑assign Loro's container id `$cid` on insert
+            { withCid: true }, // inject stable `$cid` from Loro
         ),
         (t) => t.$cid,
     ),
 });
 
 export function TodoApp() {
+    const doc = useMemo(() => new LoroDoc(), []);
     const { state, setState } = useLoroStore({
-        doc: new LoroDoc(),
+        doc,
         schema: todoSchema,
         initialState: { todos: [] },
     });
@@ -74,14 +76,61 @@ export function TodoApp() {
             <button onClick={() => addTodo("Write blog")}>Add</button>
             <ul>
                 {state.todos.map((t) => (
-                    <li key={(t as any).$cid}>
-                        {t.text} — {t.status}
+                    <li key={t.$cid}>
+                        <input
+                            value={t.text}
+                            onChange={(e) =>
+                                setState((s) => {
+                                    const i = s.todos.findIndex(
+                                        (x) => x.$cid === t.$cid,
+                                    );
+                                    // Text delta will be calculated automatically
+                                    if (i !== -1)
+                                        s.todos[i].text = e.target.value;
+                                })
+                            }
+                        />
+                        <select
+                            value={t.status}
+                            onChange={(e) =>
+                                setState((s) => {
+                                    const i = s.todos.findIndex(
+                                        (x) => x.$cid === t.$cid,
+                                    );
+                                    if (i !== -1)
+                                        s.todos[i].status = e.target
+                                            .value as TodoStatus;
+                                })
+                            }
+                        >
+                            <option value="todo">Todo</option>
+                            <option value="inProgress">In Progress</option>
+                            <option value="done">Done</option>
+                        </select>
                     </li>
                 ))}
             </ul>
         </>
     );
 }
+```
+
+Tiny Undo/Redo (React)
+
+```tsx
+import { UndoManager } from "loro-crdt";
+
+// Inside the same component, after creating `doc`:
+const undo = useMemo(() => new UndoManager(doc), [doc]);
+
+// Add controls anywhere in your UI:
+<div>
+    <button onClick={() => undo.undo()}>Undo</button>
+    <button onClick={() => undo.redo()}>Redo</button>
+    {/* UndoManager only reverts your local edits; remote edits stay. */}
+    {/* See docs: https://loro.dev/docs/advanced/undo */}
+    {/* For full time travel, see: https://loro.dev/docs/tutorial/time_travel */}
+</div>;
 ```
 
 What you get

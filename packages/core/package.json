@@ -1,7 +1,7 @@
 {
     "name": "loro-mirror",
     "version": "0.1.0",
-    "description": "Core functionality for Loro Mirror - a state management library with Loro CRDT synchronization",
+    "description": "Type-safe state management synchronized with Loro CRDT via a declarative schema and bidirectional mirroring.",
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -18,13 +18,13 @@
     },
     "keywords": [
         "loro",
+        "loro-crdt",
         "crdt",
-        "state",
-        "management",
-        "sync",
-        "mirror"
+        "state-management",
+        "synchronization",
+        "sync"
     ],
-    "author": "",
+    "author": "Loro Team",
     "license": "MIT",
     "dependencies": {
         "immer": "^10.0.3"
