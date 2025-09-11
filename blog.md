@@ -18,18 +18,70 @@ Teams building on Loro often end up writing the same glue code: mapping Loro (CR
 
 ## How to use
 
-1. 声明 schema
-2. 绑定 loro 文档和 Loro Mirror
-3. 通过 setState 更新状态，通过 subscribe 获取状态（或者通过 loro-mirror-react 的 hook 完成）
-4. 实时协作就被支持啦！
+1. Define a schema that describes your app state as Loro containers (Map/List/Text/MovableList/Tree).
+2. Create a `LoroDoc` and a Mirror store; provide `schema` and optional `initialState`.
+3. Update via `setState` (immutable return or Immer‑style draft). Subscribe for changes if needed.
+4. Sync across peers using Loro updates; Mirror applies remote changes back to your app state automatically.
 
----
+### Basic Example (TypeScript, no React)
 
-TODO: Example here
+```ts
+import { LoroDoc } from "loro-crdt";
+import { schema, createStore, SyncDirection } from "loro-mirror";
 
-### Basic Example
+// 1) Declare state shape – a MovableList of todos with stable Container ID `$cid`
+type TodoStatus = "todo" | "inProgress" | "done";
+const appSchema = schema({
+    todos: schema.LoroMovableList(
+        schema.LoroMap(
+            { text: schema.String(), status: schema.String<TodoStatus>() },
+            { withCid: true },
+        ),
+        (t) => t.$cid,
+    ),
+});
 
-TODO:
+// 2) Create a Loro document and a Mirror store
+const doc = new LoroDoc();
+const store = createStore({
+    doc,
+    schema: appSchema,
+    initialState: { todos: [] },
+});
+
+// 3) Subscribe (optional) – know whether updates came from local or remote
+const unsubscribe = store.subscribe((state, { direction, tags }) => {
+    if (direction === SyncDirection.FROM_LORO) {
+        console.log("Remote update", { state, tags });
+    } else {
+        console.log("Local update", { state, tags });
+    }
+});
+
+// 4) Either draft‑mutate or return a new state
+// Draft‑style (mutate a draft)
+store.setState((s) => {
+    s.todos.push({ text: "Draft add", status: "todo" });
+});
+
+// Immutable return (construct a new object)
+store.setState((s) => ({
+    ...s,
+    todos: [...s.todos, { text: "Immutable add", status: "todo" }],
+}));
+
+// 5) Sync across peers with Loro updates (transport‑agnostic)
+// Example: two docs in memory – in real apps, send `bytes` over WS/HTTP/WebRTC
+const other = new LoroDoc();
+other.import(doc.export({ mode: "snapshot" }));
+
+// Wire realtime sync (local updates → remote import)
+const stop = doc.subscribeLocalUpdates((bytes) => {
+    other.import(bytes);
+});
+
+// Any `store.setState(...)` on `doc` now appears in `other` as well
+```
 
 ### React Example
 
@@ -136,10 +188,12 @@ What you get
 - [Offline-first sync](https://loro.dev/docs/tutorial/sync) via updates or snapshots with deterministic conflict resolution over any transport (HTTP, WebSocket, P2P)
 - [Collaborative undo/redo](https://loro.dev/docs/advanced/undo) across clients
 
-## Future
+## Where we’re going
 
-- 因为和 App state 的双向映射也由我们完成，所以我们能够交付更多价值了，用户的使用成本也更低
-    - 例如对 LoroText 的分行格式的支持。在 App State 上常常需要将文本拆分成行来渲染，但是 LoroText 提供的接口是 index-based 的，这需要用户自行进行额外的转换。而我们的数据结构通过简单调整就可以生成基于 line-based 的事件。但这些优化在缺少 loro-mirror 配合时所带来的价值就并不高，因为用户要去学习使用这样的特殊 diff 结构的成本很高。
-    - 例如 LoroTree 会变得好用得多，因为用户不用关心如何转换事件到 app state 上执行 diff
-    - 例如我们也可以在 List 上支持 Slice 的行为来支持 UI 上的虚拟滚动
-- 如果对你的工作有帮助，请考虑 sponsor 我们
+Because Mirror owns the bidirectional mapping between application state and the Loro document, we can move value up the stack while lowering integration cost. For example:
+
+- Text. Many interfaces render by lines, yet LoroText’s low‑level API is index‑based. Teams typically re‑implement line segmentation and map edits back to lines by hand. With Mirror in the middle, it becomes feasible to surface optional line‑aware events on top of LoroText so the UI receives stable, line‑based diffs without custom conversion—while retaining the underlying CRDT guarantees.
+- Tree. LoroTree CRDT already ensures correct concurrent moves, but developers still translate tree operations into application‑state patches. Mirror carries first‑class mappings from tree events into your state shape, so consumers can work with natural “insert/move/delete node” updates.
+- Lists at scale. Large collections benefit from virtualization. One possibility unlocked by Mirror is slice/window helpers so subscribers can focus on a moving window of list state without traversing or diffing the entire list—enabling infinite scroll and virtual tables with predictable performance.
+
+These are illustrative possibilities rather than an exhaustive or committed roadmap. If this work helps you build collaborative, local‑first experiences, we’d be grateful for your sponsorship—it lets us keep investing in these higher‑level ergonomics.
