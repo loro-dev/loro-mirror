@@ -27,7 +27,7 @@
    - `options: MirrorOptions<S>`
      - `doc: LoroDoc` — the Loro document to sync with
      - `schema?: S` — root schema (enables validation, typed defaults)
-     - `initialState?: Partial<InferType<S>>` — shallow overlay onto doc snapshot and schema defaults (does not write to Loro)
+    - `initialState?: Partial<InferInputType<S>>` — shallow overlay onto doc snapshot and schema defaults (does not write to Loro)
      - `validateUpdates?: boolean` (default `true`) — validate on `setState`
      - `throwOnValidationError?: boolean` (default `false`) — throw on schema validation errors
      - `debug?: boolean` — verbose logging to console for diagnostics
@@ -36,9 +36,12 @@
  
  - Methods
    - `getState(): InferType<S>` — returns the current mirror state (immutable snapshot)
-   - `setState(updater, options?): void`
-     - `updater: ((draft: InferType<S>) => void | InferType<S>) | Partial<InferType<S>>`
-       - Mutate a draft (Immer-style), or return a new object, or pass a shallow partial
+   - `setState(updater, options?): Promise<void>`
+     - Promise-returning; await in non-React code for ordering/errors.
+     - `updater` supports both styles:
+       - Mutate a draft: `(draft: InferType<S>) => void`
+       - Return a new object: `(prev: Readonly<InferInputType<S>>) => InferInputType<S>`
+       - Shallow partial: `Partial<InferInputType<S>>`
      - `options?: { tags?: string | string[] }` — tags surface in subscriber metadata
    - `subscribe((state, metadata) => void): () => void`
      - `metadata: { direction: SyncDirection; tags?: string[] }`
@@ -53,7 +56,7 @@
    - Mirror ignores events with origin `"to-loro"` to prevent feedback loops.
    - Initial state precedence: defaults (from schema) → `doc` snapshot (normalized) → hinted shapes from `initialState` (no writes to Loro).
    - Trees: mirror state uses `{ id: string; data: object; children: Node[] }`. Loro tree `meta` is normalized to `data`.
-   - `$cid` injection: when a map schema uses `{ withCid: true }`, mirror injects a read‑only `$cid` field in state equals to the Loro container ID. This is not written back to Loro and ignored by diffs.
+   - `$cid` on maps: Mirror injects a read‑only `$cid` field into every LoroMap shape in state. It equals the Loro container ID, is not written back to Loro, and is ignored by diffs.
    - Inference: with no schema, Mirror can infer containers from values; configure via `inferOptions`.
  
  - Example
@@ -72,7 +75,7 @@
  
  const mirror = new Mirror({ doc: new LoroDoc(), schema: appSchema });
  
- mirror.setState((s) => {
+ await mirror.setState((s) => {
      s.settings.title = "Docs";
      s.todos.push({ id: "1", text: "Ship" });
  });
@@ -92,14 +95,14 @@
    - `options: CreateStoreOptions<S>`
      - `doc: LoroDoc`
      - `schema: S`
-     - `initialState?: Partial<InferType<S>>`
+    - `initialState?: Partial<InferInputType<S>>`
      - `validateUpdates?: boolean`
      - `throwOnValidationError?: boolean` (default `true`)
      - `debug?: boolean`
      - `checkStateConsistency?: boolean`
    - Returns `Store<S>` with:
      - `getState(): InferType<S>`
-     - `setState(updater): void` (same shapes as Mirror)
+     - `setState(updater): Promise<void>` — same updater shapes as Mirror; await in non-React code
      - `subscribe(cb): () => void` (same metadata as Mirror)
      - `getMirror(): Mirror<S>`
      - `getLoro(): LoroDoc`
@@ -150,8 +153,7 @@
    - `schema.Ignore<T = unknown>(options?)` — present in state, ignored for Loro diffs/validation
  
  - Containers
-   - `schema.LoroMap(definition, options?)`
-     - Options: e.g. `{ withCid?: boolean }`
+   - `schema.LoroMap(definition)`
      - Returns an object with `.catchall(valueSchema)` to allow mixed fixed keys + dynamic keys
    - `schema.LoroMapRecord(valueSchema, options?)` — dynamic record (all keys share `valueSchema`)
    - `schema.LoroList(itemSchema, idSelector?, options?)`
@@ -168,10 +170,12 @@
    - `validate?: (value) => boolean | string` — custom validator message when not true
  
  - Type inference
-   - `InferType<S>` — turns a schema into a TypeScript type
+   - `InferType<S>` — state type produced by a schema
+   - `InferInputType<S>` — input type accepted by `setState` (map `$cid` optional)
    - `InferSchemaType<T>` — infers the type of a map definition
    - `InferTreeNodeType<M>` / `InferTreeNodeTypeWithCid<M>` — inferred node shapes for trees
-   - `$cid` is present in inferred types when `{ withCid: true }` is used on a map schema (including list items and tree `data` maps)
+   - `InferInputTreeNodeType<M>` — input node shape for trees (node `data.$cid` optional)
+   - `$cid` is present in inferred types for all map schemas (including list items and tree `data` maps)
  
  Examples
  
@@ -233,6 +237,15 @@
    - `isArrayLike(v): v is unknown[]`
    - `isStringLike(v): v is string`
    - `isStateAndSchemaOfType(values, stateGuard, schemaGuard)` — generic narrow helper
+  - Schema guards
+    - `isContainerSchema(schema?): schema is ContainerSchemaType`
+    - `isRootSchemaType(schema): schema is RootSchemaType`
+    - `isLoroMapSchema(schema): schema is LoroMapSchema`
+    - `isLoroListSchema(schema): schema is LoroListSchema`
+    - `isListLikeSchema(schema): schema is LoroListSchema | LoroMovableListSchema`
+    - `isLoroMovableListSchema(schema): schema is LoroMovableListSchema`
+    - `isLoroTextSchema(schema): schema is LoroTextSchemaType`
+    - `isLoroTreeSchema(schema): schema is LoroTreeSchema`
  
  - Change helpers (primarily internal)
    - `insertChildToMap(containerId, key, value): Change` — produce a map change (container‑aware)
@@ -244,15 +257,19 @@
  - `MirrorOptions<S>` — constructor options for `Mirror`
  - `SetStateOptions` — `{ tags?: string | string[] }`
  - `UpdateMetadata` — `{ direction: SyncDirection; tags?: string[] }`
+ - `InferType<S>` — state shape produced by a schema (includes `$cid` on maps)
+ - `InferInputType<S>` — input shape accepted by `setState` (like `InferType` but `$cid` is optional on maps)
+ - `InferContainerOptions` — `{ defaultLoroText?: boolean; defaultMovableList?: boolean }`
+ - `SubscriberCallback<T>` — `(state: T, metadata: UpdateMetadata) => void`
  - Change types (advanced): `ChangeKinds`, `Change`, `MapChangeKinds`, `ListChangeKinds`, `MovableListChangeKinds`, `TreeChangeKinds`, `TextChangeKinds`
  - Schema types: `SchemaType`, `ContainerSchemaType`, `RootSchemaType`, `LoroMapSchema`, `LoroListSchema`, `LoroMovableListSchema`, `LoroTextSchemaType`, `LoroTreeSchema`, `SchemaOptions`, …
- - `CID_KEY` — the literal string `"$cid"` used by `withCid` maps in mirrored state
+- `CID_KEY` — the literal string `"$cid"` used by mirrored maps
  
  ## Tips & Recipes
  
  - Lists: always provide an `idSelector` if items have stable IDs — enables minimal add/update/move/delete instead of positional churn. Prefer `LoroMovableList` when reorder operations are common.
- - `$cid` for IDs: Use `{ withCid: true }` on `schema.LoroMap(...)` to get a stable `$cid` you can use as a React `key` or as a `LoroList` item selector: `(item) => item.$cid`.
- - `setState` styles: choose your favorite — draft mutation or returning a new object. Both are supported.
+- `$cid` for IDs: Every `LoroMap` includes a stable `$cid` you can use as a React `key` or as a `LoroList` item selector: `(item) => item.$cid`.
+ - `setState` styles: choose your favorite — draft mutation or returning a new object. Both are supported and return a Promise. Await in non-React code when you need ordering or to catch validation errors.
  - Tagging updates: pass `{ tags: ["analytics", "user"] }` to `setState` and inspect `metadata.tags` in subscribers.
  - Trees: you can create/move/delete nodes in state (Mirror emits precise `tree-create/move/delete`). Node `data` is a normal Loro map — nested containers (text, list, map) update incrementally.
  - Initial state: providing `initialState` hints shapes and defaults in memory, but does not write into the LoroDoc until a real change occurs.
