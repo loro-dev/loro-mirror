@@ -29,13 +29,14 @@ describe("Jotai README example", () => {
         const { result } = renderHook(() => useAtom(atom));
 
         // push an item
-        act(() => {
+        await act(async () => {
             result.current[1]((prev) => ({
                 todos: [
                     ...prev.todos,
                     { text: "New Todo", status: "todo" as TodoStatus },
                 ],
             }));
+            await Promise.resolve();
         });
 
         const state = result.current[0];
@@ -43,6 +44,6 @@ describe("Jotai README example", () => {
         expect(state.todos[0].text).toBe("New Todo");
         expect(state.todos[0].status).toBe("todo");
         // $cid should be injected
-        expect(typeof (state.todos[0] as any).$cid).toBe("string");
+        expect(typeof state.todos[0].$cid).toBe("string");
     });
 });

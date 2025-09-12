@@ -116,9 +116,11 @@ export function loroMirrorAtom<S extends SchemaType>(
             const currentState = get(stateAtom) as InferType<S>;
             if (typeof update === 'function') {
                 const nextInput = (update as (prev: InferType<S>) => InferInputType<S>)(currentState);
-                store.setState(nextInput as Partial<InferInputType<S>>);
+                // Fire-and-forget: Mirror.setState is async
+                void store.setState(nextInput as Partial<InferInputType<S>>);
             } else {
-                store.setState(update as Partial<InferInputType<S>>);
+                // Fire-and-forget: Mirror.setState is async
+                void store.setState(update as Partial<InferInputType<S>>);
             }
             // Reflect latest state from Mirror after any stamping like $cid
             set(stateAtom, store.getState() as InferType<S>);

@@ -122,8 +122,9 @@ export function useLoroStore<S extends SchemaType>(
         (updater: Partial<InferInputType<S>>): void;
     };
     const setState: SetStateFn = useCallback(
-        (updater: any) => {
-            getStore().setState(updater);
+        (updater: unknown) => {
+            // Fire-and-forget in React usage; Mirror.setState is async
+            void getStore().setState(updater as never);
         },
         [getStore],
     ) as unknown as SetStateFn;
@@ -216,8 +217,10 @@ export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
 ): (...args: Args) => void {
     return useCallback(
         (...args: Args) => {
-            // Satisfy both setState overloads by delegating with a lax typed wrapper
-            store.setState(((s: unknown) => (updater as any)(s, ...args)) as any);
+            // Delegate to store.setState using an unknown-typed adapter to avoid `any`
+            const adapter = (s: unknown) =>
+                (updater as (state: unknown, ...a: Args) => unknown)(s, ...args);
+            void store.setState(adapter as never);
         },
         [store, updater, ...deps],
     );
@@ -321,8 +324,9 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
             (updater: Partial<InferInputType<S>>): void;
         };
         const updateState: UpdateStateFn = useCallback(
-            (updater: any) => {
-                store.setState(updater);
+            (updater: unknown) => {
+                // Fire-and-forget update; consumers may await store.setState if needed
+                void store.setState(updater as never);
             },
             [store],
         ) as unknown as UpdateStateFn;

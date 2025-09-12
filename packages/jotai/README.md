@@ -53,6 +53,7 @@ function TodoApp() {
   const [state, setState] = useAtom(todoAtom);
 
   const addTodo = () => {
+    // Jotai wrapper calls Mirror.setState internally (async). Awaiting is optional in UI.
     setState((prevState) => ({
       todos: [
         ...prevState.todos,

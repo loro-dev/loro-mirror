@@ -180,7 +180,7 @@ describe("Core State Management", () => {
             store.getState() as TestState;
 
             // Update state with proper format handling
-            store.setState((state) => ({
+            await store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "Updated Name", count: 5 },
             }));
@@ -207,7 +207,7 @@ describe("Core State Management", () => {
             store.getState() as TestState;
 
             // Update state with a function, handling both object and primitive formats
-            store.setState((state: TestState) => {
+            await store.setState((state: TestState) => {
                 const newState = { ...state, meta: { ...state.meta } };
 
                 // Handle count increment
@@ -244,7 +244,7 @@ describe("Core State Management", () => {
             // Get the current state to check format
             store.getState() as TestState;
             // Update state using proper format
-            store.setState((state) => ({
+            await store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "New Name" },
             }));
@@ -265,7 +265,7 @@ describe("Core State Management", () => {
             unsubscribe();
 
             // Update after unsubscribe using proper format
-            store.setState((state) => ({
+            await store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "Another Name" },
             }));
@@ -308,7 +308,7 @@ describe("Core State Management", () => {
             expect(updatedState.meta.count).toBe(42);
 
             // Now update the state through the store
-            store.setState((state) => ({
+            await store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "Test Name", count: 42 },
             }));
@@ -446,7 +446,12 @@ describe("Core State Management", () => {
                 },
             };
 
-            const dispatch = createReducer(actions)(store);
+            const dispatch = createReducer(
+                actions as unknown as Record<
+                    string,
+                    (state: unknown, payload: unknown) => void
+                >,
+            )(store);
 
             // Test increment action
             dispatch("increment", 5);
@@ -486,7 +491,12 @@ describe("Core State Management", () => {
                 },
             };
 
-            const dispatch = createReducer(actions)(store);
+            const dispatch = createReducer(
+                actions as unknown as Record<
+                    string,
+                    (state: unknown, payload: unknown) => void
+                >,
+            )(store);
 
             expect(() => {
                 // Use a properly typed unknown action

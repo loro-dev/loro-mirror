@@ -85,8 +85,7 @@ export interface LoroMapSchemaWithCatchall<
 export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
     type: "loro-list";
     itemSchema: T;
-    // oxlint-disable-next-line no-explicit-any
-    idSelector?: (item: any) => string;
+    idSelector?: (item: unknown) => string;
 }
 
 /**
@@ -96,8 +95,7 @@ export interface LoroMovableListSchema<T extends SchemaType>
     extends BaseSchemaType {
     type: "loro-movable-list";
     itemSchema: T;
-    // oxlint-disable-next-line no-explicit-any
-    idSelector?: (item: any) => string;
+    idSelector?: (item: unknown) => string;
 }
 
 /**
@@ -192,7 +190,7 @@ export type InferType<S extends SchemaType> =
                     : S extends BooleanSchemaType
                       ? boolean | undefined
                       : S extends IgnoreSchemaType
-                        ? any
+                        ? unknown
                         : S extends LoroTextSchemaType
                           ? string | undefined
                           : S extends LoroMapSchemaWithCatchall<infer M, infer C>
@@ -219,7 +217,7 @@ export type InferType<S extends SchemaType> =
                     : S extends BooleanSchemaType
                       ? boolean
                       : S extends IgnoreSchemaType
-                        ? any
+                        ? unknown
                         : S extends LoroTextSchemaType
                           ? string
                           : S extends LoroMapSchemaWithCatchall<infer M, infer C>
@@ -260,7 +258,7 @@ export type InferInputType<S extends SchemaType> =
                     : S extends BooleanSchemaType
                       ? boolean | undefined
                       : S extends IgnoreSchemaType
-                        ? any
+                        ? unknown
                         : S extends LoroTextSchemaType
                           ? string | undefined
                           : S extends LoroMapSchemaWithCatchall<infer M, infer C>
@@ -287,7 +285,7 @@ export type InferInputType<S extends SchemaType> =
                     : S extends BooleanSchemaType
                       ? boolean
                       : S extends IgnoreSchemaType
-                        ? any
+                        ? unknown
                         : S extends LoroTextSchemaType
                           ? string
                           : S extends LoroMapSchemaWithCatchall<infer M, infer C>

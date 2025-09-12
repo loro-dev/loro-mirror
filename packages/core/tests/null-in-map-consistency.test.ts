@@ -43,7 +43,7 @@ describe("setState consistency with null fields in LoroMap", () => {
 
         // Update another field (unrelated) to force a diff run
         expect(() => {
-            mirror.setState((s) => {
+            void mirror.setState((s) => {
                 // write a new primitive field alongside nested
                 (s as any).m["other"] = 1;
             });
@@ -81,7 +81,7 @@ describe("setState consistency with null fields in LoroMap", () => {
 
         // No-op update should not throw or change representation
         expect(() => {
-            mirror.setState((s) => s);
+            void mirror.setState((s) => s);
         }).not.toThrow();
         expect(stripCid(mirror.getState())).toEqual(toNormalizedJson(doc));
         expect((mirror.getState() as any).root.list[0].child).toBeNull();

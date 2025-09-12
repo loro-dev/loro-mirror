@@ -34,7 +34,7 @@ it("syncs initial state from LoroDoc correctly", async () => {
         schema: todoSchema,
     });
 
-    expect(mirror.getState().todos).toMatchObject([
+    expect((mirror.getState() as { todos: unknown[] }).todos).toMatchObject([
         { id: "1", text: "Buy milk", completed: false },
         { id: "2", text: "Write tests", completed: true },
     ]);
@@ -44,7 +44,7 @@ it("syncs initial state from LoroDoc correctly", async () => {
     ]);
 
     let f = doc.frontiers();
-    mirror.setState((state) => {
+    await mirror.setState((state) => {
         return {
             todos: state.todos.map((todo) => ({
                 ...todo,
@@ -79,7 +79,7 @@ it("works without schema", async () => {
 
     // Create mirror
     const mirror = new Mirror({ doc });
-    expect(mirror.getState().todos).toMatchObject([
+    expect((mirror.getState() as { todos: unknown[] }).todos).toMatchObject([
         { id: "1", text: "Buy milk", completed: false },
         { id: "2", text: "Write tests", completed: true },
     ]);
@@ -89,12 +89,14 @@ it("works without schema", async () => {
     ]);
 
     let f = doc.frontiers();
-    mirror.setState((state) => {
+    await mirror.setState((state) => {
         return {
-            todos: state.todos.map((todo: any) => ({
-                ...todo,
-                completed: !todo.completed,
-            })),
+            todos: (state as { todos: { id: string; text: string; completed: boolean }[] }).todos.map(
+                (todo) => ({
+                    ...todo,
+                    completed: !todo.completed,
+                }),
+            ),
         };
     });
 
@@ -113,13 +115,13 @@ it("syncing from state => LoroDoc", async () => {
     const doc = new LoroDoc();
     doc.setPeerId(1);
     const mirror = new Mirror({ doc });
-    mirror.setState({
+    await mirror.setState({
         todos: [
             { id: "1", text: "Buy milk", completed: false },
             { id: "2", text: "Write tests", completed: true },
         ],
     });
-    expect(mirror.getState().todos).toMatchObject([
+    expect((mirror.getState() as { todos: unknown[] }).todos).toMatchObject([
         { id: "1", text: "Buy milk", completed: false },
         { id: "2", text: "Write tests", completed: true },
     ]);
@@ -128,12 +130,14 @@ it("syncing from state => LoroDoc", async () => {
         { id: "2", text: "Write tests", completed: true },
     ]);
     const f = doc.frontiers();
-    mirror.setState((state) => {
+    await mirror.setState((state) => {
         return {
-            todos: state.todos.map((todo: any) => ({
-                ...todo,
-                completed: !todo.completed,
-            })),
+            todos: (state as { todos: { id: string; text: string; completed: boolean }[] }).todos.map(
+                (todo) => ({
+                    ...todo,
+                    completed: !todo.completed,
+                }),
+            ),
         };
     });
     await Promise.resolve();

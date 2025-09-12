@@ -435,7 +435,10 @@ export class Mirror<S extends SchemaType> {
         // Build initial state snapshot from the current document
         const currentDocState = this.buildRootStateSnapshot();
         const newState = produce<InferType<S>>((draft) => {
-            Object.assign(draft, currentDocState);
+            Object.assign(
+                draft as unknown as Record<string, unknown>,
+                (currentDocState ?? {}) as Record<string, unknown>,
+            );
         })(this.state);
 
         this.state = newState;
@@ -580,24 +583,28 @@ export class Mirror<S extends SchemaType> {
                 }),
             } as LoroEventBatch;
             // Incrementally update state using event deltas
-            this.state = applyEventBatchToState(this.state, normalized, {
-                getContainerById: (id) => this.doc.getContainerById(id),
-                containerToJson: (c) => this.containerToStateJson(c),
-                nodeDataWithCid: (treeId) => {
-                    const s = this.getContainerSchema(treeId);
-                    return !!(s && isLoroTreeSchema(s));
+            this.state = applyEventBatchToState(
+                this.state as unknown as Record<string, unknown>,
+                normalized,
+                {
+                    getContainerById: (id) => this.doc.getContainerById(id),
+                    containerToJson: (c) => this.containerToStateJson(c),
+                    nodeDataWithCid: (treeId) => {
+                        const s = this.getContainerSchema(treeId);
+                        return !!(s && isLoroTreeSchema(s));
+                    },
+                    getNodeDataCid: (treeId, nodeId) => {
+                        try {
+                            const node = this.doc
+                                .getTree(treeId)
+                                .getNodeByID(nodeId);
+                            return node ? node.data.id : undefined;
+                        } catch {
+                            return undefined;
+                        }
+                    },
                 },
-                getNodeDataCid: (treeId, nodeId) => {
-                    try {
-                        const node = this.doc
-                            .getTree(treeId)
-                            .getNodeByID(nodeId);
-                        return node ? node.data.id : undefined;
-                    } catch {
-                        return undefined;
-                    }
-                },
-            });
+            ) as unknown as InferType<S>;
             // With canonicalized paths, applyEventBatchToState updates roots precisely.
             // No additional root refresh is required here.
             // Notify subscribers of the update
@@ -804,7 +811,7 @@ export class Mirror<S extends SchemaType> {
                 const rootObj = pendingState as Record<string, unknown>;
                 const child = rootObj[keyStr];
                 if (isObject(child)) {
-                    (child as Record<string, unknown>)[CID_KEY] = container.id;
+                    child[CID_KEY] = container.id;
                 }
             }
 
@@ -957,7 +964,11 @@ export class Mirror<S extends SchemaType> {
                         this.registerContainer(newContainer.id, schema);
                         this.initializeContainer(newContainer, schema, value);
                         // Stamp $cid into pending state when replacing with a map container
-                        if (schema && isLoroMapSchema(schema) && isObject(value)) {
+                        if (
+                            schema &&
+                            isLoroMapSchema(schema) &&
+                            isObject(value)
+                        ) {
                             value[CID_KEY] = newContainer.id;
                         }
                     } else {
@@ -1604,7 +1615,7 @@ export class Mirror<S extends SchemaType> {
 
         // Stamp $cid on the pending value
         if (schema && isObject(value)) {
-            (value as Record<string, unknown>)[CID_KEY] = map.id;
+            value[CID_KEY] = map.id;
         }
 
         // Get current keys
@@ -1676,7 +1687,9 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Update state and propagate changes to Loro
+     * Update state and propagate changes to Loro.
+     *
+     * NOTE: You should await this method
      *
      * - If `updater` is an object, it will shallow-merge into the current state.
      * - If `updater` is a function, it may EITHER:
@@ -1685,40 +1698,47 @@ export class Mirror<S extends SchemaType> {
      *
      * This supports both immutable and mutative update styles without surprises.
      */
-    setState(
+    async setState(
         updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
         options?: SetStateOptions,
-    ): void;
-    setState(
+    ): Promise<void>;
+    async setState(
         updater: (state: InferType<S>) => void,
         options?: SetStateOptions,
-    ): void;
-    setState(
+    ): Promise<void>;
+    async setState(
         updater: Partial<InferInputType<S>>,
         options?: SetStateOptions,
-    ): void;
-    setState(
+    ): Promise<void>;
+    async setState(
         updater:
             | ((state: InferType<S>) => InferType<S> | InferInputType<S> | void)
             | ((state: Readonly<InferInputType<S>>) => InferInputType<S>)
             | Partial<InferInputType<S>>,
         options?: SetStateOptions,
-    ) {
+    ): Promise<void> {
         if (this.syncing) return; // Prevent recursive updates
-
+        // Wait for the existing Loro event to be handled
+        await Promise.resolve();
         // Calculate new state; support mutative or return-based updater via Immer
         const newState =
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
-                      // Allow updater to either mutate draft or return a new state
-                      const maybeResult = updater(draft as InferType<S>);
-                      if (maybeResult && maybeResult !== draft) {
-                          // Replace if updater returned a new state object
-                          // Immer interprets a return value as replacement
-                          return maybeResult;
+                      const res = (
+                          updater as (state: InferType<S>) =>
+                              | InferType<S>
+                              | void
+                      )(draft as InferType<S>);
+                      if (res && res !== (draft as unknown)) {
+                          // Return a replacement so Immer finalizes it
+                          return res as unknown as typeof draft;
                       }
                   })
-                : { ...this.state, ...updater };
+                : (Object.assign(
+                      {},
+                      this.state as unknown as Record<string, unknown>,
+                      updater as Record<string, unknown>,
+                  ) as InferType<S>);
 
         // Validate state if needed
         // TODO: REVIEW We don't need to validate the state that are already reviewed
@@ -2053,8 +2073,8 @@ function mergeInitialIntoBaseWithSchema(
             // Ensure object
             if (!(k in base) || !isObject(base[k])) base[k] = {};
             const nestedBase = base[k] as Record<string, unknown>;
-            const nestedInit = isObject(initVal)
-                ? (initVal as Record<string, unknown>)
+            const nestedInit: Record<string, unknown> = isObject(initVal)
+                ? initVal
                 : {};
             const nestedSchema = fieldSchema as unknown as LoroMapSchema<
                 Record<string, SchemaType>

@@ -33,7 +33,8 @@ const store = createStore({ doc, schema: appSchema });
 const state = store.getState();
 
 // Update (return a new state)
-store.setState({
+// setState is async; await it in non-React code
+await store.setState({
     ...state,
     settings: { ...state.settings, darkMode: true },
     todos: [...state.todos, { text: "Add milk" }],
@@ -41,7 +42,7 @@ store.setState({
 });
 
 // Or mutate a draft (Immer-style)
-store.setState((s) => {
+await store.setState((s) => {
     s.todos.push({ text: "Ship" });
     s.settings.title = "Project";
 });
@@ -83,7 +84,7 @@ Trees are advanced usage; see Advanced: Trees at the end.
     - inferOptions: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` for container inference when schema is missing
 - Methods:
     - getState(): Current state
-    - setState(updater | partial, options?): Mutate a draft or return a new object
+    - setState(updater | partial, options?): Mutate a draft or return a new object. Returns a Promise and should be `await`ed in non-React code when you need the update applied before the next line.
         - options: `{ tags?: string | string[] }` (surfaces in subscriber metadata)
     - subscribe((state, metadata) => void): Subscribe; returns unsubscribe
         - metadata: `{ direction: FROM_LORO | TO_LORO; tags?: string[] }`
@@ -144,7 +145,7 @@ const node = schema.LoroMap({ name: schema.String({ required: true }) });
 const s = schema({ tree: schema.LoroTree(node) });
 const store = createStore({ doc: new LoroDoc(), schema: s });
 
-store.setState((st) => {
+await store.setState((st) => {
     st.tree.push({ data: { name: "root" }, children: [] });
 });
 ```
