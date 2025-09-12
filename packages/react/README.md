@@ -46,10 +46,9 @@ function TodoApp() {
     initialState: { todos: [], filter: 'all' },
   });
   
-  // Add a new todo
-  const addTodo = (text: string) => {
-    // React wrapper fires-and-forgets; awaiting is optional
-    setState((s) => ({
+  // Add a new todo (Promise-returning; await when you need ordering/errors)
+  const addTodo = async (text: string) => {
+    await setState((s) => ({
       ...s,
       todos: [
         ...s.todos,
@@ -156,8 +155,8 @@ const { state, setState, store } = useLoroStore({
 
 Notes on async updates:
 
-- The underlying `Mirror.setState` and the store’s `setState` are async and return a Promise. The React helpers intentionally call them in a fire-and-forget manner, which works well for UI event handlers.
-- If you need to wait for the update to be fully processed (for example, before reading from the underlying `LoroDoc`), use `await store.setState(...)` (or `await store.getMirror().setState(...)`).
+- `setState` from `useLoroStore` and the setter from `useLoroState` return a Promise. You can `await` them to ensure deterministic ordering or catch validation errors.
+- `useLoroCallback` and `useLoroAction` return Promise-returning functions. Callers may optionally `await` them. Example: `await addTodo('New')`.
 ```
 
 ### `useLoroValue`
