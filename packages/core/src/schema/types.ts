@@ -195,28 +195,18 @@ export type InferType<S extends SchemaType> =
                         ? any
                         : S extends LoroTextSchemaType
                           ? string | undefined
-                          : S extends (LoroMapSchemaWithCatchall<infer M, infer C> & { options: { withCid: true } })
+                          : S extends LoroMapSchemaWithCatchall<infer M, infer C>
                             ? (keyof M extends never
                                   ? ({ [key: string]: InferType<C> } & { $cid: string }) | undefined
                                   : (({ [K in keyof M]: InferType<M[K]> } & { [K in Exclude<string, keyof M>]: InferType<C> }) & { $cid: string }) | undefined)
-                            : S extends (LoroMapSchema<infer M> & { options: { withCid: true } })
-                              ? ({ [K in keyof M]: InferType<M[K]> } & { $cid: string }) | undefined
-                          : S extends LoroMapSchemaWithCatchall<infer M, infer C>
-                            ? (keyof M extends never
-                                  ? { [key: string]: InferType<C> } | undefined
-                                  : ({ [K in keyof M]: InferType<M[K]> } & {
-                                        [K in Exclude<string, keyof M>]: InferType<C>;
-                                    }) | undefined)
                           : S extends LoroMapSchema<infer M>
-                            ? { [K in keyof M]: InferType<M[K]> } | undefined
+                            ? ({ [K in keyof M]: InferType<M[K]> } & { $cid: string }) | undefined
                           : S extends LoroListSchema<infer I>
                             ? Array<InferType<I>> | undefined
                           : S extends LoroMovableListSchema<infer I>
                             ? Array<InferType<I>> | undefined
-                          : S extends (LoroTreeSchema<infer M> & { nodeSchema: { options: { withCid: true } } })
+                          : S extends LoroTreeSchema<infer M>
                             ? Array<InferTreeNodeTypeWithCid<M>> | undefined
-                            : S extends LoroTreeSchema<infer M>
-                              ? Array<InferTreeNodeType<M>> | undefined
                           : S extends RootSchemaType<infer R>
                             ? { [K in keyof R]: InferType<R[K]> } | undefined
                             : never
@@ -232,28 +222,18 @@ export type InferType<S extends SchemaType> =
                         ? any
                         : S extends LoroTextSchemaType
                           ? string
-                          : S extends (LoroMapSchemaWithCatchall<infer M, infer C> & { options: { withCid: true } })
+                          : S extends LoroMapSchemaWithCatchall<infer M, infer C>
                             ? keyof M extends never
                               ? ({ [key: string]: InferType<C> } & { $cid: string })
                               : (({ [K in keyof M]: InferType<M[K]> } & { [K in Exclude<string, keyof M>]: InferType<C> }) & { $cid: string })
-                            : S extends (LoroMapSchema<infer M> & { options: { withCid: true } })
-                              ? ({ [K in keyof M]: InferType<M[K]> } & { $cid: string })
-                          : S extends LoroMapSchemaWithCatchall<infer M, infer C>
-                            ? keyof M extends never
-                              ? { [key: string]: InferType<C> }
-                              : { [K in keyof M]: InferType<M[K]> } & {
-                                    [K in Exclude<string, keyof M>]: InferType<C>;
-                                }
                           : S extends LoroMapSchema<infer M>
-                            ? { [K in keyof M]: InferType<M[K]> }
+                            ? ({ [K in keyof M]: InferType<M[K]> } & { $cid: string })
                           : S extends LoroListSchema<infer I>
                             ? Array<InferType<I>>
                           : S extends LoroMovableListSchema<infer I>
                             ? Array<InferType<I>>
-                          : S extends (LoroTreeSchema<infer M> & { nodeSchema: { options: { withCid: true } } })
+                          : S extends LoroTreeSchema<infer M>
                             ? Array<InferTreeNodeTypeWithCid<M>>
-                            : S extends LoroTreeSchema<infer M>
-                              ? Array<InferTreeNodeType<M>>
                           : S extends RootSchemaType<infer R>
                             ? { [K in keyof R]: InferType<R[K]> }
                             : never
@@ -267,6 +247,67 @@ export type InferSchemaType<T extends Record<string, SchemaType>> = {
 };
 
 /**
+ * Infer the input (write) type for setState updates.
+ * Identical to InferType<S> except that for any LoroMap shape, the `$cid` field is optional.
+ */
+export type InferInputType<S extends SchemaType> =
+    IsSchemaRequired<S> extends false
+        ? (
+              S extends StringSchemaType<infer T>
+                  ? T | undefined
+                  : S extends NumberSchemaType
+                    ? number | undefined
+                    : S extends BooleanSchemaType
+                      ? boolean | undefined
+                      : S extends IgnoreSchemaType
+                        ? any
+                        : S extends LoroTextSchemaType
+                          ? string | undefined
+                          : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+                            ? (keyof M extends never
+                                  ? ({ [key: string]: InferInputType<C> } & { $cid?: string }) | undefined
+                                  : (({ [K in keyof M]: InferInputType<M[K]> } & { [K in Exclude<string, keyof M>]: InferInputType<C> }) & { $cid?: string }) | undefined)
+                          : S extends LoroMapSchema<infer M>
+                            ? ({ [K in keyof M]: InferInputType<M[K]> } & { $cid?: string }) | undefined
+                          : S extends LoroListSchema<infer I>
+                            ? Array<InferInputType<I>> | undefined
+                          : S extends LoroMovableListSchema<infer I>
+                            ? Array<InferInputType<I>> | undefined
+                          : S extends LoroTreeSchema<infer M>
+                            ? Array<InferInputTreeNodeType<M>> | undefined
+                          : S extends RootSchemaType<infer R>
+                            ? { [K in keyof R]: InferInputType<R[K]> } | undefined
+                            : never
+          )
+        : (
+              S extends StringSchemaType<infer T>
+                  ? T
+                  : S extends NumberSchemaType
+                    ? number
+                    : S extends BooleanSchemaType
+                      ? boolean
+                      : S extends IgnoreSchemaType
+                        ? any
+                        : S extends LoroTextSchemaType
+                          ? string
+                          : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+                            ? keyof M extends never
+                              ? ({ [key: string]: InferInputType<C> } & { $cid?: string })
+                              : (({ [K in keyof M]: InferInputType<M[K]> } & { [K in Exclude<string, keyof M>]: InferInputType<C> }) & { $cid?: string })
+                          : S extends LoroMapSchema<infer M>
+                            ? ({ [K in keyof M]: InferInputType<M[K]> } & { $cid?: string })
+                          : S extends LoroListSchema<infer I>
+                            ? Array<InferInputType<I>>
+                          : S extends LoroMovableListSchema<infer I>
+                            ? Array<InferInputType<I>>
+                          : S extends LoroTreeSchema<infer M>
+                            ? Array<InferInputTreeNodeType<M>>
+                          : S extends RootSchemaType<infer R>
+                            ? { [K in keyof R]: InferInputType<R[K]> }
+                            : never
+          );
+
+/**
  * Helper: Infer the node type for a tree schema
  */
 export type InferTreeNodeType<M extends Record<string, SchemaType>> = {
@@ -276,10 +317,19 @@ export type InferTreeNodeType<M extends Record<string, SchemaType>> = {
 };
 
 /**
- * Helper: Infer the node type for a tree schema whose node.data map has withCid enabled
+ * Helper: Infer the node type for a tree schema whose node.data map includes $cid
  */
 export type InferTreeNodeTypeWithCid<M extends Record<string, SchemaType>> = {
     id: string;
     data: ({ [K in keyof M]: InferType<M[K]> } & { $cid: string });
     children: Array<InferTreeNodeTypeWithCid<M>>;
+};
+
+/**
+ * Helper: Input node type for a tree schema (node.data has optional $cid)
+ */
+export type InferInputTreeNodeType<M extends Record<string, SchemaType>> = {
+    id: string;
+    data: ({ [K in keyof M]: InferInputType<M[K]> } & { $cid?: string });
+    children: Array<InferInputTreeNodeType<M>>;
 };

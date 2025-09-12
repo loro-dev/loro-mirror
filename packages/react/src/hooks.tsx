@@ -10,7 +10,7 @@ import React, {
     useRef,
     useState,
 } from "react";
-import type { InferType, SchemaType, Store } from "loro-mirror";
+import type { InferType, InferInputType, SchemaType, Store } from "loro-mirror";
 import { createStore } from "loro-mirror";
 import type { LoroDoc } from "loro-crdt";
 // (No external state helper needed; Mirror handles Immer internally)
@@ -32,7 +32,7 @@ export interface UseLoroStoreOptions<S extends SchemaType> {
     /**
      * Initial state (optional)
      */
-    initialState?: Partial<InferType<S>>;
+    initialState?: Partial<InferInputType<S>>;
 
     /**
      * Whether to validate state updates against the schema
@@ -112,16 +112,21 @@ export function useLoroStore<S extends SchemaType>(
     }, [getStore]);
 
     // Create a stable setState function
-    const setState = useCallback(
+    type SetStateFn = {
         (
-            updater:
-                | ((state: InferType<S>) => InferType<S> | void)
-                | Partial<InferType<S>>,
-        ) => {
+            updater: (
+                state: Readonly<InferInputType<S>>,
+            ) => InferInputType<S>,
+        ): void;
+        (updater: (state: InferType<S>) => void): void;
+        (updater: Partial<InferInputType<S>>): void;
+    };
+    const setState: SetStateFn = useCallback(
+        (updater: any) => {
             getStore().setState(updater);
         },
         [getStore],
-    );
+    ) as unknown as SetStateFn;
 
     return {
         state,
@@ -204,12 +209,15 @@ export function useLoroValue<S extends SchemaType, R>(
  */
 export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
     store: Store<S>,
-    updater: (state: InferType<S>, ...args: Args) => void | InferType<S>,
+    updater:
+        | ((state: InferType<S>, ...args: Args) => void | InferType<S> | InferInputType<S>)
+        | ((state: Readonly<InferInputType<S>>, ...args: Args) => InferInputType<S>),
     deps: React.DependencyList = [],
 ): (...args: Args) => void {
     return useCallback(
         (...args: Args) => {
-            store.setState((s) => updater(s, ...args));
+            // Satisfy both setState overloads by delegating with a lax typed wrapper
+            store.setState(((s: unknown) => (updater as any)(s, ...args)) as any);
         },
         [store, updater, ...deps],
     );
@@ -303,16 +311,21 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
             return unsubscribe;
         }, [store]);
 
-        const updateState = useCallback(
+        type UpdateStateFn = {
             (
-                updater:
-                    | ((state: InferType<S>) => InferType<S> | void)
-                    | Partial<InferType<S>>,
-            ) => {
+                updater: (
+                    state: Readonly<InferInputType<S>>,
+                ) => InferInputType<S>,
+            ): void;
+            (updater: (state: InferType<S>) => void): void;
+            (updater: Partial<InferInputType<S>>): void;
+        };
+        const updateState: UpdateStateFn = useCallback(
+            (updater: any) => {
                 store.setState(updater);
             },
             [store],
-        );
+        ) as unknown as UpdateStateFn;
 
         return [state, updateState] as const;
     }

@@ -337,7 +337,7 @@ export function diffTree(
             }
             if (n && Array.isArray(n.children)) {
                 walk(
-                    n.children,
+                    n.children as Node[],
                     map,
                     typeof n.id === "string" ? n.id : undefined,
                 );
@@ -431,9 +431,9 @@ export function diffTree(
                 if (needCreate) {
                     // We don't yet know the parent's ID; collect children's create ops so
                     // we can patch their `parent` after the parent is created.
-                    pushCreates(n.children, pid, notifySet);
+                    pushCreates(n.children as Node[], pid, notifySet);
                 } else {
-                    pushCreates(n.children, pid);
+                    pushCreates(n.children as Node[], pid);
                 }
             }
         }
@@ -684,7 +684,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     }
 
     // Note: Items in the NEW state may legitimately be missing an ID when
-    // using withCid; IDs are stamped during apply. Treat them as new inserts
+    // using $cid injection; IDs are stamped during apply. Treat them as new inserts
     // later instead of throwing here.
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
@@ -963,12 +963,8 @@ export function diffMap<S extends ObjectLike>(
 
     // Check for removed keys
     for (const key in oldStateObj) {
-        // Skip synthetic CID field for maps with withCid option
-        if (
-            key === CID_KEY &&
-            (schema as LoroMapSchema<Record<string, SchemaType>> | undefined)
-                ?.options?.withCid
-        ) {
+        // Skip synthetic CID field for maps
+        if (key === CID_KEY) {
             continue;
         }
         // Skip ignored fields defined in schema
@@ -990,12 +986,8 @@ export function diffMap<S extends ObjectLike>(
 
     // Check for added or modified keys
     for (const key in newStateObj) {
-        // Skip synthetic CID field for maps with withCid option
-        if (
-            key === CID_KEY &&
-            (schema as LoroMapSchema<Record<string, SchemaType>> | undefined)
-                ?.options?.withCid
-        ) {
+        // Skip synthetic CID field for maps
+        if (key === CID_KEY) {
             continue;
         }
         const oldItem = oldStateObj[key];

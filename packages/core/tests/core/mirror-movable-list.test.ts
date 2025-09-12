@@ -531,10 +531,9 @@ describe("MovableList", () => {
                 mirror.setState({
                     list: [
                         // missing id
-                        // @ts-expect-error testing runtime validation
-                        { text: "no id" },
+                        { text: "no id" } as any,
                     ],
-                });
+                } as any);
             }).toThrow();
     });
 

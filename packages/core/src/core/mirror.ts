@@ -22,6 +22,7 @@ import { applyEventBatchToState } from "./loroEventApply";
 import {
     ContainerSchemaType,
     getDefaultValue,
+    InferInputType,
     InferType,
     isContainerSchema,
     isListLikeSchema,
@@ -95,7 +96,7 @@ export interface MirrorOptions<S extends SchemaType> {
     /**
      * Initial state (optional)
      */
-    initialState?: Partial<InferType<S>>;
+    initialState?: Partial<import("../schema").InferInputType<S>>;
 
     /**
      * Whether to validate state updates against the schema
@@ -314,9 +315,9 @@ export class Mirror<S extends SchemaType> {
         //    (arrays -> [], strings -> '', objects -> {}), but do NOT override existing values
         //    from the doc/defaults. This keeps doc pristine while providing a predictable state shape.
         const baseState: Record<string, unknown> = {};
-        const defaults = (this.schema ? getDefaultValue(this.schema) : undefined) as
-            | Record<string, unknown>
-            | undefined;
+        const defaults = (
+            this.schema ? getDefaultValue(this.schema) : undefined
+        ) as Record<string, unknown> | undefined;
         if (defaults && typeof defaults === "object") {
             Object.assign(baseState, defaults);
         }
@@ -331,12 +332,17 @@ export class Mirror<S extends SchemaType> {
         // - Respect Ignore fields by keeping their values in memory only
         // - For container fields, fill missing base keys with normalized empties ([], "", {})
         // - For primitives, use provided initial values if doc/defaults do not provide them
-        const initForMerge = (this.options.initialState || {}) as Record<string, unknown>;
+        const initForMerge = (this.options.initialState || {}) as Record<
+            string,
+            unknown
+        >;
         if (this.schema && this.schema.type === "schema") {
             mergeInitialIntoBaseWithSchema(
                 baseState,
                 initForMerge,
-                this.schema as RootSchemaType<Record<string, ContainerSchemaType>>,
+                this.schema as RootSchemaType<
+                    Record<string, ContainerSchemaType>
+                >,
             );
         } else {
             const hinted = normalizeInitialShapeShallow(initForMerge);
@@ -360,7 +366,10 @@ export class Mirror<S extends SchemaType> {
      * but it makes them visible in doc JSON, staying consistent with Mirror state.
      */
     private ensureRootContainersFromInitialState() {
-        const init = (this.options?.initialState || {}) as Record<string, unknown>;
+        const init = (this.options?.initialState || {}) as Record<
+            string,
+            unknown
+        >;
         for (const [key, value] of Object.entries(init)) {
             let container: Container | null = null;
             if (Array.isArray(value)) {
@@ -576,7 +585,7 @@ export class Mirror<S extends SchemaType> {
                 containerToJson: (c) => this.containerToStateJson(c),
                 nodeDataWithCid: (treeId) => {
                     const s = this.getContainerSchema(treeId);
-                    return !!(s && isLoroTreeSchema(s) && s.nodeSchema.options?.withCid === true);
+                    return !!(s && isLoroTreeSchema(s));
                 },
                 getNodeDataCid: (treeId, nodeId) => {
                     try {
@@ -790,13 +799,8 @@ export class Mirror<S extends SchemaType> {
 
             this.registerContainerWithRegistry(container.id, fieldSchema);
 
-            // Inject $cid for root maps with withCid into pending state immediately
-            if (
-                fieldSchema &&
-                isLoroMapSchema(fieldSchema) &&
-                fieldSchema.options?.withCid === true &&
-                pendingState
-            ) {
+            // Inject $cid for root maps into pending state immediately
+            if (fieldSchema && isLoroMapSchema(fieldSchema) && pendingState) {
                 const rootObj = pendingState as Record<string, unknown>;
                 const child = rootObj[keyStr];
                 if (isObject(child)) {
@@ -828,7 +832,10 @@ export class Mirror<S extends SchemaType> {
                         continue; // Skip empty key
                     }
                     // If schema marks this key as Ignore, skip writing to Loro
-                    const fieldSchema = this.getSchemaForChild(container.id, key);
+                    const fieldSchema = this.getSchemaForChild(
+                        container.id,
+                        key,
+                    );
                     if (fieldSchema && fieldSchema.type === "ignore") {
                         continue;
                     }
@@ -845,11 +852,10 @@ export class Mirror<S extends SchemaType> {
                             key as string,
                             value,
                         );
-                        // Stamp $cid into the pendingState value for withCid child maps
+                        // Stamp $cid into the pendingState value for child maps
                         if (
                             schema &&
                             isLoroMapSchema(schema) &&
-                            schema.options?.withCid === true &&
                             isObject(value)
                         ) {
                             value[CID_KEY] = inserted.id;
@@ -996,10 +1002,9 @@ export class Mirror<S extends SchemaType> {
                                 nodeSchema,
                                 change.value,
                             );
-                            // Stamp $cid into node.data in pending state if withCid enabled
+                            // Stamp $cid into node.data in pending state
                             if (
                                 isLoroMapSchema(nodeSchema) &&
-                                nodeSchema.options?.withCid === true &&
                                 isObject(change.value)
                             ) {
                                 change.value[CID_KEY] = newNode.data.id;
@@ -1376,13 +1381,8 @@ export class Mirror<S extends SchemaType> {
         this.registerContainer(insertedContainer.id, schema);
 
         this.initializeContainer(insertedContainer, schema, value);
-        // Stamp $cid for withCid child maps directly on the provided value (pending state)
-        if (
-            schema &&
-            isLoroMapSchema(schema) &&
-            schema.options?.withCid === true &&
-            isObject(value)
-        ) {
+        // Stamp $cid for child maps directly on the provided value (pending state)
+        if (schema && isLoroMapSchema(schema) && isObject(value)) {
             value[CID_KEY] = insertedContainer.id;
         }
         return insertedContainer;
@@ -1520,13 +1520,8 @@ export class Mirror<S extends SchemaType> {
         this.registerContainer(insertedContainer.id, schema);
 
         this.initializeContainer(insertedContainer, schema, value);
-        // Stamp $cid for withCid list item maps directly on the provided value (pending state)
-        if (
-            schema &&
-            isLoroMapSchema(schema) &&
-            schema.options?.withCid === true &&
-            isObject(value)
-        ) {
+        // Stamp $cid for list item maps directly on the provided value (pending state)
+        if (schema && isLoroMapSchema(schema) && isObject(value)) {
             value[CID_KEY] = insertedContainer.id;
         }
         return insertedContainer;
@@ -1603,8 +1598,8 @@ export class Mirror<S extends SchemaType> {
         // Schema for this container (optional)
         const schema = this.getContainerSchema(map.id);
 
-        // If this map has withCid enabled, stamp $cid on the pending value
-        if (schema && schema.options?.withCid === true && isObject(value)) {
+        // Stamp $cid on the pending value
+        if (schema && isObject(value)) {
             (value as Record<string, unknown>)[CID_KEY] = map.id;
         }
 
@@ -1687,9 +1682,22 @@ export class Mirror<S extends SchemaType> {
      * This supports both immutable and mutative update styles without surprises.
      */
     setState(
+        updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
+        options?: SetStateOptions,
+    ): void;
+    setState(
+        updater: (state: InferType<S>) => void,
+        options?: SetStateOptions,
+    ): void;
+    setState(
+        updater: Partial<InferInputType<S>>,
+        options?: SetStateOptions,
+    ): void;
+    setState(
         updater:
-            | ((state: InferType<S>) => InferType<S> | void)
-            | Partial<InferType<S>>,
+            | ((state: InferType<S>) => InferType<S> | InferInputType<S> | void)
+            | ((state: Readonly<InferInputType<S>>) => InferInputType<S>)
+            | Partial<InferInputType<S>>,
         options?: SetStateOptions,
     ) {
         if (this.syncing) return; // Prevent recursive updates
@@ -1767,11 +1775,7 @@ export class Mirror<S extends SchemaType> {
                     : (v as JSONValue);
             }
             const schema = this.getContainerSchema(c.id);
-            if (
-                schema &&
-                isLoroMapSchema(schema) &&
-                schema.options?.withCid === true
-            ) {
+            if (schema && isLoroMapSchema(schema)) {
                 obj[CID_KEY] = c.id;
             }
             return obj;
@@ -1797,8 +1801,7 @@ export class Mirror<S extends SchemaType> {
             const normalized = normalizeTreeNodes(t.toJSON());
             // Optionally inject $cid per node.data using an id->cid map from live nodes
             const schema = this.getContainerSchema(t.id);
-            const withCid =
-                schema && isLoroTreeSchema(schema) && schema.nodeSchema.options?.withCid === true;
+            const withCid = schema && isLoroTreeSchema(schema);
             if (withCid) {
                 const idToCid = new Map<string, string>();
                 // Best-effort: collect from runtime nodes if API available
@@ -1846,7 +1849,7 @@ export class Mirror<S extends SchemaType> {
             return normalized as unknown as JSONValue;
         }
         // Fallback
-        return (c as unknown as { toJSON: () => unknown }).toJSON() as JSONValue;
+        return c.toJSON();
     }
 
     private buildRootStateSnapshot(): Record<string, unknown> {
@@ -1868,11 +1871,8 @@ export class Mirror<S extends SchemaType> {
                 key,
                 containerType,
             );
-            // Emulate doc.toJSON root omission for empty containers unless we must inject $cid
+            // Always include maps to expose $cid for stable identity
             if (containerType === "Map") {
-                const m = container as LoroMap;
-                const withCid = fieldSchema.options?.withCid === true;
-                if (m.keys().length === 0 && !withCid) continue;
                 root[key] = this.containerToStateJson(container);
             } else if (
                 containerType === "List" ||
@@ -1960,7 +1960,7 @@ export class Mirror<S extends SchemaType> {
 export function toNormalizedJson(doc: LoroDoc) {
     return doc.toJsonWithReplacer((_k, v) => {
         if (isContainer(v) && v.kind() === "Tree") {
-            return normalizeTreeNodes((v as LoroTree).toJSON()) as unknown as typeof v;
+            return normalizeTreeNodes(v.toJSON()) as unknown as typeof v;
         }
 
         return v;
@@ -1992,12 +1992,18 @@ function normalizeInitialShapeShallow(
 }
 
 // Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
-function normalizeTreeNodes(input: unknown[]): Array<{ id: string; data: Record<string, unknown>; children: unknown[] }> {
+function normalizeTreeNodes(
+    input: unknown[],
+): Array<{ id: string; data: Record<string, unknown>; children: unknown[] }> {
     if (!Array.isArray(input)) return [];
     return input.map(mapRawTreeNodeToMirror);
 }
 
-function mapRawTreeNodeToMirror(n: unknown): { id: string; data: Record<string, unknown>; children: unknown[] } {
+function mapRawTreeNodeToMirror(n: unknown): {
+    id: string;
+    data: Record<string, unknown>;
+    children: unknown[];
+} {
     const rawId = (n as { id?: unknown })?.id;
     const id = typeof rawId === "string" ? rawId : "";
     const meta = (n as { meta?: unknown })?.meta;
@@ -2050,23 +2056,19 @@ function mergeInitialIntoBaseWithSchema(
                 Record<string, SchemaType>
             >; // actual types are not used at runtime
             // Recurse
-            mergeInitialIntoBaseWithSchema(
-                nestedBase,
-                nestedInit,
-                ({
-                    type: "schema",
-                    definition: nestedSchema.definition as Record<
-                        string,
-                        ContainerSchemaType
-                    >,
-                    options: {},
-                    getContainerType() {
-                        return "Map";
-                    },
-                } as unknown) as RootSchemaType<
-                    Record<string, ContainerSchemaType>
+            mergeInitialIntoBaseWithSchema(nestedBase, nestedInit, {
+                type: "schema",
+                definition: nestedSchema.definition as Record<
+                    string,
+                    ContainerSchemaType
                 >,
-            );
+                options: {},
+                getContainerType() {
+                    return "Map";
+                },
+            } as unknown as RootSchemaType<
+                Record<string, ContainerSchemaType>
+            >);
             continue;
         }
         if (t === "loro-list" || t === "loro-movable-list") {

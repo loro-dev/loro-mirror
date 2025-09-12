@@ -16,14 +16,11 @@ const appSchema = schema({
         title: schema.String({ defaultValue: "Docs" }),
         darkMode: schema.Boolean({ defaultValue: false }),
     }),
-    // LoroList: array of items (use `$cid` from withCid maps)
+    // LoroList: array of items (use `$cid` from maps)
     todos: schema.LoroList(
-        schema.LoroMap(
-            {
-                text: schema.String(),
-            },
-            { withCid: true },
-        ),
+        schema.LoroMap({
+            text: schema.String(),
+        }),
         (t) => t.$cid, // `$cid` reuses Loro container id (explained later)
     ),
     // LoroText: collaborative text (string in state)
@@ -120,7 +117,7 @@ Types: `SyncDirection`, `UpdateMetadata`, `SetStateOptions`.
 
 Signatures:
 
-- `schema.LoroMap(definition, options?)` — supports `{ withCid: true }` to inject a read-only `$cid` field in mirrored state equal to the underlying Loro container id (applies to root/nested maps, list items, and tree node `data` maps).
+- `schema.LoroMap(definition, options?)` — mirrored state always includes a read-only `$cid` field equal to the underlying Loro container id (applies to root/nested maps, list items, and tree node `data` maps).
 - `schema.LoroList(itemSchema, idSelector?: (item) => string, options?)`
 - `schema.LoroMovableList(itemSchema, idSelector: (item) => string, options?)`
 - `schema.LoroText(options?)`
@@ -128,9 +125,9 @@ Signatures:
 
 SchemaOptions for any field: `{ required?: boolean; defaultValue?: unknown; description?: string; validate?: (value) => boolean | string }`.
 
-Reserved key `$cid` (when `withCid: true`):
+Reserved key `$cid`:
 
-- `$cid` is injected into mirrored state only; it is never written back to Loro and is ignored by diffs/updates. It’s useful as a stable identifier (e.g., `schema.LoroList(map, x => x.$cid)`).
+- `$cid` is injected into mirrored state for all `LoroMap` schemas; it is never written back to Loro and is ignored by diffs/updates. It’s useful as a stable identifier (e.g., `schema.LoroList(map, x => x.$cid)`).
 
 ### Validators & Helpers
 
@@ -165,7 +162,7 @@ import { LoroDoc } from "loro-crdt";
 
 const todosSchema = schema({
     todos: schema.LoroList(
-        schema.LoroMap({ text: schema.String() }, { withCid: true }),
+        schema.LoroMap({ text: schema.String() }),
         (t) => t.$cid, // list selector uses `$cid` (Loro container id)
     ),
 });

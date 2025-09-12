@@ -264,7 +264,10 @@ describe("LoroTree integration", () => {
         const titles = nodes
             .filter((n) => n.parent() === undefined)
             .map((n) => n.data.get("title"));
-        expect(titles.sort((a, b) => a.localeCompare(b))).toEqual(["A", "B"]);
+        expect(titles.sort((a, b) => String(a).localeCompare(String(b)))).toEqual([
+            "A",
+            "B",
+        ]);
     });
 
     // FROM_LORO edge cases

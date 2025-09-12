@@ -30,13 +30,10 @@ type TodoStatus = "todo" | "inProgress" | "done";
 // 1. Define your schema
 const todoSchema = schema({
   todos: schema.LoroList(
-    schema.LoroMap(
-      {
-        text: schema.String(),
-        status: schema.String<TodoStatus>()
-      },
-      { withCid: true },
-    ),
+    schema.LoroMap({
+      text: schema.String(),
+      status: schema.String<TodoStatus>()
+    }),
     (t) => t.$cid, // stable id from Loro container id
   ),
 });
@@ -84,7 +81,7 @@ function TodoApp() {
 
 ### About `$cid`
 
-- Enabling `withCid: true` on `schema.LoroMap(...)` injects a read-only `$cid` in the mirrored state, equal to the underlying Loro container id.
+- `$cid` is always present on `LoroMap` state and equals the underlying Loro container id.
 - Use `$cid` as a stable list selector and React key: `schema.LoroList(item, x => x.$cid)` and `<li key={todo.$cid}>`.
 
 ## License
