@@ -18,10 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Release Please
-        uses: google-github-actions/release-please-action@v4
+        uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          command: manifest
 
   publish:
     if: github.event_name == 'release'
