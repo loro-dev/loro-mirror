@@ -30,13 +30,12 @@ describe("Jotai README example", () => {
 
         // push an item
         await act(async () => {
-            result.current[1]((prev) => ({
+            await result.current[1]((prev) => ({
                 todos: [
                     ...prev.todos,
                     { text: "New Todo", status: "todo" as TodoStatus },
                 ],
             }));
-            await Promise.resolve();
         });
 
         const state = result.current[0];

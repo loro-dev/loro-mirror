@@ -49,6 +49,11 @@ export interface LoroMirrorAtomConfig<S extends SchemaType> {
      * @default false
      */
     debug?: boolean;
+
+    /**
+     * Optional async error handler for setState rejections
+     */
+    onError?: (error: unknown) => void;
 }
 
 
@@ -86,7 +91,7 @@ export function loroMirrorAtom<S extends SchemaType>(
 ): WritableAtom<
     InferType<S>,
     [InferInputType<S> | ((prev: InferType<S>) => InferInputType<S>)],
-    void
+    Promise<void>
 > {
     const store = createStore(config);
     const stateAtom = atom<InferType<S>>(store.getState() as InferType<S>);
@@ -106,24 +111,28 @@ export function loroMirrorAtom<S extends SchemaType>(
     const base = atom<
         InferType<S>,
         [InferInputType<S> | ((prev: InferType<S>) => InferInputType<S>)],
-        void
+        Promise<void>
     >(
         (get) => {
             get(subAtom);
             return get(stateAtom);
         },
-        (get, set, update) => {
+        async (get, set, update) => {
             const currentState = get(stateAtom) as InferType<S>;
-            if (typeof update === 'function') {
-                const nextInput = (update as (prev: InferType<S>) => InferInputType<S>)(currentState);
-                // Fire-and-forget: Mirror.setState is async
-                void store.setState(nextInput as Partial<InferInputType<S>>);
-            } else {
-                // Fire-and-forget: Mirror.setState is async
-                void store.setState(update as Partial<InferInputType<S>>);
+            try {
+                if (typeof update === 'function') {
+                    const nextInput = (update as (prev: InferType<S>) => InferInputType<S>)(currentState);
+                    await store.setState(nextInput as Partial<InferInputType<S>>);
+                } else {
+                    await store.setState(update as Partial<InferInputType<S>>);
+                }
+                // Reflect latest state from Mirror after any stamping like $cid
+                set(stateAtom, store.getState() as InferType<S>);
+            } catch (err) {
+                // Surface error to consumer, then rethrow to allow awaiting callers to handle it
+                config.onError?.(err);
+                throw err;
             }
-            // Reflect latest state from Mirror after any stamping like $cid
-            set(stateAtom, store.getState() as InferType<S>);
         }
     );
     return base;
