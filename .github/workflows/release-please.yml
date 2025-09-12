@@ -1,79 +1,84 @@
-name: Release & Publish
+name: release-please
 
 on:
   push:
     branches:
       - main
-      - master
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  release-please:
-    if: github.event_name == 'push'
+  release:
     runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
     steps:
       - name: Release Please
+        id: release
         uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use manifest mode with workspace-aware config
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          include-component-in-tag: true
 
   publish:
-    if: github.event_name == 'release'
+    needs: release
+    if: ${{ needs.release.outputs.releases_created == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
+      - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: 'pnpm'
+          node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
+      - name: Build all packages
         run: pnpm -r build
 
-      - name: Determine package from tag
-        id: which
-        shell: bash
-        run: |
-          TAG="${{ github.event.release.tag_name }}"
-          echo "Release tag: $TAG"
-          if [[ "$TAG" =~ ^loro-mirror-v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-            echo "name=loro-mirror" >> "$GITHUB_OUTPUT"
-            echo "dir=packages/core" >> "$GITHUB_OUTPUT"
-            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          elif [[ "$TAG" =~ ^loro-mirror-react-v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-            echo "name=loro-mirror-react" >> "$GITHUB_OUTPUT"
-            echo "dir=packages/react" >> "$GITHUB_OUTPUT"
-            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          elif [[ "$TAG" =~ ^loro-mirror-jotai-v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-            echo "name=loro-mirror-jotai" >> "$GITHUB_OUTPUT"
-            echo "dir=packages/jotai" >> "$GITHUB_OUTPUT"
-            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          else
-            echo "Tag $TAG does not match known packages; skipping publish."
-            echo "name=" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish to npm
-        if: steps.which.outputs.name != ''
+      - name: Publish changed packages to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "Publishing ${{ steps.which.outputs.name }} at version ${{ steps.which.outputs.version }}"
-          pnpm --filter "${{ steps.which.outputs.name }}" publish --no-git-checks
+          set -euo pipefail
+          echo "Finding unpublished workspace packages..."
+          filters=""
+          for pkgjson in packages/*/package.json; do
+            name=$(jq -r '.name' "$pkgjson")
+            version=$(jq -r '.version' "$pkgjson")
+            private=$(jq -r '(.private // false)' "$pkgjson")
+            if [ "$private" = "true" ]; then
+              echo "Skipping private package $name"
+              continue
+            fi
+            if npm view "$name@$version" version > /dev/null 2>&1; then
+              echo "Already published: $name@$version"
+            else
+              echo "Will publish: $name@$version"
+              filters+=" --filter $name"
+            fi
+          done
+
+          if [ -z "$filters" ]; then
+            echo "No unpublished packages detected. Skipping publish."
+            exit 0
+          fi
+
+          # Publish only the unpublished ones in topo order
+          echo "Publishing: $filters"
+          pnpm -r $filters publish --access public --no-git-checks
