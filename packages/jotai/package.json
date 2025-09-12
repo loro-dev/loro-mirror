@@ -41,7 +41,7 @@
     "license": "MIT",
     "dependencies": {},
     "peerDependencies": {
-        "loro-mirror": "^0.1.0",
+        "loro-mirror": "workspace:*",
         "jotai": "^2.0.0",
         "loro-crdt": "^1.7.1"
     },
