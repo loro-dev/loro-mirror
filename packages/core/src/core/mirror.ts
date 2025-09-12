@@ -956,6 +956,10 @@ export class Mirror<S extends SchemaType> {
 
                         this.registerContainer(newContainer.id, schema);
                         this.initializeContainer(newContainer, schema, value);
+                        // Stamp $cid into pending state when replacing with a map container
+                        if (schema && isLoroMapSchema(schema) && isObject(value)) {
+                            value[CID_KEY] = newContainer.id;
+                        }
                     } else {
                         throw new Error();
                     }

@@ -463,6 +463,16 @@ export function diffTree(
             const tree = doc.getTree(containerId);
             const node = tree.getNodeByID(id as TreeID);
             if (node && schema) {
+                // Ensure $cid is present on incoming node.data when omitted.
+                const incoming = newInfo.node?.data;
+                if (
+                    incoming &&
+                    typeof incoming === "object" &&
+                    !(CID_KEY in (incoming as Record<string, unknown>))
+                ) {
+                    (incoming as Record<string, unknown>)[CID_KEY] =
+                        node.data.id;
+                }
                 const nested = diffContainer(
                     doc,
                     oldInfo.node?.data,
@@ -1061,6 +1071,18 @@ export function diffMap<S extends ObjectLike>(
                         key,
                         containerType,
                     );
+                    // Reattach $cid on the incoming object if missing when the child
+                    // is an existing map container but the new value omitted $cid.
+                    // This keeps container identity stable for subsequent updates.
+                    if (
+                        containerType === "Map" &&
+                        newItem &&
+                        typeof newItem === "object" &&
+                        !(CID_KEY in (newItem as Record<string, unknown>))
+                    ) {
+                        (newItem as Record<string, unknown>)[CID_KEY] =
+                            container.id;
+                    }
                     changes.push(
                         ...diffContainer(
                             doc,
@@ -1087,6 +1109,16 @@ export function diffMap<S extends ObjectLike>(
                         insertChildToMap(containerId, key, newStateObj[key]),
                     );
                 } else {
+                    // Reattach $cid on the incoming object if missing when the child
+                    // is an existing map container but the new value omitted $cid.
+                    if (
+                        containerType === "Map" &&
+                        newItem &&
+                        typeof newItem === "object" &&
+                        !(CID_KEY in (newItem as Record<string, unknown>))
+                    ) {
+                        (newItem as Record<string, unknown>)[CID_KEY] = child.id;
+                    }
                     changes.push(
                         ...diffContainer(
                             doc,

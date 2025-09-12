@@ -397,6 +397,61 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(typeof st.root.child[CID_KEY]).toBe("string");
     });
 
+    it("TO_LORO setState: replacing existing child map with plain object reattaches $cid", () => {
+        const doc = new LoroDoc();
+        const root = doc.getMap("root");
+        const child = new LoroMap();
+        child.set("name", "x");
+        const attached = root.setContainer("child", child);
+        doc.commit();
+
+        const s = schema({
+            root: schema.LoroMap({
+                child: schema.LoroMap({ name: schema.String() }),
+            }),
+        });
+        const m = new Mirror({ doc, schema: s });
+        const before = m.getState() as any;
+        const cidBefore = before.root.child[CID_KEY];
+        expect(cidBefore).toBe(attached.id);
+
+        // Replace existing child map by passing a plain object without $cid
+        m.setState({ root: { child: { name: "y" } } } as any);
+
+        const after = m.getState() as any;
+        expect(after.root.child.name).toBe("y");
+        // $cid should persist/be reattached
+        expect(after.root.child[CID_KEY]).toBe(cidBefore);
+    });
+
+    it("TO_LORO setState: updating existing tree node data without $cid preserves it", () => {
+        const doc = new LoroDoc();
+        const tree = doc.getTree("tree");
+        const n = tree.createNode(undefined, 0);
+        n.data.set("title", "A");
+        doc.commit();
+
+        const s = schema({
+            tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
+        });
+        const m = new Mirror({ doc, schema: s });
+
+        const before = m.getState() as any;
+        const prevCid = before.tree[0].data[CID_KEY];
+        expect(typeof prevCid).toBe("string");
+
+        // Update node data via setState, omitting $cid
+        m.setState({
+            tree: [
+                { id: before.tree[0].id, data: { title: "A*" }, children: [] },
+            ],
+        } as any);
+
+        const after = m.getState() as any;
+        expect(after.tree[0].data.title).toBe("A*");
+        expect(after.tree[0].data[CID_KEY]).toBe(prevCid);
+    });
+
     it("TO_LORO setState: list items get $cid in final state (same mirror)", () => {
         const doc = new LoroDoc();
         const s = schema({
