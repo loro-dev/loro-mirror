@@ -1,0 +1,11 @@
+# Exclude tests and dev-only files from package
+tests/
+**/__snapshots__/
+**/*.snap
+src/**/*.test.ts
+src/**/*.test.tsx
+src/**/*.test-d.ts
+vitest.config.ts
+tsconfig.typecheck.json
+pnpm-lock.yaml
+*.log

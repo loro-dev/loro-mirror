@@ -1,0 +1,23 @@
+{
+    "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+    "packages": {
+        "packages/core": {
+            "release-type": "node",
+            "component": "loro-mirror",
+            "changelog-path": "packages/core/CHANGELOG.md",
+            "release-as": "0.1.0"
+        },
+        "packages/react": {
+            "release-type": "node",
+            "component": "loro-mirror-react",
+            "changelog-path": "packages/react/CHANGELOG.md",
+            "release-as": "0.1.0"
+        },
+        "packages/jotai": {
+            "release-type": "node",
+            "component": "loro-mirror-jotai",
+            "changelog-path": "packages/jotai/CHANGELOG.md",
+            "release-as": "0.1.0"
+        }
+    }
+}
