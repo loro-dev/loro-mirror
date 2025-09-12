@@ -6,77 +6,59 @@ import { InferType } from "../src";
 import { CID_KEY } from "../src/constants";
 import { diffMap } from "../src/core/diff";
 
-describe("withCid: state injection and write ignoring", () => {
-    it("types: LoroMap with withCid includes $cid; without excludes", () => {
-        const withCidMap = schema.LoroMap(
-            { name: schema.String() },
-            { withCid: true },
-        );
-        const withoutCidMap = schema.LoroMap({ name: schema.String() });
-
-        type WithCid = InferType<typeof withCidMap>;
-        type WithoutCid = InferType<typeof withoutCidMap>;
-
-        expectTypeOf<WithCid>().toEqualTypeOf<{ name: string; $cid: string }>();
-        expectTypeOf<WithoutCid>().toEqualTypeOf<{ name: string }>();
+describe("$cid: state injection and write ignoring (always-on for LoroMap)", () => {
+    it("types: LoroMap includes $cid by default", () => {
+        const map = schema.LoroMap({ name: schema.String() });
+        type T = InferType<typeof map>;
+        expectTypeOf<T>().toExtend<{ name: string; $cid: string }>();
     });
 
-    it("types: root schema fields reflect $cid option per LoroMap", () => {
+    it("types: root schema maps include $cid", () => {
         const rootSchema = schema({
-            a: schema.LoroMap({ title: schema.String() }, { withCid: true }),
+            a: schema.LoroMap({ title: schema.String() }),
             b: schema.LoroMap({ title: schema.String() }),
         });
         type RootState = InferType<typeof rootSchema>;
 
-        expectTypeOf<RootState["a"]>().toEqualTypeOf<{
+        expectTypeOf<RootState["a"]>().toMatchObjectType<{
             title: string;
             $cid: string;
         }>();
-        expectTypeOf<RootState["b"]>().toEqualTypeOf<{
+        expectTypeOf<RootState["b"]>().toMatchObjectType<{
             title: string;
+            $cid: string;
         }>();
     });
 
-    it("types: list items pick up $cid when item map has withCid", () => {
-        const withItem = schema.LoroList(
-            schema.LoroMap({ value: schema.Number() }, { withCid: true }),
-        );
-        type WithItem = InferType<typeof withItem>;
-        expectTypeOf<WithItem>().toEqualTypeOf<Array<{ value: number; $cid: string }>>();
-
-        const withoutItem = schema.LoroList(
+    it("types: list items pick up $cid when item is LoroMap", () => {
+        const items = schema.LoroList(
             schema.LoroMap({ value: schema.Number() }),
         );
-        type WithoutItem = InferType<typeof withoutItem>;
-        expectTypeOf<WithoutItem>().toEqualTypeOf<Array<{ value: number }>>();
+        type Items = InferType<typeof items>;
+        expectTypeOf<Items>().toExtend<
+            Array<{ value: number; $cid: string }>
+        >();
     });
 
-    it("types: nested child map with withCid has $cid; parent may not", () => {
+    it("types: nested child map has $cid", () => {
         const nested = schema.LoroMap({
-            child: schema.LoroMap({ name: schema.String() }, { withCid: true }),
+            child: schema.LoroMap({ name: schema.String() }),
         });
         type Nested = InferType<typeof nested>;
-        expectTypeOf<Nested["child"]>().toEqualTypeOf<{
+        expectTypeOf<Nested["child"]>().toMatchObjectType<{
             name: string;
             $cid: string;
         }>();
     });
 
-    it("types: tree node data includes $cid when node schema has withCid", () => {
-        const node = schema.LoroMap({ label: schema.String() }, { withCid: true });
+    it("types: tree node data includes $cid", () => {
+        const node = schema.LoroMap({ label: schema.String() });
         const tree = schema.LoroTree(node);
         type Tree = InferType<typeof tree>;
         // Check element type's data shape to avoid recursive assertion
-        expectTypeOf<Tree[number]["data"]>().toEqualTypeOf<{
+        expectTypeOf<Tree[number]["data"]>().toExtend<{
             label: string;
             $cid: string;
-        }>();
-
-        const nodeNo = schema.LoroMap({ label: schema.String() });
-        const treeNo = schema.LoroTree(nodeNo);
-        type TreeNo = InferType<typeof treeNo>;
-        expectTypeOf<TreeNo[number]["data"]>().toEqualTypeOf<{
-            label: string;
         }>();
     });
     it("injects $cid on initial snapshot for maps and tree node.data", () => {
@@ -91,11 +73,9 @@ describe("withCid: state injection and write ignoring", () => {
         n.data.set("label", "root");
 
         const s = schema({
-            m1: schema.LoroMap({ name: schema.String() }, { withCid: true }),
+            m1: schema.LoroMap({ name: schema.String() }),
             m2: schema.LoroMap({ name: schema.String() }),
-            tree: schema.LoroTree(
-                schema.LoroMap({ label: schema.String() }, { withCid: true }),
-            ),
+            tree: schema.LoroTree(schema.LoroMap({ label: schema.String() })),
         });
 
         const mirror = new Mirror({ doc, schema: s });
@@ -104,8 +84,9 @@ describe("withCid: state injection and write ignoring", () => {
         // m1 has $cid
         expect(typeof (state as any).m1[CID_KEY]).toBe("string");
         expect((state as any).m1[CID_KEY]).toBe(String(m1.id));
-        // m2 has no $cid
-        expect((state as any).m2[CID_KEY]).toBeUndefined();
+        // m2 also has $cid
+        expect(typeof (state as any).m2[CID_KEY]).toBe("string");
+        expect((state as any).m2[CID_KEY]).toBe(String(m2.id));
 
         // tree node has $cid on data
         expect(Array.isArray((state as any).tree)).toBe(true);
@@ -119,9 +100,7 @@ describe("withCid: state injection and write ignoring", () => {
         const list = doc.getList("list");
 
         const s = schema({
-            list: schema.LoroList(
-                schema.LoroMap({ value: schema.Number() }, { withCid: true }),
-            ),
+            list: schema.LoroList(schema.LoroMap({ value: schema.Number() })),
         });
 
         const mirror = new Mirror({ doc, schema: s });
@@ -144,9 +123,7 @@ describe("withCid: state injection and write ignoring", () => {
         const doc = new LoroDoc();
         const tree = doc.getTree("tree");
         const s = schema({
-            tree: schema.LoroTree(
-                schema.LoroMap({ title: schema.String() }, { withCid: true }),
-            ),
+            tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
         });
         const mirror = new Mirror({ doc, schema: s });
 
@@ -161,12 +138,9 @@ describe("withCid: state injection and write ignoring", () => {
         expect(created.data[CID_KEY]).toBe(String(node.data.id));
     });
 
-    it("diffMap ignores $cid for maps with withCid", () => {
+    it("diffMap ignores $cid for maps", () => {
         const doc = new LoroDoc();
-        const sMap = schema.LoroMap(
-            { name: schema.String() },
-            { withCid: true },
-        );
+        const sMap = schema.LoroMap({ name: schema.String() });
         const oldState = { name: "x", [CID_KEY]: "old" } as any;
         const newState = { name: "x", [CID_KEY]: "new" } as any;
         const changes = diffMap(
@@ -179,12 +153,9 @@ describe("withCid: state injection and write ignoring", () => {
         expect(changes.length).toBe(0);
     });
 
-    it("includes $cid on empty root map with withCid, excludes on non-withCid", () => {
+    it("includes $cid on empty root map", () => {
         const doc = new LoroDoc();
-        const s = schema({
-            a: schema.LoroMap({}, { withCid: true }),
-            b: schema.LoroMap({}),
-        });
+        const s = schema({ a: schema.LoroMap({}), b: schema.LoroMap({}) });
         const m = new Mirror({ doc, schema: s });
         const st = m.getState() as any;
 
@@ -193,36 +164,14 @@ describe("withCid: state injection and write ignoring", () => {
         expect(typeof st.a[CID_KEY]).toBe("string");
         expect(Object.keys(st.a)).toEqual([CID_KEY]);
 
-        // b exists by default but does not include $cid
+        // b exists by default and includes $cid
         expect(st.b).toBeDefined();
         expect(typeof st.b).toBe("object");
-        expect(st.b[CID_KEY]).toBeUndefined();
-        expect(Object.keys(st.b)).toEqual([]);
+        expect(typeof st.b[CID_KEY]).toBe("string");
+        expect(Object.keys(st.b)).toEqual([CID_KEY]);
     });
 
-    it("nested maps: parent withCid true, child without -> only parent has $cid", () => {
-        const doc = new LoroDoc();
-        const root = doc.getMap("root");
-        const child = new LoroMap();
-        root.setContainer("child", child);
-        doc.commit();
-
-        const s = schema({
-            root: schema.LoroMap(
-                {
-                    child: schema.LoroMap({}), // no withCid
-                },
-                { withCid: true },
-            ),
-        });
-        const m = new Mirror({ doc, schema: s });
-        const st = m.getState() as any;
-
-        expect(st.root[CID_KEY]).toBe(String(root.id));
-        expect(st.root.child[CID_KEY]).toBeUndefined();
-    });
-
-    it("nested maps: parent without, child with withCid -> only child has $cid", () => {
+    it("nested maps: both parent and child have $cid", () => {
         const doc = new LoroDoc();
         const root = doc.getMap("root");
         const child = new LoroMap();
@@ -231,13 +180,31 @@ describe("withCid: state injection and write ignoring", () => {
 
         const s = schema({
             root: schema.LoroMap({
-                child: schema.LoroMap({}, { withCid: true }),
+                child: schema.LoroMap({}),
             }),
         });
         const m = new Mirror({ doc, schema: s });
         const st = m.getState() as any;
 
-        expect(st.root[CID_KEY]).toBeUndefined();
+        expect(st.root[CID_KEY]).toBe(String(root.id));
+        const attachedChild = root.get("child") as LoroMap;
+        expect(st.root.child[CID_KEY]).toBe(String(attachedChild.id));
+    });
+
+    it("nested maps: parent and child both have $cid (no config needed)", () => {
+        const doc = new LoroDoc();
+        const root = doc.getMap("root");
+        const child = new LoroMap();
+        root.setContainer("child", child);
+        doc.commit();
+
+        const s = schema({
+            root: schema.LoroMap({ child: schema.LoroMap({}) }),
+        });
+        const m = new Mirror({ doc, schema: s });
+        const st = m.getState() as any;
+
+        expect(st.root[CID_KEY]).toBe(String(root.id));
         const attachedChild = root.get("child") as LoroMap;
         expect(st.root.child[CID_KEY]).toBe(String(attachedChild.id));
     });
@@ -253,10 +220,7 @@ describe("withCid: state injection and write ignoring", () => {
 
         const s = schema({
             root: schema.LoroMap({
-                inner: schema.LoroMap(
-                    { name: schema.String() },
-                    { withCid: true },
-                ),
+                inner: schema.LoroMap({ name: schema.String() }),
             }),
         });
         const m = new Mirror({ doc, schema: s });
@@ -267,11 +231,9 @@ describe("withCid: state injection and write ignoring", () => {
         expect(st.root.inner[CID_KEY]).toBe(expectedId);
     });
 
-    it("withCid=false maps can store a normal '$cid' key in Loro", async () => {
+    it("attempting to write $cid is ignored for maps (never synced to Loro)", async () => {
         const doc = new LoroDoc();
-        const s = schema({
-            x: schema.LoroMap({ foo: schema.String() }), // no withCid
-        });
+        const s = schema({ x: schema.LoroMap({ foo: schema.String() }) });
         const m = new Mirror({ doc, schema: s });
 
         m.setState((draft: any) => {
@@ -280,17 +242,15 @@ describe("withCid: state injection and write ignoring", () => {
         });
         await Promise.resolve();
 
-        // Verify Loro actually stored the user-provided "$cid" as a normal field
         const xMap = doc.getMap("x");
         expect(xMap.get("foo")).toBe("bar");
-        expect(xMap.get(CID_KEY)).toBe("user-defined");
+        // `$cid` is reserved and never written into Loro
+        expect(xMap.get(CID_KEY)).toBeUndefined();
     });
 
-    it("TO_LORO: deleting $cid on withCid map is ignored (no Loro changes)", async () => {
+    it("TO_LORO: deleting $cid on map is ignored (no Loro changes)", async () => {
         const doc = new LoroDoc();
-        const s = schema({
-            m: schema.LoroMap({ name: schema.String() }, { withCid: true }),
-        });
+        const s = schema({ m: schema.LoroMap({ name: schema.String() }) });
         const m = new Mirror({ doc, schema: s });
 
         // Take a baseline of Loro JSON
@@ -308,9 +268,7 @@ describe("withCid: state injection and write ignoring", () => {
 
     it("TO_LORO + consistency check: changing $cid throws divergence error", () => {
         const doc = new LoroDoc();
-        const s = schema({
-            m: schema.LoroMap({ label: schema.String() }, { withCid: true }),
-        });
+        const s = schema({ m: schema.LoroMap({ label: schema.String() }) });
         const m = new Mirror({ doc, schema: s, checkStateConsistency: true });
 
         expect(() => {
@@ -321,13 +279,11 @@ describe("withCid: state injection and write ignoring", () => {
         }).toThrow();
     });
 
-    it("list items withCid: $cid values exist and are unique per item", async () => {
+    it("list items: $cid values exist and are unique per item", async () => {
         const doc = new LoroDoc();
         const list = doc.getList("list");
         const s = schema({
-            list: schema.LoroList(
-                schema.LoroMap({ value: schema.Number() }, { withCid: true }),
-            ),
+            list: schema.LoroList(schema.LoroMap({ value: schema.Number() })),
         });
         const m = new Mirror({ doc, schema: s });
 
@@ -364,9 +320,7 @@ describe("withCid: state injection and write ignoring", () => {
         doc.commit();
 
         const s = schema({
-            tree: schema.LoroTree(
-                schema.LoroMap({ title: schema.String() }, { withCid: true }),
-            ),
+            tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
         });
         const m = new Mirror({ doc, schema: s });
         await Promise.resolve();
@@ -400,7 +354,7 @@ describe("withCid: state injection and write ignoring", () => {
         const list = doc.getMovableList("items");
         const s = schema({
             items: schema.LoroMovableList(
-                schema.LoroMap({ val: schema.Number() }, { withCid: true }),
+                schema.LoroMap({ val: schema.Number() }),
                 (it) => (it as any)[CID_KEY] ?? null,
             ),
         });
@@ -427,15 +381,12 @@ describe("withCid: state injection and write ignoring", () => {
         expect(after.items[1][CID_KEY]).toBe(first[CID_KEY]);
     });
 
-    // setState-created containers with withCid should have $cid in final state
-    it("TO_LORO setState: nested map container with withCid gets $cid in final state (same mirror)", () => {
+    // setState-created containers should have $cid in final state
+    it("TO_LORO setState: nested map container gets $cid in final state (same mirror)", () => {
         const doc = new LoroDoc();
         const s = schema({
             root: schema.LoroMap({
-                child: schema.LoroMap(
-                    { name: schema.String() },
-                    { withCid: true },
-                ),
+                child: schema.LoroMap({ name: schema.String() }),
             }),
         });
         const m = new Mirror({ doc, schema: s });
@@ -446,12 +397,65 @@ describe("withCid: state injection and write ignoring", () => {
         expect(typeof st.root.child[CID_KEY]).toBe("string");
     });
 
-    it("TO_LORO setState: list items with withCid get $cid in final state (same mirror)", () => {
+    it("TO_LORO setState: replacing existing child map with plain object reattaches $cid", () => {
+        const doc = new LoroDoc();
+        const root = doc.getMap("root");
+        const child = new LoroMap();
+        child.set("name", "x");
+        const attached = root.setContainer("child", child);
+        doc.commit();
+
+        const s = schema({
+            root: schema.LoroMap({
+                child: schema.LoroMap({ name: schema.String() }),
+            }),
+        });
+        const m = new Mirror({ doc, schema: s });
+        const before = m.getState() as any;
+        const cidBefore = before.root.child[CID_KEY];
+        expect(cidBefore).toBe(attached.id);
+
+        // Replace existing child map by passing a plain object without $cid
+        m.setState({ root: { child: { name: "y" } } } as any);
+
+        const after = m.getState() as any;
+        expect(after.root.child.name).toBe("y");
+        // $cid should persist/be reattached
+        expect(after.root.child[CID_KEY]).toBe(cidBefore);
+    });
+
+    it("TO_LORO setState: updating existing tree node data without $cid preserves it", () => {
+        const doc = new LoroDoc();
+        const tree = doc.getTree("tree");
+        const n = tree.createNode(undefined, 0);
+        n.data.set("title", "A");
+        doc.commit();
+
+        const s = schema({
+            tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
+        });
+        const m = new Mirror({ doc, schema: s });
+
+        const before = m.getState() as any;
+        const prevCid = before.tree[0].data[CID_KEY];
+        expect(typeof prevCid).toBe("string");
+
+        // Update node data via setState, omitting $cid
+        m.setState({
+            tree: [
+                { id: before.tree[0].id, data: { title: "A*" }, children: [] },
+            ],
+        } as any);
+
+        const after = m.getState() as any;
+        expect(after.tree[0].data.title).toBe("A*");
+        expect(after.tree[0].data[CID_KEY]).toBe(prevCid);
+    });
+
+    it("TO_LORO setState: list items get $cid in final state (same mirror)", () => {
         const doc = new LoroDoc();
         const s = schema({
-            list: schema.LoroList(
-                schema.LoroMap({ v: schema.Number() }, { withCid: true }),
-            ),
+            list: schema.LoroList(schema.LoroMap({ v: schema.Number() })),
         });
         const m = new Mirror({ doc, schema: s });
         m.setState({ list: [{ v: 1 }, { v: 2 }] } as any);
@@ -461,12 +465,10 @@ describe("withCid: state injection and write ignoring", () => {
         expect(typeof st.list[1][CID_KEY]).toBe("string");
     });
 
-    it("TO_LORO setState: tree nodes' data with withCid get $cid in final state (same mirror)", () => {
+    it("TO_LORO setState: tree nodes' data get $cid in final state (same mirror)", () => {
         const doc = new LoroDoc();
         const s = schema({
-            tree: schema.LoroTree(
-                schema.LoroMap({ title: schema.String() }, { withCid: true }),
-            ),
+            tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
         });
         const m = new Mirror({ doc, schema: s });
         m.setState({

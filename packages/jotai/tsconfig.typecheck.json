@@ -1,16 +1,20 @@
 {
     "extends": "../../tsconfig.json",
     "compilerOptions": {
-        "noEmit": false
+        "noEmit": false,
+        "jsx": "react-jsx"
     },
     "include": [
         "src/**/*",
-        "tests/**/*.test-d.ts",
-        "tests/**/*.test.ts",
-        "tests/**/*.test.tsx"
+        "tests/**/*"
     ],
     "exclude": [
         "node_modules",
         "dist"
+    ],
+    "references": [
+        {
+            "path": "../core"
+        }
     ]
 }

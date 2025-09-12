@@ -25,13 +25,10 @@ import { useLoroStore } from 'loro-mirror-react';
 // Define your schema
 const todoSchema = schema({
   todos: schema.LoroList(
-    schema.LoroMap(
-      {
-        text: schema.String({ required: true }),
-        completed: schema.Boolean({ defaultValue: false }),
-      },
-      { withCid: true },
-    ),
+    schema.LoroMap({
+      text: schema.String({ required: true }),
+      completed: schema.Boolean({ defaultValue: false }),
+    }),
     // Use `$cid` (reuses Loro container id; explained below)
     (item) => item.$cid,
   ),
@@ -75,13 +72,10 @@ import { createLoroContext } from 'loro-mirror-react';
 // Define your schema
 const todoSchema = schema({
   todos: schema.LoroList(
-    schema.LoroMap(
-      {
-        text: schema.String({ required: true }),
-        completed: schema.Boolean({ defaultValue: false }),
-      },
-      { withCid: true },
-    ),
+    schema.LoroMap({
+      text: schema.String({ required: true }),
+      completed: schema.Boolean({ defaultValue: false }),
+    }),
     (t) => t.$cid, // stable id from Loro container id
   ),
 });
@@ -254,7 +248,7 @@ const addTodo = useLoroAction(
 
 ### `$cid` and list keys/selectors
 
-- Enable `withCid: true` on `schema.LoroMap(...)` to inject a read-only `$cid` that mirrors the underlying Loro container id.
+- `$cid` is always available on `LoroMap` state and mirrors the underlying Loro container id.
 - Use `$cid` for React `key` and as the list `idSelector` for stable identity across edits and moves: `schema.LoroList(item, x => x.$cid)`.
 
 // Usage

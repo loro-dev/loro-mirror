@@ -6,13 +6,10 @@ describe("React README examples", () => {
     it("createLoroContext returns provider and hooks for given schema", () => {
         const todoSchema = schema({
             todos: schema.LoroList(
-                schema.LoroMap(
-                    {
-                        text: schema.String({ required: true }),
-                        completed: schema.Boolean({ defaultValue: false }),
-                    },
-                    { withCid: true },
-                ),
+                schema.LoroMap({
+                    text: schema.String({ required: true }),
+                    completed: schema.Boolean({ defaultValue: false }),
+                }),
                 (t) => t.$cid,
             ),
         });

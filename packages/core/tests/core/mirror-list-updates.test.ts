@@ -506,11 +506,20 @@ describe("Mirror List Update Optimization", () => {
             initialState: { session: { items: [] } },
             checkStateConsistency: true,
         });
-        m.setState((s) => {
-            s.session.items.push({ data: "he", timestamp: "123" });
+        m.setState((s: any) => {
+            s.session = {
+                ...s.session,
+                items: [{ data: "he", timestamp: "123" }],
+            };
         });
-        m.setState((s) => {
-            s.session.items.push({ data: "12345678890", timestamp: "123" });
+        m.setState((s: any) => {
+            s.session = {
+                ...s.session,
+                items: [
+                    ...((s.session && s.session.items) || []),
+                    { data: "12345678890", timestamp: "123" },
+                ],
+            };
         });
         const docB = new LoroDoc();
         const m1 = new Mirror({

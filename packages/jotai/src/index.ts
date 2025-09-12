@@ -10,11 +10,12 @@ import { atom, WritableAtom } from 'jotai';
 // Import types only to avoid module resolution issues
 import type { LoroDoc } from "loro-crdt";
 import { createStore } from "loro-mirror";
+import type { SchemaType, InferType, InferInputType } from "loro-mirror";
 
 /**
  * Configuration for creating a Loro Mirror atom
  */
-export interface LoroMirrorAtomConfig<T = any> {
+export interface LoroMirrorAtomConfig<S extends SchemaType> {
     /**
      * The Loro document to sync with
      */
@@ -23,13 +24,13 @@ export interface LoroMirrorAtomConfig<T = any> {
     /**
      * The schema definition for the state
      */
-    schema: any;
+    schema: S;
 
 
     /**
      * Initial state (optional)
      */
-    initialState?: Partial<T>;
+    initialState?: Partial<InferInputType<S>>;
 
     /**
      * Whether to validate state updates against the schema
@@ -80,12 +81,16 @@ export interface LoroMirrorAtomConfig<T = any> {
  * }
  * ```
  */
-export function loroMirrorAtom<T = any>(
-    config: LoroMirrorAtomConfig<T>
-): WritableAtom<T, [T | ((prev: T) => T)], void> {
+export function loroMirrorAtom<S extends SchemaType>(
+    config: LoroMirrorAtomConfig<S>
+): WritableAtom<
+    InferType<S>,
+    [InferInputType<S> | ((prev: InferType<S>) => InferInputType<S>)],
+    void
+> {
     const store = createStore(config);
-    const stateAtom = atom(store.getState());
-    const subAtom = atom(null, (_get, set, update) => {
+    const stateAtom = atom<InferType<S>>(store.getState() as InferType<S>);
+    const subAtom = atom<null, [InferType<S>], void>(null, (_get, set, update) => {
         set(stateAtom, update);
     });
 
@@ -98,21 +103,25 @@ export function loroMirrorAtom<T = any>(
         }
     }
 
-    const base = atom(
+    const base = atom<
+        InferType<S>,
+        [InferInputType<S> | ((prev: InferType<S>) => InferInputType<S>)],
+        void
+    >(
         (get) => {
             get(subAtom);
             return get(stateAtom);
         },
         (get, set, update) => {
-            const currentState = get(stateAtom);
+            const currentState = get(stateAtom) as InferType<S>;
             if (typeof update === 'function') {
-                const newState = (update as (prev: T) => T)(currentState);
-                store.setState(newState as Partial<T>);
-                set(stateAtom, newState);
+                const nextInput = (update as (prev: InferType<S>) => InferInputType<S>)(currentState);
+                store.setState(nextInput as Partial<InferInputType<S>>);
             } else {
-                store.setState(update as Partial<T>);
-                set(stateAtom, update);
+                store.setState(update as Partial<InferInputType<S>>);
             }
+            // Reflect latest state from Mirror after any stamping like $cid
+            set(stateAtom, store.getState() as InferType<S>);
         }
     );
     return base;

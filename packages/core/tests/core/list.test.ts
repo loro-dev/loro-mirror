@@ -91,28 +91,34 @@ describe("setState for LoroList", () => {
         {
             const s = { items: [{ id: "123" }] };
             m.setState(s);
-            expect(doc.toJSON()).toStrictEqual(s);
+            expect(doc.toJSON()).toMatchObject({ items: [{ id: "123" }] });
         }
         {
-            const s = {
+            const s2 = {
                 items: [{ id: "0" }, { id: "1" }, { id: "2" }, { id: "123" }],
             };
-            m.setState(s);
-            expect(doc.toJSON()).toStrictEqual(s);
+            m.setState(s2);
+            expect(doc.toJSON()).toMatchObject({
+                items: s2.items.map((x) => ({ id: x.id })),
+            });
         }
         {
-            const s = {
+            const s3 = {
                 items: [{ id: "1" }, { id: "0" }, { id: "123" }, { id: "2" }],
             };
-            m.setState(s);
-            expect(doc.toJSON()).toStrictEqual(s);
+            m.setState(s3);
+            expect(doc.toJSON()).toMatchObject({
+                items: s3.items.map((x) => ({ id: x.id })),
+            });
         }
         {
-            const s = {
+            const s4 = {
                 items: [{ id: "1" }],
             };
-            m.setState(s);
-            expect(doc.toJSON()).toStrictEqual(s);
+            m.setState(s4);
+            expect(doc.toJSON()).toMatchObject({
+                items: s4.items.map((x) => ({ id: x.id })),
+            });
         }
     });
 

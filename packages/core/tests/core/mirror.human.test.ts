@@ -34,7 +34,7 @@ it("syncs initial state from LoroDoc correctly", async () => {
         schema: todoSchema,
     });
 
-    expect(mirror.getState().todos).toEqual([
+    expect(mirror.getState().todos).toMatchObject([
         { id: "1", text: "Buy milk", completed: false },
         { id: "2", text: "Write tests", completed: true },
     ]);
@@ -79,7 +79,7 @@ it("works without schema", async () => {
 
     // Create mirror
     const mirror = new Mirror({ doc });
-    expect(mirror.getState().todos).toEqual([
+    expect(mirror.getState().todos).toMatchObject([
         { id: "1", text: "Buy milk", completed: false },
         { id: "2", text: "Write tests", completed: true },
     ]);
@@ -119,7 +119,7 @@ it("syncing from state => LoroDoc", async () => {
             { id: "2", text: "Write tests", completed: true },
         ],
     });
-    expect(mirror.getState().todos).toEqual([
+    expect(mirror.getState().todos).toMatchObject([
         { id: "1", text: "Buy milk", completed: false },
         { id: "2", text: "Write tests", completed: true },
     ]);

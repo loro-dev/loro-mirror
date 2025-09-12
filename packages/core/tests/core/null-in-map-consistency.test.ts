@@ -2,6 +2,19 @@ import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroMap, LoroList } from "loro-crdt";
 import { Mirror, schema, toNormalizedJson } from "../../src";
 
+function stripCid(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(stripCid);
+    if (value && typeof value === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            if (k === "$cid") continue;
+            out[k] = stripCid(v);
+        }
+        return out;
+    }
+    return value;
+}
+
 describe("setState consistency with null fields in LoroMap", () => {
     it("does not diverge when a loro-map field contains null and checkStateConsistency is enabled", async () => {
         const withSchema = schema({
@@ -24,8 +37,8 @@ describe("setState consistency with null fields in LoroMap", () => {
             checkStateConsistency: true,
         });
 
-        // Sanity: mirror picks up the null from doc
-        expect(mirror.getState()).toEqual(toNormalizedJson(doc));
+        // Sanity: mirror picks up the null from doc (ignoring $cid, which is app-only)
+        expect(stripCid(mirror.getState())).toEqual(toNormalizedJson(doc));
         console.log(JSON.stringify(doc.toJSON(), null, 2));
 
         // Update another field (unrelated) to force a diff run
@@ -36,8 +49,8 @@ describe("setState consistency with null fields in LoroMap", () => {
             });
         }).not.toThrow();
 
-        // State remains in sync with doc
-        expect(mirror.getState()).toEqual(toNormalizedJson(doc));
+        // State remains in sync with doc (ignoring $cid)
+        expect(stripCid(mirror.getState())).toEqual(toNormalizedJson(doc));
         // And the original null is preserved
         expect((mirror.getState() as any).m.nested).toBeNull();
     });
@@ -70,7 +83,7 @@ describe("setState consistency with null fields in LoroMap", () => {
         expect(() => {
             mirror.setState((s) => s);
         }).not.toThrow();
-        expect(mirror.getState()).toEqual(toNormalizedJson(doc));
+        expect(stripCid(mirror.getState())).toEqual(toNormalizedJson(doc));
         expect((mirror.getState() as any).root.list[0].child).toBeNull();
     });
 });

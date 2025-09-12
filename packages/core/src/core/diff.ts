@@ -337,7 +337,7 @@ export function diffTree(
             }
             if (n && Array.isArray(n.children)) {
                 walk(
-                    n.children,
+                    n.children as Node[],
                     map,
                     typeof n.id === "string" ? n.id : undefined,
                 );
@@ -431,9 +431,9 @@ export function diffTree(
                 if (needCreate) {
                     // We don't yet know the parent's ID; collect children's create ops so
                     // we can patch their `parent` after the parent is created.
-                    pushCreates(n.children, pid, notifySet);
+                    pushCreates(n.children as Node[], pid, notifySet);
                 } else {
-                    pushCreates(n.children, pid);
+                    pushCreates(n.children as Node[], pid);
                 }
             }
         }
@@ -463,6 +463,16 @@ export function diffTree(
             const tree = doc.getTree(containerId);
             const node = tree.getNodeByID(id as TreeID);
             if (node && schema) {
+                // Ensure $cid is present on incoming node.data when omitted.
+                const incoming = newInfo.node?.data;
+                if (
+                    incoming &&
+                    typeof incoming === "object" &&
+                    !(CID_KEY in (incoming as Record<string, unknown>))
+                ) {
+                    (incoming as Record<string, unknown>)[CID_KEY] =
+                        node.data.id;
+                }
                 const nested = diffContainer(
                     doc,
                     oldInfo.node?.data,
@@ -684,7 +694,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     }
 
     // Note: Items in the NEW state may legitimately be missing an ID when
-    // using withCid; IDs are stamped during apply. Treat them as new inserts
+    // using $cid injection; IDs are stamped during apply. Treat them as new inserts
     // later instead of throwing here.
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
@@ -963,12 +973,8 @@ export function diffMap<S extends ObjectLike>(
 
     // Check for removed keys
     for (const key in oldStateObj) {
-        // Skip synthetic CID field for maps with withCid option
-        if (
-            key === CID_KEY &&
-            (schema as LoroMapSchema<Record<string, SchemaType>> | undefined)
-                ?.options?.withCid
-        ) {
+        // Skip synthetic CID field for maps
+        if (key === CID_KEY) {
             continue;
         }
         // Skip ignored fields defined in schema
@@ -990,12 +996,8 @@ export function diffMap<S extends ObjectLike>(
 
     // Check for added or modified keys
     for (const key in newStateObj) {
-        // Skip synthetic CID field for maps with withCid option
-        if (
-            key === CID_KEY &&
-            (schema as LoroMapSchema<Record<string, SchemaType>> | undefined)
-                ?.options?.withCid
-        ) {
+        // Skip synthetic CID field for maps
+        if (key === CID_KEY) {
             continue;
         }
         const oldItem = oldStateObj[key];
@@ -1069,6 +1071,18 @@ export function diffMap<S extends ObjectLike>(
                         key,
                         containerType,
                     );
+                    // Reattach $cid on the incoming object if missing when the child
+                    // is an existing map container but the new value omitted $cid.
+                    // This keeps container identity stable for subsequent updates.
+                    if (
+                        containerType === "Map" &&
+                        newItem &&
+                        typeof newItem === "object" &&
+                        !(CID_KEY in (newItem as Record<string, unknown>))
+                    ) {
+                        (newItem as Record<string, unknown>)[CID_KEY] =
+                            container.id;
+                    }
                     changes.push(
                         ...diffContainer(
                             doc,
@@ -1095,6 +1109,16 @@ export function diffMap<S extends ObjectLike>(
                         insertChildToMap(containerId, key, newStateObj[key]),
                     );
                 } else {
+                    // Reattach $cid on the incoming object if missing when the child
+                    // is an existing map container but the new value omitted $cid.
+                    if (
+                        containerType === "Map" &&
+                        newItem &&
+                        typeof newItem === "object" &&
+                        !(CID_KEY in (newItem as Record<string, unknown>))
+                    ) {
+                        (newItem as Record<string, unknown>)[CID_KEY] = child.id;
+                    }
                     changes.push(
                         ...diffContainer(
                             doc,

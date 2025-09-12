@@ -6,13 +6,10 @@ describe("README Quick Start examples", () => {
     it("creates a store, updates immutably and via draft, and injects cid", async () => {
         const todoSchema = schema({
             todos: schema.LoroList(
-                schema.LoroMap(
-                    {
-                        text: schema.String(),
-                        completed: schema.Boolean({ defaultValue: false }),
-                    },
-                    { withCid: true },
-                ),
+                schema.LoroMap({
+                    text: schema.String(),
+                    completed: schema.Boolean({ defaultValue: false }),
+                }),
             ),
         });
 
@@ -35,7 +32,7 @@ describe("README Quick Start examples", () => {
         let state = store.getState();
         expect(state.todos.length).toBe(1);
         expect(state.todos[0].text).toBe("Learn Loro Mirror");
-        // $cid should be injected when withCid: true
+        // $cid should be injected for LoroMap
         expect(typeof (state.todos[0] as any).$cid).toBe("string");
 
         // draft-style update
@@ -61,13 +58,10 @@ describe("README Quick Start examples", () => {
 
     it("validateSchema example returns valid:true for a correct value", () => {
         const appSchema = schema({
-            user: schema.LoroMap(
-                {
-                    name: schema.String(),
-                    age: schema.Number({ required: false }),
-                },
-                { withCid: true },
-            ),
+            user: schema.LoroMap({
+                name: schema.String(),
+                age: schema.Number({ required: false }),
+            }),
             tags: schema.LoroList(schema.String()),
         });
 
@@ -116,8 +110,8 @@ describe("README Quick Start examples", () => {
         });
 
         // Update ignore field; it should not appear in doc JSON
-        store.setState((draft) => {
-            draft.user.cache.hits += 1;
+        store.setState((draft: any) => {
+            draft.user.cache = { hits: (draft.user.cache?.hits ?? 0) + 1 };
         });
 
         const json: any = doc.getDeepValueWithID();

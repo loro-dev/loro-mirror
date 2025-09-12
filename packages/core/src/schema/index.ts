@@ -28,7 +28,10 @@ export * from "./validators";
 /**
  * Create a schema definition
  */
-export function schema<T extends Record<string, ContainerSchemaType>, O extends SchemaOptions = {}>(
+export function schema<
+    T extends Record<string, ContainerSchemaType>,
+    O extends SchemaOptions = {},
+>(
     definition: RootSchemaDefinition<T>,
     options?: O,
 ): RootSchemaType<T> & { options: O } {
@@ -45,7 +48,10 @@ export function schema<T extends Record<string, ContainerSchemaType>, O extends 
 /**
  * Define a string field
  */
-schema.String = function <T extends string = string, O extends SchemaOptions = {}>(options?: O) {
+schema.String = function <
+    T extends string = string,
+    O extends SchemaOptions = {},
+>(options?: O) {
     return {
         type: "string" as const,
         options: (options || {}) as O,
@@ -97,10 +103,17 @@ schema.Ignore = function <O extends SchemaOptions = {}>(options?: O) {
 /**
  * Define a Loro map
  */
-schema.LoroMap = function <T extends Record<string, SchemaType> = {}, O extends SchemaOptions = {}>(
+schema.LoroMap = function <
+    T extends Record<string, SchemaType> = {},
+    O extends SchemaOptions = {},
+>(
     definition: SchemaDefinition<T>,
     options?: O,
-): LoroMapSchema<T> & { options: O } & { catchall: <C extends SchemaType>(catchallSchema: C) => LoroMapSchemaWithCatchall<T, C> } {
+): LoroMapSchema<T> & { options: O } & {
+    catchall: <C extends SchemaType>(
+        catchallSchema: C,
+    ) => LoroMapSchemaWithCatchall<T, C>;
+} {
     const baseSchema = {
         type: "loro-map" as const,
         definition,
@@ -113,28 +126,39 @@ schema.LoroMap = function <T extends Record<string, SchemaType> = {}, O extends 
     // Add catchall method like zod
     const schemaWithCatchall = {
         ...baseSchema,
-        catchall: <C extends SchemaType>(catchallSchema: C): LoroMapSchemaWithCatchall<T, C> => {
+        catchall: <C extends SchemaType>(
+            catchallSchema: C,
+        ): LoroMapSchemaWithCatchall<T, C> => {
             return {
                 ...baseSchema,
                 catchallType: catchallSchema,
-                catchall: <NewC extends SchemaType>(newCatchallSchema: NewC) => {
+                catchall: <NewC extends SchemaType>(
+                    newCatchallSchema: NewC,
+                ) => {
                     return {
                         ...baseSchema,
                         catchallType: newCatchallSchema,
-                        catchall: schemaWithCatchall.catchall
+                        catchall: schemaWithCatchall.catchall,
                     } as LoroMapSchemaWithCatchall<T, NewC>;
-                }
+                },
             } as LoroMapSchemaWithCatchall<T, C>;
-        }
+        },
     };
 
-    return schemaWithCatchall as LoroMapSchema<T> & { options: O } & { catchall: <C extends SchemaType>(catchallSchema: C) => LoroMapSchemaWithCatchall<T, C> };
+    return schemaWithCatchall as LoroMapSchema<T> & { options: O } & {
+        catchall: <C extends SchemaType>(
+            catchallSchema: C,
+        ) => LoroMapSchemaWithCatchall<T, C>;
+    };
 };
 
 /**
  * Create a dynamic record schema (like zod's z.record)
  */
-schema.LoroMapRecord = function <T extends SchemaType, O extends SchemaOptions = {}>(
+schema.LoroMapRecord = function <
+    T extends SchemaType,
+    O extends SchemaOptions = {},
+>(
     valueSchema: T,
     options?: O,
 ): LoroMapSchemaWithCatchall<{}, T> & { options: O } {
@@ -146,9 +170,11 @@ schema.LoroMapRecord = function <T extends SchemaType, O extends SchemaOptions =
         getContainerType: () => {
             return "Map";
         },
-        catchall: <NewC extends SchemaType>(newCatchallSchema: NewC): LoroMapSchemaWithCatchall<{}, NewC> => {
+        catchall: <NewC extends SchemaType>(
+            newCatchallSchema: NewC,
+        ): LoroMapSchemaWithCatchall<{}, NewC> => {
             return schema.LoroMapRecord(newCatchallSchema, options);
-        }
+        },
     } as LoroMapSchemaWithCatchall<{}, T> & { options: O };
 };
 
@@ -157,7 +183,7 @@ schema.LoroMapRecord = function <T extends SchemaType, O extends SchemaOptions =
  */
 schema.LoroList = function <T extends SchemaType, O extends SchemaOptions = {}>(
     itemSchema: T,
-    idSelector?: (item: unknown) => string,
+    idSelector?: (item: any) => string,
     options?: O,
 ): LoroListSchema<T> & { options: O } {
     return {
@@ -171,9 +197,12 @@ schema.LoroList = function <T extends SchemaType, O extends SchemaOptions = {}>(
     } as LoroListSchema<T> & { options: O };
 };
 
-schema.LoroMovableList = function <T extends SchemaType, O extends SchemaOptions = {}>(
+schema.LoroMovableList = function <
+    T extends SchemaType,
+    O extends SchemaOptions = {},
+>(
     itemSchema: T,
-    idSelector: (item: unknown) => string,
+    idSelector: (item: any) => string,
     options?: O,
 ): LoroMovableListSchema<T> & { options: O } {
     return {
@@ -190,7 +219,9 @@ schema.LoroMovableList = function <T extends SchemaType, O extends SchemaOptions
 /**
  * Define a Loro text field
  */
-schema.LoroText = function <O extends SchemaOptions = {}>(options?: O): LoroTextSchemaType & { options: O } {
+schema.LoroText = function <O extends SchemaOptions = {}>(
+    options?: O,
+): LoroTextSchemaType & { options: O } {
     return {
         type: "loro-text" as const,
         options: options || ({} as O),

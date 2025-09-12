@@ -6,18 +6,15 @@ import { loroMirrorAtom } from "../src";
 import { useAtom } from "jotai";
 
 describe("Jotai README example", () => {
-    it("creates an atom with list of withCid items and updates state", async () => {
+    it("creates an atom with list items that include $cid and updates state", async () => {
         type TodoStatus = "todo" | "inProgress" | "done";
 
         const todoSchema = schema({
             todos: schema.LoroList(
-                schema.LoroMap(
-                    {
-                        text: schema.String(),
-                        status: schema.String<TodoStatus>(),
-                    },
-                    { withCid: true },
-                ),
+                schema.LoroMap({
+                    text: schema.String(),
+                    status: schema.String<TodoStatus>(),
+                }),
                 (t) => t.$cid,
             ),
         });
