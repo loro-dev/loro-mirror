@@ -48,6 +48,9 @@ type Todo = InferType<typeof todoSchema>;
 // Create a Loro document instance
 const doc = new LoroDoc();
 
+// Maybe subscribe the doc for persisting
+let sub = doc.subscribe(......)
+
 // Create the Jotai atom with Loro Mirror config
 const todoDocAtom = loroMirrorAtom({
     doc,
