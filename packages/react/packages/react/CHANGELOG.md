@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v0.1.0...loro-mirror-react-v0.1.0) (2025-09-12)
+
+
+### Features
+
+* **core,react:** support draft-style setState; honor schema.Ignore; sync docs ([6cda9a2](https://github.com/loro-dev/loro-mirror/commit/6cda9a2c46b957005f13372c34f4063fc1de197a))
+* **core:** add withCid ($cid) support for maps and tree node.data ([#19](https://github.com/loro-dev/loro-mirror/issues/19)) ([b031b09](https://github.com/loro-dev/loro-mirror/commit/b031b096ecb4c4db54529bfd2a9b04c49ba9b0c0))
+* jotai binding ([#13](https://github.com/loro-dev/loro-mirror/issues/13)) ([5a381ab](https://github.com/loro-dev/loro-mirror/commit/5a381abd96e2c77f7f56bb6735d7e60a5f5edd6d))
+* LoroTree ([#16](https://github.com/loro-dev/loro-mirror/issues/16)) ([3990702](https://github.com/loro-dev/loro-mirror/commit/399070207f8c408c4f381ac5303b6ff0dd7acfa3))
+* make setState async to avoid correctness problem ([#24](https://github.com/loro-dev/loro-mirror/issues/24)) ([cc234c3](https://github.com/loro-dev/loro-mirror/commit/cc234c3a1648704b5b44427e0728514cb7fa4832))
+* state update tagging, default container inferring, fix: container initialization, misc ([#6](https://github.com/loro-dev/loro-mirror/issues/6)) ([ab41789](https://github.com/loro-dev/loro-mirror/commit/ab41789358b5679c1d8417da1a9597386b910ae8))
+
+
+### Bug Fixes
+
+* **core:** prevent divergence with null map values ([#18](https://github.com/loro-dev/loro-mirror/issues/18)) ([3fc3965](https://github.com/loro-dev/loro-mirror/commit/3fc3965d02851e64903aab1ff119f69111342861))
+* initState shuold not override doc init state ([dc59fa8](https://github.com/loro-dev/loro-mirror/commit/dc59fa8975313afa49ebad1097a946c01b981b57))
+* jotai sub ([90944c8](https://github.com/loro-dev/loro-mirror/commit/90944c8b2d399dd781fe73f1b591567e25cecd11))
+* make all current tests pass ([6a500bb](https://github.com/loro-dev/loro-mirror/commit/6a500bbb1419467fe48a3067b9e7428485697e1a))
+* make withCid as default behavior and rm this config ([#23](https://github.com/loro-dev/loro-mirror/issues/23)) ([b97ba42](https://github.com/loro-dev/loro-mirror/commit/b97ba4209ae0057c940927bee9c279bb1327302f))
+* movable list diff issue ([84c308c](https://github.com/loro-dev/loro-mirror/commit/84c308c7392b96885d522729a18c24e09de70f36))
+
 ## 0.1.0 (2025-09-12)
 
 
