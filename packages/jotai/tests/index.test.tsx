@@ -41,12 +41,8 @@ describe('loro-mirror-jotai', () => {
 
         const { result } = renderHook(() => useAtom(testAtom));
 
-        act(() => {
-            result.current[1]({ text: 'hello' });
-        });
-
         await act(async () => {
-            await waitFor(50);
+            await result.current[1]({ text: 'hello' });
         });
 
         expect(result.current[0]).toEqual({ text: 'hello' });

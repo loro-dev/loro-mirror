@@ -1,3 +1,4 @@
+/* eslint-disable unicorn/consistent-function-scoping */
 import { Mirror } from "../src/core/mirror";
 import { LoroDoc } from "loro-crdt";
 import { schema } from "../src/schema";
@@ -30,7 +31,7 @@ describe("MovableList", () => {
             schema: schema_,
         });
 
-        mirror.setState({
+        await mirror.setState({
             list: [
                 {
                     id: "1",
@@ -75,7 +76,7 @@ describe("MovableList", () => {
         // Id of the container for the first item in the original list
         const initialId = initialSerialized.list.value[0].cid;
 
-        mirror.setState({
+        await mirror.setState({
             list: [
                 {
                     id: "2",
@@ -100,7 +101,7 @@ describe("MovableList", () => {
     it("movable list handles insertion of items correctly", async () => {
         const { mirror, doc } = await initTestMirror();
 
-        mirror.setState({
+        await mirror.setState({
             list: [
                 {
                     id: "1",
@@ -130,7 +131,7 @@ describe("MovableList", () => {
     it("movable list handles shuffling of many items at once correctly", async () => {
         const { mirror, doc } = await initTestMirror();
 
-        mirror.setState({
+        await mirror.setState({
             list: [
                 {
                     id: "1",
@@ -172,7 +173,7 @@ describe("MovableList", () => {
             ],
         };
 
-        mirror.setState(deriredState);
+        await mirror.setState(deriredState);
 
         await waitForSync();
 
@@ -203,7 +204,7 @@ describe("MovableList", () => {
     it("movable list shuffle with updates should shuffle and update", async () => {
         const { mirror, doc } = await initTestMirror();
 
-        mirror.setState({
+        await mirror.setState({
             list: [
                 {
                     id: "1",
@@ -239,7 +240,7 @@ describe("MovableList", () => {
             ],
         };
 
-        mirror.setState(desiredState);
+        await mirror.setState(desiredState);
 
         await waitForSync();
 
@@ -294,7 +295,7 @@ describe("MovableList", () => {
             ],
         };
 
-        mirror.setState(desiredState);
+        await mirror.setState(desiredState);
 
         await waitForSync();
 
@@ -310,7 +311,7 @@ describe("MovableList", () => {
     it("movable list handles basic delete", async () => {
         const { mirror, doc } = await initTestMirror();
 
-        mirror.setState({
+        await mirror.setState({
             list: [],
         });
 
@@ -335,7 +336,7 @@ describe("MovableList", () => {
             ],
         };
 
-        mirror.setState(desiredState);
+        await mirror.setState(desiredState);
 
         await waitForSync();
 
@@ -367,7 +368,7 @@ describe("MovableList", () => {
             schema: schema_,
         });
 
-        mirror.setState({
+        await mirror.setState({
             list: [
                 { id: "0", text: "" },
                 { id: "1", text: "" },
@@ -376,7 +377,7 @@ describe("MovableList", () => {
             ],
         });
         expect(doc.frontiers()[0].counter).toBe(11);
-        mirror.setState({
+        await mirror.setState({
             list: [
                 { id: "1", text: "" },
                 { id: "0", text: "" },
@@ -385,7 +386,7 @@ describe("MovableList", () => {
             ],
         });
         expect(doc.frontiers()[0].counter).toBe(12);
-        mirror.setState({
+        await mirror.setState({
             list: [
                 { id: "0", text: "" },
                 { id: "1", text: "" },
@@ -419,14 +420,14 @@ describe("MovableList", () => {
             schema: schema_,
         });
 
-        mirror.setState({
+        await mirror.setState({
             list: ["1:a", "2:b"],
         });
         expect(doc.toJSON()).toStrictEqual({
             list: ["1:a", "2:b"],
         });
         expect(doc.frontiers()[0].counter).toBe(1);
-        mirror.setState({
+        await mirror.setState({
             list: ["1:a", "2:bc"],
         });
         expect(doc.frontiers()[0].counter).toBe(2);
@@ -437,7 +438,7 @@ describe("MovableList", () => {
         const { mirror, doc } = await initTestMirror();
 
         // Set to four items first
-        mirror.setState({
+        await mirror.setState({
             list: [
                 { id: "A", text: "tA" },
                 { id: "B", text: "tB" },
@@ -459,7 +460,7 @@ describe("MovableList", () => {
                 { id: "B", text: "tB" },
             ],
         };
-        mirror.setState(desired);
+        await mirror.setState(desired);
         await waitForSync();
 
         const after = doc.getDeepValueWithID();
@@ -480,7 +481,7 @@ describe("MovableList", () => {
     it("movable list handles insert + delete + reorder mix", async () => {
         const { mirror, doc } = await initTestMirror();
 
-        mirror.setState({
+        await mirror.setState({
             list: [
                 { id: "A", text: "tA" },
                 { id: "B", text: "tB" },
@@ -501,7 +502,7 @@ describe("MovableList", () => {
                 { id: "B", text: "tb" },
             ],
         };
-        mirror.setState(desired);
+        await mirror.setState(desired);
         await waitForSync();
 
         const after = doc.getDeepValueWithID();
@@ -527,26 +528,26 @@ describe("MovableList", () => {
 
     it("movable list throws on missing item id", async () => {
         const { mirror } = await initTestMirror();
-        expect(() => {
+        await expect(
             mirror.setState({
                 list: [
                     // missing id
                     { text: "no id" } as any,
                 ],
-            } as any);
-        }).toThrow();
+            } as any),
+        ).rejects.toThrow();
     });
 
     it("movable list throws on duplicate ids in new state", async () => {
         const { mirror } = await initTestMirror();
-        expect(() => {
+        await expect(
             mirror.setState({
                 list: [
                     { id: "X", text: "1" },
                     { id: "X", text: "2" },
                 ],
-            });
-        }).toThrow();
+            }),
+        ).rejects.toThrow();
     });
 
     it("movable list fuzz: large shuffles preserve container ids and text", async () => {
@@ -576,7 +577,7 @@ describe("MovableList", () => {
         });
         let current = Array.from({ length: N }, (_, i) => makeItem(i));
 
-        mirror.setState({ list: current });
+        await mirror.setState({ list: current });
         await waitForSync();
 
         const initial = doc.getDeepValueWithID();
@@ -596,7 +597,7 @@ describe("MovableList", () => {
                 next[idx] = { id, text: `T${id}-r${r}` } as any;
             }
 
-            mirror.setState({ list: next });
+            await mirror.setState({ list: next });
             await waitForSync();
 
             const after = doc.getDeepValueWithID();

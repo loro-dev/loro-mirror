@@ -20,6 +20,7 @@ import {
     SchemaOptions,
     SchemaType,
     StringSchemaType,
+    InferType,
 } from "./types";
 
 export * from "./types";
@@ -183,13 +184,13 @@ schema.LoroMapRecord = function <
  */
 schema.LoroList = function <T extends SchemaType, O extends SchemaOptions = {}>(
     itemSchema: T,
-    idSelector?: (item: any) => string,
+    idSelector?: (item: InferType<T>) => string,
     options?: O,
 ): LoroListSchema<T> & { options: O } {
     return {
         type: "loro-list" as const,
         itemSchema,
-        idSelector,
+        idSelector: idSelector as unknown as (item: unknown) => string,
         options: options || ({} as O),
         getContainerType: () => {
             return "List";
@@ -202,13 +203,13 @@ schema.LoroMovableList = function <
     O extends SchemaOptions = {},
 >(
     itemSchema: T,
-    idSelector: (item: any) => string,
+    idSelector: (item: InferType<T>) => string,
     options?: O,
 ): LoroMovableListSchema<T> & { options: O } {
     return {
         type: "loro-movable-list" as const,
         itemSchema,
-        idSelector,
+        idSelector: idSelector as unknown as (item: unknown) => string,
         options: options || ({} as O),
         getContainerType: () => {
             return "MovableList";

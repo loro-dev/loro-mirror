@@ -143,7 +143,7 @@ describe("Mirror - State Consistency", () => {
         await waitForSync();
 
         // Update app state through mirror
-        mirror.setState({
+        await mirror.setState({
             user: {
                 name: "John",
                 email: "john@example.com",
@@ -306,7 +306,7 @@ describe("Mirror - State Consistency", () => {
         // Make rapid changes
         for (let i = 1; i <= 5; i++) {
             // Update using appropriate format - using type assertion for test purposes
-            mirror.setState({
+            await mirror.setState({
                 meta: {
                     counter: i,
                 },
@@ -370,7 +370,7 @@ describe("Mirror - State Consistency", () => {
         expect(updatedValue).toBe("updated in loro");
 
         // Use the same format that was already in use
-        mirror.setState({
+        await mirror.setState({
             meta: {
                 value: "updated in app",
             },
@@ -418,7 +418,7 @@ describe("Mirror - State Consistency", () => {
         expect(loroUpdatedState.note).toBe("Updated note text from Loro");
 
         // Use appropriate format based on the current value
-        mirror.setState({
+        await mirror.setState({
             note: "Updated note text from app",
         });
 
@@ -580,7 +580,7 @@ describe("Mirror - State Consistency", () => {
 
         await waitForSync();
 
-        mirror.setState({
+        await mirror.setState({
             users: {
                 profile: {
                     name: "John",
@@ -679,7 +679,7 @@ describe("Mirror - State Consistency", () => {
 
         await waitForSync();
 
-        mirror.setState({
+        await mirror.setState({
             root: {
                 name: "Root",
                 children: [
@@ -832,7 +832,7 @@ describe("Mirror - State Consistency", () => {
             },
         });
 
-        mirror.setState(someState);
+        await mirror.setState(someState);
         await waitForSync();
 
         const state = doc.getDeepValueWithID();

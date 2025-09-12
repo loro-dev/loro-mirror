@@ -42,18 +42,21 @@ const todoSchema = schema({
 const doc = new LoroDoc();
 
 // 3. Create the Jotai atom with Loro Mirror config
+// Optionally pass onError to handle async failures
 const todoAtom = loroMirrorAtom({
   doc,
   schema: todoSchema,
   initialState: { todos: [] },
+  // onError: (err) => console.error('update failed', err),
 });
 
 // 4. Use it in your React component
 function TodoApp() {
   const [state, setState] = useAtom(todoAtom);
 
-  const addTodo = () => {
-    setState((prevState) => ({
+  const addTodo = async () => {
+    // Setter returns a Promise; await to catch validation errors or ensure ordering
+    await setState((prevState) => ({
       todos: [
         ...prevState.todos,
         {
@@ -78,6 +81,11 @@ function TodoApp() {
   );
 }
 ```
+
+### Async behavior
+
+- The setter returned by `useAtom(loroMirrorAtom(...))` returns a Promise. Await it when you need deterministic ordering or to handle validation/consistency errors.
+- You can also pass `onError` in the atom config to catch rejections centrally.
 
 ### About `$cid`
 

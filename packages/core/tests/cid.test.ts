@@ -236,7 +236,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         const s = schema({ x: schema.LoroMap({ foo: schema.String() }) });
         const m = new Mirror({ doc, schema: s });
 
-        m.setState((draft: any) => {
+        await m.setState((draft: any) => {
             draft.x.foo = "bar";
             draft.x[CID_KEY] = "user-defined";
         });
@@ -257,7 +257,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         const before = JSON.stringify(doc.toJSON());
 
         // Remove synthetic field from state; diffMap should ignore
-        m.setState((draft: any) => {
+        await m.setState((draft: any) => {
             delete draft.m[CID_KEY];
         });
         await Promise.resolve();
@@ -266,17 +266,17 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(after).toBe(before);
     });
 
-    it("TO_LORO + consistency check: changing $cid throws divergence error", () => {
+    it("TO_LORO + consistency check: changing $cid throws divergence error", async () => {
         const doc = new LoroDoc();
         const s = schema({ m: schema.LoroMap({ label: schema.String() }) });
         const m = new Mirror({ doc, schema: s, checkStateConsistency: true });
 
-        expect(() => {
+        await expect(
             m.setState((draft: any) => {
                 draft.m.label = "ok";
                 draft.m[CID_KEY] = "tamper"; // should be ignored to Loro and trigger consistency error
-            });
-        }).toThrow();
+            }),
+        ).rejects.toThrow();
     });
 
     it("list items: $cid values exist and are unique per item", async () => {
@@ -355,7 +355,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         const s = schema({
             items: schema.LoroMovableList(
                 schema.LoroMap({ val: schema.Number() }),
-                (it) => (it as any)[CID_KEY] ?? null,
+                (it) => it.$cid,
             ),
         });
         const m = new Mirror({ doc, schema: s });
@@ -373,7 +373,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         const second = m.getState().items[1];
 
         // Swap order using $cid-based idSelector
-        m.setState({ items: [second, first] } as any);
+        await m.setState({ items: [second, first] } as any);
         await Promise.resolve();
 
         const after = m.getState();
@@ -382,7 +382,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
     });
 
     // setState-created containers should have $cid in final state
-    it("TO_LORO setState: nested map container gets $cid in final state (same mirror)", () => {
+    it("TO_LORO setState: nested map container gets $cid in final state (same mirror)", async () => {
         const doc = new LoroDoc();
         const s = schema({
             root: schema.LoroMap({
@@ -391,13 +391,13 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         });
         const m = new Mirror({ doc, schema: s });
         // Create nested container via setState
-        m.setState({ root: { child: { name: "x" } } } as any);
+        await m.setState({ root: { child: { name: "x" } } } as any);
         const st = m.getState() as any;
         expect(st.root.child.name).toBe("x");
         expect(typeof st.root.child[CID_KEY]).toBe("string");
     });
 
-    it("TO_LORO setState: replacing existing child map with plain object reattaches $cid", () => {
+    it("TO_LORO setState: replacing existing child map with plain object reattaches $cid", async () => {
         const doc = new LoroDoc();
         const root = doc.getMap("root");
         const child = new LoroMap();
@@ -416,7 +416,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(cidBefore).toBe(attached.id);
 
         // Replace existing child map by passing a plain object without $cid
-        m.setState({ root: { child: { name: "y" } } } as any);
+        await m.setState({ root: { child: { name: "y" } } } as any);
 
         const after = m.getState() as any;
         expect(after.root.child.name).toBe("y");
@@ -424,7 +424,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(after.root.child[CID_KEY]).toBe(cidBefore);
     });
 
-    it("TO_LORO setState: updating existing tree node data without $cid preserves it", () => {
+    it("TO_LORO setState: updating existing tree node data without $cid preserves it", async () => {
         const doc = new LoroDoc();
         const tree = doc.getTree("tree");
         const n = tree.createNode(undefined, 0);
@@ -441,7 +441,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(typeof prevCid).toBe("string");
 
         // Update node data via setState, omitting $cid
-        m.setState({
+        await m.setState({
             tree: [
                 { id: before.tree[0].id, data: { title: "A*" }, children: [] },
             ],
@@ -452,26 +452,26 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(after.tree[0].data[CID_KEY]).toBe(prevCid);
     });
 
-    it("TO_LORO setState: list items get $cid in final state (same mirror)", () => {
+    it("TO_LORO setState: list items get $cid in final state (same mirror)", async () => {
         const doc = new LoroDoc();
         const s = schema({
             list: schema.LoroList(schema.LoroMap({ v: schema.Number() })),
         });
         const m = new Mirror({ doc, schema: s });
-        m.setState({ list: [{ v: 1 }, { v: 2 }] } as any);
+        await m.setState({ list: [{ v: 1 }, { v: 2 }] } as any);
         const st = m.getState() as any;
         expect(st.list).toHaveLength(2);
         expect(typeof st.list[0][CID_KEY]).toBe("string");
         expect(typeof st.list[1][CID_KEY]).toBe("string");
     });
 
-    it("TO_LORO setState: tree nodes' data get $cid in final state (same mirror)", () => {
+    it("TO_LORO setState: tree nodes' data get $cid in final state (same mirror)", async () => {
         const doc = new LoroDoc();
         const s = schema({
             tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
         });
         const m = new Mirror({ doc, schema: s });
-        m.setState({
+        await m.setState({
             tree: [
                 { id: "", data: { title: "A" }, children: [] },
                 { id: "", data: { title: "B" }, children: [] },

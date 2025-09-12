@@ -27,7 +27,7 @@ describe("Tagging", () => {
             capturedMetadata = metadata;
         });
 
-        mirror.setState(
+        await mirror.setState(
             { user: { name: "Updated" } },
             { tags: ["test-tag", "important"] },
         );

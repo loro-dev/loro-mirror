@@ -1,3 +1,4 @@
+/* eslint-disable unicorn/consistent-function-scoping */
 import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroText, LoroList, LoroMap, LoroCounter } from "loro-crdt";
 import { applyEventBatchToState } from "./loroEventApply";
@@ -465,6 +466,7 @@ describe("applyEventBatchToState (inline)", () => {
         });
 
         // Seeded PRNG for reproducibility
+        /* eslint-disable unicorn/consistent-function-scoping */
         function mulberry32(seed: number) {
             return function () {
                 let t = (seed += 0x6d2b79f5) | 0;
@@ -500,7 +502,7 @@ describe("applyEventBatchToState (inline)", () => {
             const valueTypes = [
                 () => rand(100),
                 () => randStr(),
-                () => (chance(0.5) ? true : false),
+                () => chance(0.5),
                 () => null,
             ];
             const v = valueTypes[rand(valueTypes.length)]();

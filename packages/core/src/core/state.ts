@@ -60,12 +60,10 @@ export interface Store<S extends SchemaType> {
      */
     setState: {
         (
-            updater: (
-                state: Readonly<InferInputType<S>>,
-            ) => InferInputType<S>,
-        ): void;
-        (updater: (state: InferType<S>) => void): void;
-        (updater: Partial<InferInputType<S>>): void;
+            updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
+        ): Promise<void>;
+        (updater: (state: InferType<S>) => void): Promise<void>;
+        (updater: Partial<InferInputType<S>>): Promise<void>;
     };
 
     /**
@@ -98,21 +96,21 @@ export function createStore<S extends SchemaType>(
         checkStateConsistency: options.checkStateConsistency,
     });
 
-    const setStateImpl = (updater: unknown) => {
+    const setStateImpl = async (updater: unknown) => {
         // Delegate to mirror; overload resolution occurs there
-        mirror.setState(updater as any);
+        await mirror.setState(updater as never);
     };
 
     return {
         getState: () => mirror.getState(),
         setState: setStateImpl as unknown as {
-            (updater: (state: InferType<S>) => void): void;
+            (updater: (state: InferType<S>) => void): Promise<void>;
             (
                 updater: (
                     state: Readonly<InferInputType<S>>,
                 ) => InferInputType<S>,
-            ): void;
-            (updater: Partial<InferInputType<S>>): void;
+            ): Promise<void>;
+            (updater: Partial<InferInputType<S>>): Promise<void>;
         },
         subscribe: (callback) => mirror.subscribe(callback),
         getMirror: () => mirror,
@@ -123,30 +121,28 @@ export function createStore<S extends SchemaType>(
 /**
  * Create an immer-based reducer function for a store
  */
-export function createReducer<
-    S extends SchemaType,
-    A extends Record<string, unknown>,
->(actionHandlers: {
-    [K in keyof A]: (
-        state: import("immer").Draft<InferType<S>>,
-        payload: A[K],
-    ) => void;
+export function createReducer<S extends SchemaType, A>(actionHandlers: {
+    [K in keyof A]: (state: unknown, payload: A[K]) => void;
 }) {
     return (store: Store<S>) => {
         // Return a dispatch function that takes an action and payload
         return <K extends keyof A>(actionType: K, payload: A[K]) => {
-            const handler = actionHandlers[actionType];
+            const handler = actionHandlers[actionType] as unknown as (
+                state: import("immer").Draft<InferType<S>>,
+                payload: A[K],
+            ) => void;
             if (!handler) {
                 throw new Error(`Unknown action type: ${String(actionType)}`);
             }
 
-            store.setState((state) =>
-                (produce<InferType<S>>(
-                    state as unknown as InferType<S>,
-                    (draft: import("immer").Draft<InferType<S>>) => {
-                        handler(draft, payload);
-                    },
-                ) as unknown) as InferInputType<S>,
+            void store.setState(
+                (state) =>
+                    produce<InferType<S>>(
+                        state as unknown as InferType<S>,
+                        (draft: import("immer").Draft<InferType<S>>) => {
+                            handler(draft, payload);
+                        },
+                    ) as unknown as InferInputType<S>,
             );
         };
     };

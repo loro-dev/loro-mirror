@@ -24,7 +24,7 @@ describe("Text Container Behave correctly", () => {
             schema: schema_,
         });
 
-        mirror.setState({
+        await mirror.setState({
             text: "Hello World",
         });
 
@@ -82,7 +82,7 @@ describe("Text Container Behave correctly", () => {
             schema: schema_,
         });
 
-        mirror.setState({
+        await mirror.setState({
             map: {
                 text: "Hello World",
             },
@@ -154,7 +154,7 @@ describe("Text Container Behave correctly", () => {
             schema: schema_,
         });
 
-        mirror.setState({
+        await mirror.setState({
             list: ["Hello World"],
         });
 
