@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroText } from "loro-crdt";
-import { Mirror } from "../../src/core/mirror";
-import { applyEventBatchToState } from "../../src/core/loroEventApply";
-import { schema } from "../../src/schema";
+import { Mirror } from "../src/core/mirror";
+import { applyEventBatchToState } from "../src/core/loroEventApply";
+import { schema } from "../src/schema";
 
 // Small helper to wait for microtasks (mirror commits async)
 const tick = async () => {
@@ -264,10 +264,9 @@ describe("LoroTree integration", () => {
         const titles = nodes
             .filter((n) => n.parent() === undefined)
             .map((n) => n.data.get("title"));
-        expect(titles.sort((a, b) => String(a).localeCompare(String(b)))).toEqual([
-            "A",
-            "B",
-        ]);
+        expect(
+            titles.sort((a, b) => String(a).localeCompare(String(b))),
+        ).toEqual(["A", "B"]);
     });
 
     // FROM_LORO edge cases
@@ -981,11 +980,11 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-            expect(() => {
-                m.setState({
-                    tree: { id: "", data: { title: "X" } },
-                } as any);
-            }).toThrow();
+        expect(() => {
+            m.setState({
+                tree: { id: "", data: { title: "X" } },
+            } as any);
+        }).toThrow();
     });
     it("TO_LORO: invalid node shape (children not array) throws", async () => {
         const doc = new LoroDoc();
@@ -994,17 +993,17 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-            expect(() => {
-                m.setState({
-                    tree: [
-                        {
-                            id: "",
-                            data: { title: "X" },
-                            children: "oops",
-                        },
-                    ],
-                } as any);
-            }).toThrow();
+        expect(() => {
+            m.setState({
+                tree: [
+                    {
+                        id: "",
+                        data: { title: "X" },
+                        children: "oops",
+                    },
+                ],
+            } as any);
+        }).toThrow();
     });
 
     // Nested tree container inside a map

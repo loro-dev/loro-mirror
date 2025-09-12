@@ -1,8 +1,8 @@
-import { Mirror } from "../../src/core/mirror";
+import { Mirror } from "../src/core/mirror";
 import { LoroDoc } from "loro-crdt";
-import { schema } from "../../src/schema";
+import { schema } from "../src/schema";
 import { describe, expect, it } from "vitest";
-import { valueIsContainerOfType } from "../../src/core/utils";
+import { valueIsContainerOfType } from "../src/core/utils";
 
 // Utility function to wait for sync to complete (three microtasks for better reliability)
 const waitForSync = async () => {
@@ -527,26 +527,26 @@ describe("MovableList", () => {
 
     it("movable list throws on missing item id", async () => {
         const { mirror } = await initTestMirror();
-            expect(() => {
-                mirror.setState({
-                    list: [
-                        // missing id
-                        { text: "no id" } as any,
-                    ],
-                } as any);
-            }).toThrow();
+        expect(() => {
+            mirror.setState({
+                list: [
+                    // missing id
+                    { text: "no id" } as any,
+                ],
+            } as any);
+        }).toThrow();
     });
 
     it("movable list throws on duplicate ids in new state", async () => {
         const { mirror } = await initTestMirror();
-            expect(() => {
-                mirror.setState({
-                    list: [
-                        { id: "X", text: "1" },
-                        { id: "X", text: "2" },
-                    ],
-                });
-            }).toThrow();
+        expect(() => {
+            mirror.setState({
+                list: [
+                    { id: "X", text: "1" },
+                    { id: "X", text: "2" },
+                ],
+            });
+        }).toThrow();
     });
 
     it("movable list fuzz: large shuffles preserve container ids and text", async () => {

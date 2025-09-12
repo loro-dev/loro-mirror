@@ -1,5 +1,5 @@
-import { Mirror } from "../../src/core/mirror";
-import { schema } from "../../src/schema";
+import { Mirror } from "../src/core/mirror";
+import { schema } from "../src/schema";
 import { isContainer, LoroDoc, LoroMap } from "loro-crdt";
 import { expect, it } from "vitest";
 

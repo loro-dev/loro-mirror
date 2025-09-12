@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createReducer, createStore, Store } from "../../src/core/state";
+import { createReducer, createStore, Store } from "../src/core/state";
 import {
     BooleanSchemaType,
     LoroListSchema,
@@ -9,8 +9,8 @@ import {
     RootSchemaType,
     schema,
     StringSchemaType,
-} from "../../src/schema";
-import { SyncDirection } from "../../src/core/mirror";
+} from "../src/schema";
+import { SyncDirection } from "../src/core/mirror";
 import { LoroDoc } from "loro-crdt";
 
 // Utility to wait for sync to complete (three microtasks for reliable sync)

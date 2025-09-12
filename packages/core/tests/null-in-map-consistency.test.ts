@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroMap, LoroList } from "loro-crdt";
-import { Mirror, schema, toNormalizedJson } from "../../src";
+import { Mirror, schema, toNormalizedJson } from "../src";
 
 function stripCid(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(stripCid);

@@ -2,14 +2,16 @@
  * Test for schema catchall functionality
  */
 import { describe, it, expect } from "vitest";
-import { schema } from "../../src/schema";
+import { schema } from "../src/schema";
 
 describe("Schema Catchall Functionality", () => {
     it("should create a schema with catchall support", () => {
-        const mixedSchema = schema.LoroMap({
-            name: schema.String({ required: true }),
-            age: schema.Number(),
-        }).catchall(schema.String());
+        const mixedSchema = schema
+            .LoroMap({
+                name: schema.String({ required: true }),
+                age: schema.Number(),
+            })
+            .catchall(schema.String());
 
         expect(mixedSchema.type).toBe("loro-map");
         expect(mixedSchema.definition).toEqual({
@@ -17,7 +19,7 @@ describe("Schema Catchall Functionality", () => {
             age: expect.objectContaining({ type: "number" }),
         });
         expect(mixedSchema.catchallType).toEqual(
-            expect.objectContaining({ type: "string" })
+            expect.objectContaining({ type: "string" }),
         );
     });
 
@@ -27,7 +29,7 @@ describe("Schema Catchall Functionality", () => {
         expect(dynamicSchema.type).toBe("loro-map");
         expect(dynamicSchema.definition).toEqual({});
         expect(dynamicSchema.catchallType).toEqual(
-            expect.objectContaining({ type: "string" })
+            expect.objectContaining({ type: "string" }),
         );
     });
 
@@ -40,30 +42,34 @@ describe("Schema Catchall Functionality", () => {
         const withNumberCatchall = withStringCatchall.catchall(schema.Number());
 
         expect(withStringCatchall.catchallType).toEqual(
-            expect.objectContaining({ type: "string" })
+            expect.objectContaining({ type: "string" }),
         );
         expect(withNumberCatchall.catchallType).toEqual(
-            expect.objectContaining({ type: "number" })
+            expect.objectContaining({ type: "number" }),
         );
     });
 
     it("should support nested schemas with catchall", () => {
-        const nestedSchema = schema.LoroMap({
-            user: schema.LoroMap({
-                name: schema.String(),
-            }).catchall(schema.String()),
-        }).catchall(
-            schema.LoroMap({
-                value: schema.Number(),
+        const nestedSchema = schema
+            .LoroMap({
+                user: schema
+                    .LoroMap({
+                        name: schema.String(),
+                    })
+                    .catchall(schema.String()),
             })
-        );
+            .catchall(
+                schema.LoroMap({
+                    value: schema.Number(),
+                }),
+            );
 
         expect(nestedSchema.type).toBe("loro-map");
         expect(nestedSchema.definition.user).toEqual(
             expect.objectContaining({
                 type: "loro-map",
                 catchallType: expect.objectContaining({ type: "string" }),
-            })
+            }),
         );
         expect(nestedSchema.catchallType).toEqual(
             expect.objectContaining({
@@ -71,7 +77,7 @@ describe("Schema Catchall Functionality", () => {
                 definition: expect.objectContaining({
                     value: expect.objectContaining({ type: "number" }),
                 }),
-            })
+            }),
         );
     });
 
@@ -80,10 +86,10 @@ describe("Schema Catchall Functionality", () => {
         const newRecordSchema = recordSchema.catchall(schema.Number());
 
         expect(recordSchema.catchallType).toEqual(
-            expect.objectContaining({ type: "string" })
+            expect.objectContaining({ type: "string" }),
         );
         expect(newRecordSchema.catchallType).toEqual(
-            expect.objectContaining({ type: "number" })
+            expect.objectContaining({ type: "number" }),
         );
     });
 });

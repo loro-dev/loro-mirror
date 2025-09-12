@@ -1,8 +1,8 @@
-import { Mirror } from "../../src/core/mirror";
+import { Mirror } from "../src/core/mirror";
 import { LoroDoc, LoroText } from "loro-crdt";
-import { schema } from "../../src/schema";
+import { schema } from "../src/schema";
 import { describe, expect, it } from "vitest";
-import { valueIsContainer, valueIsContainerOfType } from "../../src/core/utils";
+import { valueIsContainer, valueIsContainerOfType } from "../src/core/utils";
 
 // Utility function to wait for sync to complete (three microtasks for better reliability)
 const waitForSync = async () => {
@@ -12,7 +12,6 @@ const waitForSync = async () => {
 };
 
 describe("Text Container Behave correctly", () => {
-
     it("updates properly reflect when LoroText is at root", async () => {
         const doc = new LoroDoc();
 
@@ -140,7 +139,7 @@ describe("Text Container Behave correctly", () => {
 
         expect(
             valueIsContainer(serialized.map) &&
-            valueIsContainerOfType(serialized.map, ":Map"),
+                valueIsContainerOfType(serialized.map, ":Map"),
             "map field should be a LoroMap Container -- set from loro",
         );
     });

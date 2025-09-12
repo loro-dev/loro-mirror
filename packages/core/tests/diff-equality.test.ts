@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { LoroDoc } from "loro-crdt";
-import { diffContainer } from "../../src/core/diff";
-import { schema } from "../../src/schema";
+import { diffContainer } from "../src/core/diff";
+import { schema } from "../src/schema";
 
 describe("diffMap equality for falsy primitives", () => {
     it("does not emit changes when string field stays ''", () => {
@@ -39,4 +39,3 @@ describe("diffMap equality for falsy primitives", () => {
         expect(changes.length).toBe(0);
     });
 });
-
