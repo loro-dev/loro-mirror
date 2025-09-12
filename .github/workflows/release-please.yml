@@ -1,0 +1,80 @@
+name: Release & Publish
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release Please
+        uses: google-github-actions/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          command: manifest
+
+  publish:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm -r build
+
+      - name: Determine package from tag
+        id: which
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Release tag: $TAG"
+          if [[ "$TAG" =~ ^loro-mirror-v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            echo "name=loro-mirror" >> "$GITHUB_OUTPUT"
+            echo "dir=packages/core" >> "$GITHUB_OUTPUT"
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" =~ ^loro-mirror-react-v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            echo "name=loro-mirror-react" >> "$GITHUB_OUTPUT"
+            echo "dir=packages/react" >> "$GITHUB_OUTPUT"
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" =~ ^loro-mirror-jotai-v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            echo "name=loro-mirror-jotai" >> "$GITHUB_OUTPUT"
+            echo "dir=packages/jotai" >> "$GITHUB_OUTPUT"
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag $TAG does not match known packages; skipping publish."
+            echo "name=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.which.outputs.name != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Publishing ${{ steps.which.outputs.name }} at version ${{ steps.which.outputs.version }}"
+          pnpm --filter "${{ steps.which.outputs.name }}" publish --no-git-checks

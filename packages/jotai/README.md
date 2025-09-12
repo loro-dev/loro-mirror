@@ -1,6 +1,6 @@
 # Loro Mirror for Jotai
 
-Jotai integration for Loro Mirror, providing atomic state management with Loro CRDT synchronization. 
+Jotai integration for Loro Mirror, providing atomic state management with Loro CRDT synchronization.
 
 ## Installation
 

@@ -17,123 +17,124 @@ pnpm add loro-mirror-react loro-mirror loro-crdt
 ### Basic Usage with Hooks
 
 ```tsx
-import React, { useMemo } from 'react';
-import { LoroDoc } from 'loro-crdt';
-import { schema } from 'loro-mirror';
-import { useLoroStore } from 'loro-mirror-react';
+import React, { useMemo } from "react";
+import { LoroDoc } from "loro-crdt";
+import { schema } from "loro-mirror";
+import { useLoroStore } from "loro-mirror-react";
 
 // Define your schema
 const todoSchema = schema({
-  todos: schema.LoroList(
-    schema.LoroMap({
-      text: schema.String({ required: true }),
-      completed: schema.Boolean({ defaultValue: false }),
-    }),
-    // Use `$cid` (reuses Loro container id; explained below)
-    (item) => item.$cid,
-  ),
-  filter: schema.String({ defaultValue: 'all' }),
+    todos: schema.LoroList(
+        schema.LoroMap({
+            text: schema.String({ required: true }),
+            completed: schema.Boolean({ defaultValue: false }),
+        }),
+        // Use `$cid` (reuses Loro container id; explained below)
+        (item) => item.$cid,
+    ),
+    filter: schema.String({ defaultValue: "all" }),
 });
 
 function TodoApp() {
-  // Create a Loro document
-  const doc = useMemo(() => new LoroDoc(), []);
-  
-  // Create a store
-  const { state, setState } = useLoroStore({
-    doc,
-    schema: todoSchema,
-    initialState: { todos: [], filter: 'all' },
-  });
-  
-  // Add a new todo (Promise-returning; await when you need ordering/errors)
-  const addTodo = async (text: string) => {
-    await setState((s) => ({
-      ...s,
-      todos: [
-        ...s.todos,
-        { text, completed: false },
-      ],
-    }));
-  };
-  
-  // Rest of your component...
+    // Create a Loro document
+    const doc = useMemo(() => new LoroDoc(), []);
+
+    // Create a store
+    const { state, setState } = useLoroStore({
+        doc,
+        schema: todoSchema,
+        initialState: { todos: [], filter: "all" },
+    });
+
+    // Add a new todo (Promise-returning; await when you need ordering/errors)
+    const addTodo = async (text: string) => {
+        await setState((s) => ({
+            ...s,
+            todos: [...s.todos, { text, completed: false }],
+        }));
+    };
+
+    // Rest of your component...
 }
 ```
 
 ### Using Context Provider
 
 ```tsx
-import React, { useMemo } from 'react';
-import { LoroDoc } from 'loro-crdt';
-import { schema } from 'loro-mirror';
-import { createLoroContext } from 'loro-mirror-react';
+import React, { useMemo } from "react";
+import { LoroDoc } from "loro-crdt";
+import { schema } from "loro-mirror";
+import { createLoroContext } from "loro-mirror-react";
 
 // Define your schema
 const todoSchema = schema({
-  todos: schema.LoroList(
-    schema.LoroMap({
-      text: schema.String({ required: true }),
-      completed: schema.Boolean({ defaultValue: false }),
-    }),
-    (t) => t.$cid, // stable id from Loro container id
-  ),
+    todos: schema.LoroList(
+        schema.LoroMap({
+            text: schema.String({ required: true }),
+            completed: schema.Boolean({ defaultValue: false }),
+        }),
+        (t) => t.$cid, // stable id from Loro container id
+    ),
 });
 
 // Create a context
 const {
-  LoroProvider,
-  useLoroContext,
-  useLoroState,
-  useLoroSelector,
-  useLoroAction,
+    LoroProvider,
+    useLoroContext,
+    useLoroState,
+    useLoroSelector,
+    useLoroAction,
 } = createLoroContext(todoSchema);
 
 // Root component
 function App() {
-  const doc = useMemo(() => new LoroDoc(), []);
-  
-  return (
-    <LoroProvider doc={doc} initialState={{ todos: [] }}>
-      <TodoList />
-      <AddTodoForm />
-    </LoroProvider>
-  );
+    const doc = useMemo(() => new LoroDoc(), []);
+
+    return (
+        <LoroProvider doc={doc} initialState={{ todos: [] }}>
+            <TodoList />
+            <AddTodoForm />
+        </LoroProvider>
+    );
 }
 
 // Todo list component
 function TodoList() {
-  // Subscribe only to the todos array
-  const todos = useLoroSelector(state => state.todos);
-  
-  return (
-    <ul>
-      {todos.map(todo => (
-        <TodoItem key={todo.$cid /* stable key from Loro container id */} todo={todo} />
-      ))}
-    </ul>
-  );
+    // Subscribe only to the todos array
+    const todos = useLoroSelector((state) => state.todos);
+
+    return (
+        <ul>
+            {todos.map((todo) => (
+                <TodoItem
+                    key={todo.$cid /* stable key from Loro container id */}
+                    todo={todo}
+                />
+            ))}
+        </ul>
+    );
 }
 
 // Todo item component
 function TodoItem({ todo }) {
-  const toggleTodo = useLoroAction(state => {
-    const todoIndex = state.todos.findIndex(t => t.$cid === todo.$cid); // compare by `$cid`
-    if (todoIndex !== -1) {
-      state.todos[todoIndex].completed = !state.todos[todoIndex].completed;
-    }
-  });
-  
-  return (
-    <li>
-      <input
-        type="checkbox"
-        checked={todo.completed}
-        onChange={toggleTodo}
-      />
-      <span>{todo.text}</span>
-    </li>
-  );
+    const toggleTodo = useLoroAction((state) => {
+        const todoIndex = state.todos.findIndex((t) => t.$cid === todo.$cid); // compare by `$cid`
+        if (todoIndex !== -1) {
+            state.todos[todoIndex].completed =
+                !state.todos[todoIndex].completed;
+        }
+    });
+
+    return (
+        <li>
+            <input
+                type="checkbox"
+                checked={todo.completed}
+                onChange={toggleTodo}
+            />
+            <span>{todo.text}</span>
+        </li>
+    );
 }
 ```
 
@@ -164,7 +165,7 @@ Notes on async updates:
 Subscribes to a specific value from a Loro Mirror store.
 
 ```tsx
-const todos = useLoroValue(store, state => state.todos);
+const todos = useLoroValue(store, (state) => state.todos);
 ```
 
 ### `useLoroCallback`
@@ -173,15 +174,17 @@ Creates a callback that updates a Loro Mirror store.
 
 ```tsx
 const addTodo = useLoroCallback(
-  store,
-  (state, text) => {
-    state.todos.push({ text, completed: false }); // `$cid` is injected from Loro container id
-  },
-  [/* dependencies */]
+    store,
+    (state, text) => {
+        state.todos.push({ text, completed: false }); // `$cid` is injected from Loro container id
+    },
+    [
+        /* dependencies */
+    ],
 );
 
 // Usage
-addTodo('New todo');
+addTodo("New todo");
 ```
 
 ### `createLoroContext`
@@ -190,12 +193,12 @@ Creates a context provider and hooks for a Loro Mirror store.
 
 ```tsx
 const {
-  LoroContext,
-  LoroProvider,
-  useLoroContext,
-  useLoroState,
-  useLoroSelector,
-  useLoroAction,
+    LoroContext,
+    LoroProvider,
+    useLoroContext,
+    useLoroState,
+    useLoroSelector,
+    useLoroAction,
 } = createLoroContext(schema);
 ```
 
@@ -205,13 +208,13 @@ Provider component for the Loro Mirror context.
 
 ```tsx
 <LoroProvider
-  doc={loroDoc}
-  initialState={initialState}
-  validateUpdates={true}
-  throwOnValidationError={false}
-  debug={false}
+    doc={loroDoc}
+    initialState={initialState}
+    validateUpdates={true}
+    throwOnValidationError={false}
+    debug={false}
 >
-  {children}
+    {children}
 </LoroProvider>
 ```
 
@@ -236,7 +239,7 @@ const [state, setState] = useLoroState();
 Hook to select a specific value from the state.
 
 ```tsx
-const todos = useLoroSelector(state => state.todos);
+const todos = useLoroSelector((state) => state.todos);
 ```
 
 #### `useLoroAction`

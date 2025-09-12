@@ -1,9 +1,22 @@
 {
     "name": "loro-mirror-jotai",
     "version": "0.1.0",
+    "description": "Jotai integration for Loro Mirror - a state management library with Loro CRDT synchronization",
+    "type": "module",
     "description": "Jotai atoms for Loro Mirror: CRDT-backed atomic state with typed schema and bidirectional sync.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        }
+    },
+    "sideEffects": false,
+    "publishConfig": {
+        "access": "public"
+    },
     "files": [
         "dist"
     ],
