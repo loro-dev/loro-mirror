@@ -64,11 +64,8 @@ const todosAtom = atom(get => get(todoDocAtom).todos, (get, set, todos: Todo[]) 
 })
 
 // Action atom
-const addTodoAtom = atom(null, (_get, set, todo: Todo) => {
-    set(todoDocAtom, (prev) => {
-        prev.todos.push(todo);
-        return prev;
-    })
+const addTodoAtom = atom(null, (get, set, todo: Todo) => {
+    set(todosAtom, [...get(todosAtom), todo])
 })
 
 // Use it in your React component

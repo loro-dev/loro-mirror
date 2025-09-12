@@ -5,16 +5,16 @@
  * Each piece of state is represented as an atom, enabling fine-grained reactivity and composition.
  */
 
-import { atom, WritableAtom } from 'jotai';
+import { atom } from 'jotai';
 
 // Import types only to avoid module resolution issues
 import type { LoroDoc } from "loro-crdt";
-import { createStore } from "loro-mirror";
+import { createStore, InferType, SchemaType, SyncDirection } from "loro-mirror";
 
 /**
  * Configuration for creating a Loro Mirror atom
  */
-export interface LoroMirrorAtomConfig<T = any> {
+export interface LoroMirrorAtomConfig<S extends SchemaType> {
     /**
      * The Loro document to sync with
      */
@@ -23,13 +23,13 @@ export interface LoroMirrorAtomConfig<T = any> {
     /**
      * The schema definition for the state
      */
-    schema: any;
+    schema: S;
 
 
     /**
      * Initial state (optional)
      */
-    initialState?: Partial<T>;
+    initialState?: Partial<InferType<S>>;
 
     /**
      * Whether to validate state updates against the schema
@@ -49,7 +49,6 @@ export interface LoroMirrorAtomConfig<T = any> {
      */
     debug?: boolean;
 }
-
 
 /**
  * Creates a primary state atom that syncs with Loro
@@ -71,7 +70,6 @@ export interface LoroMirrorAtomConfig<T = any> {
  *   doc: new LoroDoc(),
  *   schema: todoSchema,
  *   initialState: { todos: [] },
- *   key: 'todos'
  * });
  * 
  * function TodoApp() {
@@ -80,18 +78,20 @@ export interface LoroMirrorAtomConfig<T = any> {
  * }
  * ```
  */
-export function loroMirrorAtom<T = any>(
-    config: LoroMirrorAtomConfig<T>
-): WritableAtom<T, [T | ((prev: T) => T)], void> {
+export function loroMirrorAtom<S extends SchemaType>(
+    config: LoroMirrorAtomConfig<S>
+) {
     const store = createStore(config);
     const stateAtom = atom(store.getState());
-    const subAtom = atom(null, (_get, set, update) => {
+    const subAtom = atom(null, (_get, set, update: InferType<S>) => {
         set(stateAtom, update);
     });
 
     subAtom.onMount = (set) => {
-        const sub = store.subscribe((state) => {
-            set(state);
+        const sub = store.subscribe((state, { direction }) => {
+            if (direction === SyncDirection.FROM_LORO) {
+                set(state);
+            }
         });
         return () => {
             sub?.();
@@ -103,16 +103,9 @@ export function loroMirrorAtom<T = any>(
             get(subAtom);
             return get(stateAtom);
         },
-        (get, set, update) => {
-            const currentState = get(stateAtom);
-            if (typeof update === 'function') {
-                const newState = (update as (prev: T) => T)(currentState);
-                store.setState(newState as Partial<T>);
-                set(stateAtom, newState);
-            } else {
-                store.setState(update as Partial<T>);
-                set(stateAtom, update);
-            }
+        (_get, set, update: InferType<S>) => {
+            store.setState(update);
+            set(stateAtom, update);
         }
     );
     return base;
