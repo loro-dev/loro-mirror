@@ -2,7 +2,7 @@
     "name": "loro-mirror-monorepo",
     "version": "0.1.0",
     "private": true,
-    "description": "A state management library for Loro CRDT with immutable data pattern support",
+    "description": "Monorepo for Loro Mirror: core, React, and Jotai packages for CRDT-backed state.",
     "scripts": {
         "build": "pnpm -r build",
         "test": "vitest run",
@@ -11,11 +11,14 @@
     },
     "keywords": [
         "loro",
+        "loro-crdt",
         "crdt",
         "state-management",
-        "immutable"
+        "react",
+        "jotai",
+        "mirror"
     ],
-    "author": "",
+    "author": "Loro Team",
     "license": "MIT",
     "devDependencies": {
         "@types/node": "^18.0.0",
