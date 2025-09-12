@@ -118,7 +118,7 @@ export function useLoroStore<S extends SchemaType>(
                 | ((state: InferType<S>) => InferType<S> | void)
                 | Partial<InferType<S>>,
         ) => {
-            getStore().setState(updater as any);
+            getStore().setState(updater);
         },
         [getStore],
     );
@@ -209,7 +209,7 @@ export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
 ): (...args: Args) => void {
     return useCallback(
         (...args: Args) => {
-            store.setState((s) => updater(s, ...args) as any);
+            store.setState((s) => updater(s, ...args));
         },
         [store, updater, ...deps],
     );
@@ -309,7 +309,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
                     | ((state: InferType<S>) => InferType<S> | void)
                     | Partial<InferType<S>>,
             ) => {
-                store.setState(updater as any);
+                store.setState(updater);
             },
             [store],
         );

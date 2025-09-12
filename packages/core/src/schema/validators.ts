@@ -147,9 +147,7 @@ export function validateSchema<S extends SchemaType>(
                             )
                         ) {
                             const propSchema = schema.definition[key];
-                            const propValue = (value as Record<string, unknown>)[
-                                key
-                            ];
+                            const propValue = value[key];
 
                             const result = validateSchema(propSchema, propValue);
                             if (!result.valid && result.errors) {
@@ -200,17 +198,14 @@ export function validateSchema<S extends SchemaType>(
                     errors.push(`${path}: Node must be an object`);
                     return;
                 }
-                const n = node as Record<string, unknown>;
+                const n = node;
                 if (n.id != null && typeof n.id !== "string") {
                     errors.push(`${path}: id must be a string if provided`);
                 }
 
                 //TODO: validate valid TreeID
                 // Validate data against nodeSchema
-                const dataResult = validateSchema(
-                    schema.nodeSchema,
-                    n.data as unknown,
-                );
+                const dataResult = validateSchema(schema.nodeSchema, n.data);
                 if (!dataResult.valid && dataResult.errors) {
                     errors.push(...dataResult.errors.map((e) => `${path}.data: ${e}`));
                 }
@@ -224,7 +219,7 @@ export function validateSchema<S extends SchemaType>(
                 }
             };
 
-            (value as unknown[]).forEach((node, i) => {
+            value.forEach((node, i) => {
                 validateNode(node, `node[${i}]`);
             });
             break;
@@ -246,9 +241,7 @@ export function validateSchema<S extends SchemaType>(
                             )
                         ) {
                             const propSchema = schema.definition[key];
-                            const propValue = (value as Record<string, unknown>)[
-                                key
-                            ];
+                            const propValue = value[key];
 
                             const result = validateSchema(
                                 propSchema,

@@ -47,6 +47,17 @@ import {
 import { diffContainer, diffTree } from "./diff";
 import { CID_KEY } from "../constants";
 
+// Plain JSON-like value used for state snapshots
+type JSONPrimitive = string | number | boolean | null | undefined;
+type JSONValue = JSONPrimitive | JSONObject | JSONValue[];
+interface JSONObject {
+    [k: string]: JSONValue;
+}
+
+function hasKeyProp(c: Change): c is Extract<Change, { key: string | number }> {
+    return (c as { key?: unknown }).key !== undefined;
+}
+
 /**
  * Sync direction for handling updates
  */
@@ -313,7 +324,7 @@ export class Mirror<S extends SchemaType> {
         // Overlay the current doc snapshot so real data takes precedence over defaults
         const docSnapshot = this.buildRootStateSnapshot();
         if (docSnapshot && typeof docSnapshot === "object") {
-            Object.assign(baseState, docSnapshot as Record<string, unknown>);
+            Object.assign(baseState, docSnapshot);
         }
 
         // Merge initialState with awareness of schema:
@@ -321,7 +332,7 @@ export class Mirror<S extends SchemaType> {
         // - For container fields, fill missing base keys with normalized empties ([], "", {})
         // - For primitives, use provided initial values if doc/defaults do not provide them
         const initForMerge = (this.options.initialState || {}) as Record<string, unknown>;
-        if (this.schema && (this.schema as any).type === "schema") {
+        if (this.schema && this.schema.type === "schema") {
             mergeInitialIntoBaseWithSchema(
                 baseState,
                 initForMerge,
@@ -565,11 +576,7 @@ export class Mirror<S extends SchemaType> {
                 containerToJson: (c) => this.containerToStateJson(c),
                 nodeDataWithCid: (treeId) => {
                     const s = this.getContainerSchema(treeId);
-                    return !!(
-                        s &&
-                        isLoroTreeSchema(s) &&
-                        (s.nodeSchema as any)?.options?.withCid
-                    );
+                    return !!(s && isLoroTreeSchema(s) && s.nodeSchema.options?.withCid === true);
                 },
                 getNodeDataCid: (treeId, nodeId) => {
                     try {
@@ -752,11 +759,8 @@ export class Mirror<S extends SchemaType> {
      */
     private applyRootChanges(changes: Change[], pendingState?: InferType<S>) {
         for (const change of changes) {
-            if (!("key" in change)) continue;
-            const { key, value } = change as Extract<
-                Change,
-                { key: string | number }
-            >;
+            if (!hasKeyProp(change)) continue;
+            const { key, value } = change;
             const keyStr = key.toString();
 
             const fieldSchema = (
@@ -790,7 +794,7 @@ export class Mirror<S extends SchemaType> {
             if (
                 fieldSchema &&
                 isLoroMapSchema(fieldSchema) &&
-                (fieldSchema as any).options?.withCid &&
+                fieldSchema.options?.withCid === true &&
                 pendingState
             ) {
                 const rootObj = pendingState as Record<string, unknown>;
@@ -825,7 +829,7 @@ export class Mirror<S extends SchemaType> {
                     }
                     // If schema marks this key as Ignore, skip writing to Loro
                     const fieldSchema = this.getSchemaForChild(container.id, key);
-                    if (fieldSchema && (fieldSchema as any).type === "ignore") {
+                    if (fieldSchema && fieldSchema.type === "ignore") {
                         continue;
                     }
                     if (kind === "insert") {
@@ -845,7 +849,7 @@ export class Mirror<S extends SchemaType> {
                         if (
                             schema &&
                             isLoroMapSchema(schema) &&
-                            (schema as any).options?.withCid &&
+                            schema.options?.withCid === true &&
                             isObject(value)
                         ) {
                             value[CID_KEY] = inserted.id;
@@ -995,7 +999,7 @@ export class Mirror<S extends SchemaType> {
                             // Stamp $cid into node.data in pending state if withCid enabled
                             if (
                                 isLoroMapSchema(nodeSchema) &&
-                                (nodeSchema as any).options?.withCid &&
+                                nodeSchema.options?.withCid === true &&
                                 isObject(change.value)
                             ) {
                                 change.value[CID_KEY] = newNode.data.id;
@@ -1376,7 +1380,7 @@ export class Mirror<S extends SchemaType> {
         if (
             schema &&
             isLoroMapSchema(schema) &&
-            (schema as any).options?.withCid &&
+            schema.options?.withCid === true &&
             isObject(value)
         ) {
             value[CID_KEY] = insertedContainer.id;
@@ -1520,7 +1524,7 @@ export class Mirror<S extends SchemaType> {
         if (
             schema &&
             isLoroMapSchema(schema) &&
-            (schema as any).options?.withCid &&
+            schema.options?.withCid === true &&
             isObject(value)
         ) {
             value[CID_KEY] = insertedContainer.id;
@@ -1538,7 +1542,7 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Normalize current tree JSON from Loro to Mirror node shape
-        const current: unknown[] = normalizeTreeJson(tree.toJSON());
+        const current: unknown[] = normalizeTreeNodes(tree.toJSON());
         const next: unknown[] = value as unknown[];
 
         // Optional schema to enable nested node.data diffs
@@ -1600,7 +1604,7 @@ export class Mirror<S extends SchemaType> {
         const schema = this.getContainerSchema(map.id);
 
         // If this map has withCid enabled, stamp $cid on the pending value
-        if (schema && (schema as any).options?.withCid && isObject(value)) {
+        if (schema && schema.options?.withCid === true && isObject(value)) {
             (value as Record<string, unknown>)[CID_KEY] = map.id;
         }
 
@@ -1648,7 +1652,7 @@ export class Mirror<S extends SchemaType> {
         // Check if this field should be a container according to schema
         if (schema && schema.type === "loro-map" && schema.definition) {
             const fieldSchema = schema.definition[key];
-            if (fieldSchema && (fieldSchema as any).type === "ignore") {
+            if (fieldSchema && fieldSchema.type === "ignore") {
                 // Skip ignore fields: they live only in mirrored state
                 return;
             }
@@ -1751,36 +1755,36 @@ export class Mirror<S extends SchemaType> {
     }
 
     // Plain JSON-like types for state snapshot generation
-    private containerToStateJson(c: Container): any {
+    private containerToStateJson(c: Container): JSONValue {
         const kind = c.kind();
         if (kind === "Map") {
             const m = c as LoroMap;
-            const obj: Record<string, any> = {};
+            const obj: JSONObject = {};
             for (const k of m.keys()) {
-                const v = m.get(k) as unknown;
+                const v = m.get(k);
                 obj[k] = isContainer(v)
-                    ? this.containerToStateJson(v as Container)
-                    : (v as any);
+                    ? this.containerToStateJson(v)
+                    : (v as JSONValue);
             }
             const schema = this.getContainerSchema(c.id);
             if (
                 schema &&
                 isLoroMapSchema(schema) &&
-                (schema as any).options?.withCid
+                schema.options?.withCid === true
             ) {
                 obj[CID_KEY] = c.id;
             }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
-            const arr: any[] = [];
+            const arr: JSONValue[] = [];
             const l = c as unknown as LoroList | LoroMovableList;
             const len = l.length;
             for (let i = 0; i < len; i++) {
-                const v = l.get(i) as unknown;
+                const v = l.get(i);
                 arr.push(
                     isContainer(v)
-                        ? this.containerToStateJson(v as Container)
-                        : (v as any),
+                        ? this.containerToStateJson(v)
+                        : (v as JSONValue),
                 );
             }
             return arr;
@@ -1790,18 +1794,16 @@ export class Mirror<S extends SchemaType> {
         } else if (kind === "Tree") {
             const t = c as LoroTree;
             // Normalize via toJSON first
-            const normalized = normalizeTreeJson(t.toJSON());
+            const normalized = normalizeTreeNodes(t.toJSON());
             // Optionally inject $cid per node.data using an id->cid map from live nodes
             const schema = this.getContainerSchema(t.id);
             const withCid =
-                schema &&
-                isLoroTreeSchema(schema) &&
-                (schema.nodeSchema as any)?.options?.withCid;
+                schema && isLoroTreeSchema(schema) && schema.nodeSchema.options?.withCid === true;
             if (withCid) {
                 const idToCid = new Map<string, string>();
                 // Best-effort: collect from runtime nodes if API available
-                const nodes: unknown[] =
-                    ((t as any).getNodes?.() as unknown[]) || [];
+                const tMaybe = t as unknown as { getNodes?: () => unknown[] };
+                const nodes: unknown[] = tMaybe.getNodes?.() ?? [];
                 for (const raw of nodes) {
                     try {
                         const n = raw as { id?: unknown; data?: unknown };
@@ -1841,19 +1843,19 @@ export class Mirror<S extends SchemaType> {
                 };
                 stamp(normalized);
             }
-            return normalized;
+            return normalized as unknown as JSONValue;
         }
         // Fallback
-        return (c as any).toJSON();
+        return (c as unknown as { toJSON: () => unknown }).toJSON() as JSONValue;
     }
 
-    private buildRootStateSnapshot(): any {
-        if (!this.schema || (this.schema as any).type !== "schema") {
+    private buildRootStateSnapshot(): Record<string, unknown> {
+        if (!this.schema || this.schema.type !== "schema") {
             // Fallback to previous normalization if no schema
-            return toNormalizedJson(this.doc);
+            return toNormalizedJson(this.doc) as Record<string, unknown>;
         }
 
-        const root: Record<string, any> = {};
+        const root: Record<string, unknown> = {};
         const rootSchema = this.schema as RootSchemaType<
             Record<string, ContainerSchemaType>
         >;
@@ -1869,7 +1871,7 @@ export class Mirror<S extends SchemaType> {
             // Emulate doc.toJSON root omission for empty containers unless we must inject $cid
             if (containerType === "Map") {
                 const m = container as LoroMap;
-                const withCid = (fieldSchema as any)?.options?.withCid === true;
+                const withCid = fieldSchema.options?.withCid === true;
                 if (m.keys().length === 0 && !withCid) continue;
                 root[key] = this.containerToStateJson(container);
             } else if (
@@ -1882,7 +1884,7 @@ export class Mirror<S extends SchemaType> {
                 // Always include text, even if empty, to match Mirror's state shape
                 root[key] = this.containerToStateJson(container);
             } else if (containerType === "Tree") {
-                const arr = this.containerToStateJson(container) as any[];
+                const arr = this.containerToStateJson(container) as unknown[];
                 if (!Array.isArray(arr) || arr.length === 0) continue;
                 root[key] = arr;
             } else {
@@ -1958,7 +1960,7 @@ export class Mirror<S extends SchemaType> {
 export function toNormalizedJson(doc: LoroDoc) {
     return doc.toJsonWithReplacer((_k, v) => {
         if (isContainer(v) && v.kind() === "Tree") {
-            return normalizeTreeJson((v as LoroTree).toJSON());
+            return normalizeTreeNodes((v as LoroTree).toJSON()) as unknown as typeof v;
         }
 
         return v;
@@ -1990,20 +1992,24 @@ function normalizeInitialShapeShallow(
 }
 
 // Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
-function normalizeTreeJson(input: any[]): any[] {
+function normalizeTreeNodes(input: unknown[]): Array<{ id: string; data: Record<string, unknown>; children: unknown[] }> {
     if (!Array.isArray(input)) return [];
-    const mapNode = (n: any): any => {
-        const id = String(n?.id ?? "");
-        const data =
-            n && typeof n === "object" && n.meta && typeof n.meta === "object"
-                ? n.meta
-                : {};
-        const children = Array.isArray(n?.children)
-            ? n.children.map(mapNode)
-            : [];
-        return { id, data, children };
-    };
-    return input.map(mapNode);
+    return input.map(mapRawTreeNodeToMirror);
+}
+
+function mapRawTreeNodeToMirror(n: unknown): { id: string; data: Record<string, unknown>; children: unknown[] } {
+    const rawId = (n as { id?: unknown })?.id;
+    const id = typeof rawId === "string" ? rawId : "";
+    const meta = (n as { meta?: unknown })?.meta;
+    const data: Record<string, unknown> =
+        typeof meta === "object" && meta != null && !Array.isArray(meta)
+            ? (meta as Record<string, unknown>)
+            : {};
+    const rawChildren = (n as { children?: unknown })?.children;
+    const children: unknown[] = Array.isArray(rawChildren)
+        ? rawChildren.map(mapRawTreeNodeToMirror)
+        : [];
+    return { id, data, children };
 }
 
 // Deep merge initialState into a base state with awareness of the provided root schema.
@@ -2028,7 +2034,7 @@ function mergeInitialIntoBaseWithSchema(
             continue;
         }
 
-        const t = (fieldSchema as any).type as string;
+        const t = fieldSchema.type as string;
         if (t === "ignore") {
             base[k] = initVal;
             continue;
@@ -2041,7 +2047,7 @@ function mergeInitialIntoBaseWithSchema(
                 ? (initVal as Record<string, unknown>)
                 : {};
             const nestedSchema = fieldSchema as unknown as LoroMapSchema<
-                Record<string, any>
+                Record<string, SchemaType>
             >; // actual types are not used at runtime
             // Recurse
             mergeInitialIntoBaseWithSchema(

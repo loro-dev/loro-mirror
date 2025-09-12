@@ -52,7 +52,7 @@ describe("LoroTree integration", () => {
         const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
         const pick = <T>(rng: () => number, arr: T[]): T =>
-            arr[Math.floor(rng() * arr.length)]!;
+            arr[Math.floor(rng() * arr.length)];
 
         const allNodes = (roots: Node[]): Node[] => {
             const out: Node[] = [];

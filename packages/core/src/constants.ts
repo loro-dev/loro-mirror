@@ -1,2 +1,1 @@
-export const CID_KEY = "$cid" as const;
-
+export const CID_KEY = "$cid";

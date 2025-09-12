@@ -317,7 +317,7 @@ export function diffTree(
     const changes: Change[] = [];
     if (oldState === newState) return changes;
 
-    type Node = { id?: string; data?: unknown; children?: any[] };
+    type Node = { id?: string; data?: unknown; children?: unknown[] };
 
     const toArray = (arr: ArrayLike) => arr as unknown as Node[];
     const oldArr = toArray(oldState);
@@ -974,7 +974,7 @@ export function diffMap<S extends ObjectLike>(
         // Skip ignored fields defined in schema
         const childSchemaForDelete = (
             schema as LoroMapSchema<Record<string, SchemaType>> | undefined
-        )?.definition?.[key as keyof typeof oldStateObj];
+        )?.definition?.[key];
         if (childSchemaForDelete && childSchemaForDelete.type === "ignore") {
             continue;
         }

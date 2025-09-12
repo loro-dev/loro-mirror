@@ -249,19 +249,19 @@ function getParentKeyNodeByPath(
             isJSONArray(current) || isJSONObject(current)
                 ? (current as JSONObject | JSONValue[])
                 : undefined;
-        key = typeof seg === "number" ? seg : (seg as string);
+        key = seg;
 
         if (typeof seg === "number") {
             if (Array.isArray(parent)) {
-                current = parent[seg] as JSONValue;
+                current = parent[seg];
             } else {
-                current = undefined as unknown as JSONValue;
+                current = undefined;
             }
         } else if (typeof seg === "string") {
             let segKey = seg;
             if (parent && Array.isArray(parent) && isTreeID(seg)) {
                 // Resolve by id anywhere in the tree (recursive), not just direct children
-                const roots = parent as JSONValue[];
+                const roots = parent;
                 const loc = getTreeNodeLocation(roots, seg);
                 if (loc) {
                     // If this TreeID is the final segment, treat it as the node's data map
@@ -276,12 +276,12 @@ function getParentKeyNodeByPath(
                     }
                 } else {
                     // Not found
-                    current = undefined as unknown as JSONValue;
+                    current = undefined;
                 }
             } else if (parent && !Array.isArray(parent)) {
-                current = (parent as JSONObject)[segKey] as JSONValue;
+                current = parent[segKey];
             } else {
-                current = undefined as unknown as JSONValue;
+                current = undefined;
             }
         } else {
             throw new Error(`Unsupported path segment: ${String(seg)}`);
@@ -331,12 +331,12 @@ function buildTreeIndex(
         if ("list" in item) {
             const raw = item.list[item.index];
             if (!isJSONObject(raw)) continue;
-            const node = raw as JSONObject;
-            const idVal = node["id"] as JSONValue;
+            const node = raw;
+            const idVal = node["id"];
             if (typeof idVal === "string") {
                 map.set(idVal, { list: item.list, index: item.index, node });
             }
-            const childrenVal = node["children"] as JSONValue | undefined;
+            const childrenVal = node["children"];
             if (Array.isArray(childrenVal)) {
                 // push children entries
                 for (let j = 0; j < childrenVal.length; j++) {
@@ -350,27 +350,29 @@ function buildTreeIndex(
 }
 
 function getOrInitNodeData(node: JSONObject): JSONObject {
-    const dataVal = node["data"] as JSONValue | undefined;
+    const dataVal = node["data"];
     if (isJSONObject(dataVal)) return dataVal;
-    node["data"] = {} as JSONObject;
-    return node["data"] as JSONObject;
+    const fresh: JSONObject = {};
+    node["data"] = fresh;
+    return fresh;
 }
 
 // Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
-function normalizeTreeJson(input: any[]): any[] {
+function normalizeTreeJson(input: unknown[]): StateTreeNode[] {
     if (!Array.isArray(input)) return [];
-    const mapNode = (n: any): any => {
-        const id = String(n?.id ?? "");
-        const data =
-            n && typeof n === "object" && n.meta && typeof n.meta === "object"
-                ? n.meta
-                : {};
-        const children = Array.isArray(n?.children)
-            ? n.children.map(mapNode)
-            : [];
-        return { id, data, children };
-    };
-    return input.map(mapNode);
+    return input.map(mapRawTreeNode);
+}
+
+function mapRawTreeNode(n: unknown): StateTreeNode {
+    const rawId = (n as { id?: unknown })?.id;
+    const id = typeof rawId === "string" ? rawId : "";
+    const meta = (n as { meta?: unknown })?.meta;
+    const data = isJSONObject(meta) ? meta : {};
+    const rawChildren = (n as { children?: unknown })?.children;
+    const children = Array.isArray(rawChildren)
+        ? rawChildren.map(mapRawTreeNode)
+        : [];
+    return { id, data, children };
 }
 
 /**
@@ -392,7 +394,7 @@ function applyMapDiff(
         }
 
         if (isContainer(v)) {
-            const c = v as Container;
+            const c = v;
             // Mark this child container so its own events are ignored later in this batch
             ignoreSet.add(c.id);
             targetObj[k] = containerToJson
@@ -426,7 +428,7 @@ function applyListDelta(
         } else if (d.insert !== undefined) {
             const items = d.insert.map((it) => {
                 if (isContainer(it)) {
-                    const c = it as Container;
+                    const c = it;
                     // Mark this child container so its own events are ignored later in this batch
                     ignoreSet.add(c.id);
                     return containerToJson
@@ -603,7 +605,7 @@ function setAt(
     if (Array.isArray(parent) && typeof key === "number") {
         parent[key] = value;
     } else if (!Array.isArray(parent) && typeof key === "string") {
-        (parent as JSONObject)[key] = value;
+        parent[key] = value;
     }
 }
 
@@ -612,9 +614,9 @@ function getAt(
     key: string | number,
 ): JSONValue | undefined {
     if (Array.isArray(parent) && typeof key === "number") {
-        return parent[key] as JSONValue;
+        return parent[key];
     } else if (!Array.isArray(parent) && typeof key === "string") {
-        return (parent as JSONObject)[key] as JSONValue;
+        return parent[key];
     }
 
     return undefined;
@@ -633,7 +635,7 @@ function containerToMirrorJson(c: Container): JSONValue {
         return (c as LoroCounter).getShallowValue() as unknown as JSONValue;
     }
     if (kind === "Tree") {
-        const raw = (c as Exclude<Container, LoroCounter>).toJSON() as any[];
+        const raw = (c as Exclude<Container, LoroCounter>).toJSON() as unknown[];
         return normalizeTreeJson(raw) as unknown as JSONValue;
     }
     return (

@@ -157,7 +157,7 @@ schema.LoroMapRecord = function <T extends SchemaType, O extends SchemaOptions =
  */
 schema.LoroList = function <T extends SchemaType, O extends SchemaOptions = {}>(
     itemSchema: T,
-    idSelector?: (item: any) => string,
+    idSelector?: (item: unknown) => string,
     options?: O,
 ): LoroListSchema<T> & { options: O } {
     return {
@@ -173,7 +173,7 @@ schema.LoroList = function <T extends SchemaType, O extends SchemaOptions = {}>(
 
 schema.LoroMovableList = function <T extends SchemaType, O extends SchemaOptions = {}>(
     itemSchema: T,
-    idSelector: (item: any) => string,
+    idSelector: (item: unknown) => string,
     options?: O,
 ): LoroMovableListSchema<T> & { options: O } {
     return {
