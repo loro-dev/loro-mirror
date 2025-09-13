@@ -1718,27 +1718,31 @@ export class Mirror<S extends SchemaType> {
         options?: SetStateOptions,
     ): Promise<void> {
         if (this.syncing) return; // Prevent recursive updates
-        // Wait for the existing Loro event to be handled
-        await Promise.resolve();
+        if (typeof updater !== "function" && updater === this.state) return;
+
         // Calculate new state; support mutative or return-based updater via Immer
         const newState =
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
-                      const res = (
-                          updater as (state: InferType<S>) =>
-                              | InferType<S>
-                              | void
-                      )(draft as InferType<S>);
-                      if (res && res !== (draft as unknown)) {
-                          // Return a replacement so Immer finalizes it
-                          return res as unknown as typeof draft;
-                      }
+                      (updater as (state: InferType<S>) => InferType<S> | void)(
+                          draft as InferType<S>,
+                      );
                   })
                 : (Object.assign(
                       {},
                       this.state as unknown as Record<string, unknown>,
                       updater as Record<string, unknown>,
                   ) as InferType<S>);
+
+        if (newState === this.state) {
+            return;
+        }
+
+        if (this.doc.isDetached() && !this.doc.isDetachedEditingEnabled()) {
+            throw new Error(
+                "setState() failed because LoroDoc is not editable",
+            );
+        }
 
         // Validate state if needed
         // TODO: REVIEW We don't need to validate the state that are already reviewed
@@ -1759,6 +1763,16 @@ export class Mirror<S extends SchemaType> {
                 ? options.tags
                 : [options.tags]
             : undefined;
+
+        // Wait for the pending Loro event to be handled
+        //
+        // - Loro events are emitted only after the current microtask, but their
+        //   diffs are calculated based on the state before the microtask. To ensure
+        //   correctness, the state must not be changed during this microtask until
+        //   the Loro event has been applied.
+        // - Therefore, the best way to enforce this invariant is to wait for a microtask
+        //   before performing any operation that modifies the state.
+        await Promise.resolve();
 
         // Update Loro based on new state
         // Refresh in-memory state from Doc to capture assigned IDs (e.g., TreeIDs)

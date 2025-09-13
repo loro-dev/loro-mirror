@@ -29,5 +29,8 @@
         "oxlint-tsgolint": "^0.0.4",
         "typescript": "^4.7.0",
         "vitest": "^3.2.4"
+    },
+    "dependencies": {
+        "loro-crdt": "link:../loro/crates/loro-wasm"
     }
 }

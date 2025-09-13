@@ -1,0 +1,339 @@
+:root {
+    /* Light theme palette mapped to roles */
+    /* Background/Base */
+    --bg: #ebe4d2; /* Light Gray as page background */
+    --bg-elev: #ebe4d2; /* Light Gray for elevated surfaces */
+    --card: #e0e0c0; /* Soft Beige for cards */
+    --border: #e0a0a0; /* Muted Pink (supporting) */
+
+    /* Text */
+    --text: #5a5a5a; /* softer, less dark text */
+    --muted: #7a6a6a;
+
+    /* Brand & Accents */
+    --brand: #e06040; /* Primary Brand */
+    --secondary: #e04080; /* Secondary Accent (Magenta Pink) */
+    --crimson: #e04060; /* Alt secondary */
+    --golden: #e08020; /* Feedback/Success */
+    --burnt: #e06020; /* Feedback/Warning */
+
+    /* Derivatives */
+    --ring: var(--border); /* muted focus for general controls */
+    --ring-strong: var(--brand); /* reserved for strong highlights */
+    --primary: var(--brand);
+    --primary-contrast: #ffffff;
+    --primary-hover: var(--crimson);
+    --secondary-hover: var(--crimson);
+
+    /* Disabled */
+    --disabled-bg: #dfdacd; /* Light Gray */
+    --disabled-text: #888888; /* Neutral gray text */
+    --disabled-border: #e0e0e0; /* Light Gray */
+
+    /* Buttons (base) */
+    --btn-bg: #e0e0c0; /* Soft Beige */
+    --btn-text: #3a3a3a;
+    --btn-border: var(--border);
+    --btn-bg-hover: #e0e0e0; /* Light Gray */
+
+    /* States */
+    --todo: #e0a0a0; /* Muted Pink */
+    --todo-text: #3a3a3a;
+    --inProgress: var(--burnt);
+    --inProgress-text: #3a3a3a;
+    --done: var(--golden);
+    --done-text: #3a3a3a;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    font-family:
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        Noto Sans,
+        Ubuntu,
+        Cantarell,
+        Helvetica Neue,
+        Arial,
+        "Apple Color Emoji",
+        "Segoe UI Emoji";
+    /* Solid neutral background to better harmonize with muted pinks */
+    background: var(--bg);
+    color: var(--text);
+}
+
+.app {
+    max-width: 720px;
+    margin: 48px auto;
+    padding: 0 16px 40px;
+}
+
+.app-header h1 {
+    margin: 0 0 4px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    color: var(--brand);
+    font-size: 2rem;
+}
+
+.subtitle {
+    margin: 0 0 20px;
+    color: var(--muted);
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid color-mix(in oklab, var(--border) 60%, var(--card));
+    border-radius: 12px;
+}
+
+.new-todo {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    margin-bottom: 14px;
+    backdrop-filter: blur(6px);
+}
+
+.todo-input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    /* Higher contrast input inside beige card */
+    background: #e2e2ce;
+    color: var(--text);
+    outline: none;
+    transition:
+        border-color 160ms ease,
+        background-color 160ms ease;
+}
+
+.todo-input:focus {
+    border-color: color-mix(in oklab, var(--brand) 28%, var(--border));
+    outline: none;
+}
+.todo-input::placeholder {
+    color: color-mix(in oklab, var(--muted) 80%, #ffffff);
+}
+
+.btn {
+    position: relative;
+    appearance: none;
+    border: 1px solid var(--btn-border);
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    padding: 10px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    transition:
+        transform 120ms ease,
+        background 120ms ease,
+        border-color 120ms ease,
+        opacity 120ms ease;
+}
+
+/* Slightly larger icons inside buttons */
+.btn .btn-icon {
+    display: inline-block;
+    font-size: 22px;
+    line-height: 1;
+    margin-right: 8px;
+    transform: translateY(1px);
+}
+.btn:hover:not(:disabled) {
+    /* More distinct hover shift */
+    background: color-mix(in oklab, var(--btn-bg) 92%, #ffffff);
+}
+.btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    /* Muted dominant look; no gradients */
+    background: var(--btn-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+.btn-primary:hover {
+    border-color: color-mix(in oklab, var(--brand) 30%, var(--border));
+    background: color-mix(in oklab, var(--btn-bg) 90%, #ffffff);
+}
+
+/* Secondary buttons: neutral base; accent on hover */
+.btn-secondary {
+    background: var(--btn-bg);
+    color: var(--text);
+    border: 1px solid var(--btn-border);
+}
+.btn-secondary:hover {
+    border-color: color-mix(in oklab, var(--secondary) 28%, var(--btn-border));
+    background: color-mix(in oklab, var(--btn-bg) 90%, #ffffff);
+}
+
+/* Disabled states fade toward neutral gray */
+.btn:disabled {
+    background: var(--disabled-bg) !important;
+    border-color: var(--disabled-border) !important;
+    color: var(--disabled-text) !important;
+    opacity: 1;
+    pointer-events: none;
+}
+
+.toolbar {
+    display: flex;
+    gap: 10px;
+    margin: 8px 0 18px;
+}
+
+.todo-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.todo-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr; /* checkbox + text */
+    gap: 8px;
+    align-items: center;
+    padding: 6px 10px;
+}
+
+/* Insertion preview line */
+.todo-item.insert-top::before,
+.todo-item.insert-bottom::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    background: color-mix(in oklab, var(--brand) 60%, #ffffff);
+}
+.todo-item.insert-top::before {
+    top: -2px;
+}
+.todo-item.insert-bottom::after {
+    bottom: -2px;
+}
+
+.drag-handle {
+    position: absolute;
+    left: -34px; /* keep ~6px gap with larger size */
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 120ms ease;
+    border: none;
+    background: transparent;
+    color: color-mix(in oklab, var(--brand) 70%, #ffffff); /* lighter brand */
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    font-size: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    -webkit-user-select: none;
+    user-select: none;
+}
+.drag-handle:active {
+    cursor: grabbing;
+}
+.todo-item:hover .drag-handle {
+    opacity: 1;
+}
+
+/* Deprecated drag-over visual removed in favor of insert line */
+
+.todo-checkbox {
+    width: 16px;
+    height: 16px;
+    /* Ensure brand-colored border shows consistently */
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    border: 2px solid var(--brand);
+    border-radius: 4px;
+    display: inline-grid;
+    place-content: center;
+    accent-color: var(
+        --brand
+    ); /* fallback for browsers honoring accent-color */
+}
+.todo-checkbox::after {
+    content: "";
+    width: 10px;
+    height: 10px;
+    transform: scale(0);
+    transition: transform 120ms ease;
+    background: var(--brand);
+    border-radius: 2px;
+}
+.todo-checkbox:checked::after {
+    transform: scale(1);
+}
+.todo-item.done .todo-checkbox {
+    /* Gray accent for completed items; keep brand border */
+    accent-color: var(--disabled-text);
+    border-color: var(--brand);
+}
+.todo-item.done .todo-checkbox:checked::after {
+    background: var(--disabled-text);
+}
+
+.todo-text {
+    width: 100%;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text);
+    font-size: 15px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    outline: none;
+    transition:
+        border-color 150ms ease,
+        background 150ms ease;
+}
+
+.todo-text:focus {
+    outline: none;
+}
+
+.todo-item.done .todo-text {
+    text-decoration: line-through;
+    color: var(--disabled-text);
+}
+
+/* Responsive tweaks */
+@media (max-width: 520px) {
+    .new-todo {
+        grid-template-columns: 1fr;
+    }
+    .todo-item {
+        grid-template-columns: auto 1fr; /* keep checkbox near edge on small screens */
+    }
+}

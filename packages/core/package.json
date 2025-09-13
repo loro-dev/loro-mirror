@@ -41,7 +41,7 @@
         "immer": "^10.0.3"
     },
     "peerDependencies": {
-        "loro-crdt": "^1.7.1"
+        "loro-crdt": "^1.7.3"
     },
     "devDependencies": {
         "@types/node": "^20.10.5",

@@ -13,6 +13,7 @@ import {
     RootSchemaType,
     SchemaType,
 } from "./types";
+import { CID_KEY } from "../constants";
 import { isObject } from "../core/utils";
 
 /**
@@ -263,6 +264,8 @@ export function validateSchema<S extends SchemaType>(
                                 key,
                             )
                         ) {
+                            // Allow synthetic container id on maps
+                            if (key === CID_KEY) continue;
                             errors.push(`Unknown property: ${key}`);
                         }
                     }

@@ -1,5 +1,7 @@
 packages:
-  - packages/*
+    - packages/*
+    - examples/*
 
 onlyBuiltDependencies:
-  - esbuild
+    - "@swc/core"
+    - esbuild
