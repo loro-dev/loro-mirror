@@ -526,16 +526,14 @@ describe("MovableList", () => {
         expect(mirror.getState()).toEqual(desired);
     });
 
-    it("movable list throws on missing item id", async () => {
+    it("movable list allows missing id for new items (e.g., when idSelector relies on $cid)", async () => {
         const { mirror } = await initTestMirror();
-        await expect(
-            mirror.setState({
-                list: [
-                    // missing id
-                    { text: "no id" } as any,
-                ],
-            } as any),
-        ).rejects.toThrow();
+        await mirror.setState({
+            list: [
+                // missing user-id; acceptable when identity is assigned via $cid during apply
+                { text: "no id" } as any,
+            ],
+        } as any);
     });
 
     it("movable list throws on duplicate ids in new state", async () => {

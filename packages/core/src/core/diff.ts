@@ -538,7 +538,9 @@ export function diffMovableList<S extends ArrayLike>(
 
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
-        if (!id) throw new Error("Item ID cannot be null");
+        // New items may not have an id yet (e.g., $cid is assigned during apply).
+        // Treat them as pure inserts later; only track items that already have an id.
+        if (!id) continue;
         if (newMap.has(id)) throw new Error("Duplicate item id in new state");
         newMap.set(id, { index: newIndex, item });
         const oldEntry = oldMap.get(id);
