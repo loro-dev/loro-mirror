@@ -8,6 +8,7 @@ import React, {
 import { LoroDoc, UndoManager, LORO_VERSION } from "loro-crdt";
 import { schema } from "loro-mirror";
 import { useLoroStore } from "loro-mirror-react";
+import { HistoryView } from "./HistoryView";
 
 type TodoStatus = "todo" | "done";
 
@@ -25,7 +26,7 @@ export function App() {
     const doc = useMemo(() => {
         const doc = new LoroDoc();
         doc.setRecordTimestamp(true);
-        doc.setChangeMergeInterval(10);
+        doc.setChangeMergeInterval(1);
         return doc;
     }, []);
     (window as any).doc = doc;
@@ -41,6 +42,15 @@ export function App() {
     const [dragCid, setDragCid] = useState<string | null>(null);
     const [insertIndex, setInsertIndex] = useState<number | null>(null);
     const listRef = useRef<HTMLUListElement | null>(null);
+    const [detached, setDetached] = useState<boolean>(doc.isDetached());
+    const [showHistory, setShowHistory] = useState<boolean>(false);
+
+    useEffect(() => {
+        const unsub = doc.subscribe(() => {
+            setDetached(doc.isDetached());
+        });
+        return () => unsub();
+    }, [doc]);
 
     function addTodo(text: string) {
         if (!text.trim()) return;
@@ -187,12 +197,14 @@ export function App() {
                     onKeyDown={(e) => {
                         if (e.key === "Enter") addTodo(newText);
                     }}
+                    disabled={detached}
                 />
                 <button
                     className="btn btn-primary"
                     onClick={() => {
                         addTodo(newText);
                     }}
+                    disabled={detached}
                 >
                     Add
                 </button>
@@ -204,9 +216,11 @@ export function App() {
                     onClick={() => {
                         undo.undo();
                     }}
-                    disabled={!undo.canUndo?.()}
+                    disabled={!undo.canUndo?.() || detached}
                 >
-                    <span className="btn-icon" aria-hidden>⟲</span>
+                    <span className="btn-icon" aria-hidden>
+                        ⟲
+                    </span>
                     Undo
                 </button>
                 <button
@@ -214,12 +228,21 @@ export function App() {
                     onClick={() => {
                         undo.redo();
                     }}
-                    disabled={!undo.canRedo?.()}
+                    disabled={!undo.canRedo?.() || detached}
                 >
-                    <span className="btn-icon" aria-hidden>⟳</span>
+                    <span className="btn-icon" aria-hidden>
+                        ⟳
+                    </span>
                     Redo
                 </button>
+                <button
+                    className="btn btn-secondary push-right"
+                    onClick={() => setShowHistory((v) => !v)}
+                >
+                    {showHistory ? "Hide History" : "History"}
+                </button>
             </div>
+            {showHistory && <HistoryView doc={doc} />}
 
             <ul
                 className="todo-list"
@@ -245,6 +268,7 @@ export function App() {
                             insertBottom={!!isInsertBottom}
                             onDragStart={handleDragStart}
                             onDragEnd={handleDragEnd}
+                            detached={detached}
                         />
                     );
                 })}
@@ -264,6 +288,7 @@ function TodoItemRow({
     insertBottom,
     onDragStart,
     onDragEnd,
+    detached,
 }: {
     todo: Todo;
     onTextChange: (cid: string, value: string) => void;
@@ -273,6 +298,7 @@ function TodoItemRow({
     insertBottom: boolean;
     onDragStart: (cid: string) => void;
     onDragEnd: () => void;
+    detached: boolean;
 }) {
     const selection = React.useRef<{ start: number; end: number } | null>(null);
     const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -296,7 +322,7 @@ function TodoItemRow({
         >
             <button
                 className="drag-handle"
-                draggable
+                draggable={!detached}
                 onDragStart={(e) => {
                     // Hint move semantics and ensure we have some drag data
                     try {
@@ -320,6 +346,7 @@ function TodoItemRow({
                     onDoneChange(todo.$cid, e.currentTarget.checked)
                 }
                 aria-label={isDone ? "Mark as todo" : "Mark as done"}
+                disabled={detached}
             />
             <input
                 ref={inputRef}
@@ -333,6 +360,7 @@ function TodoItemRow({
                     selection.current = { start, end };
                     onTextChange(todo.$cid, e.currentTarget.value);
                 }}
+                readOnly={detached}
             />
         </li>
     );
