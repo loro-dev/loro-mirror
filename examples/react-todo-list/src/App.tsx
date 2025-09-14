@@ -4,6 +4,7 @@ import React, {
     useMemo,
     useRef,
     useState,
+    SVGProps,
 } from "react";
 import { LoroDoc, UndoManager } from "loro-crdt";
 import { schema } from "loro-mirror";
@@ -65,7 +66,9 @@ export function base64UrlToBytes(s: string): Uint8Array {
 // --------------------
 // Crypto helpers
 // --------------------
-export async function exportRawPublicKeyHex(pubKey: CryptoKey): Promise<string> {
+export async function exportRawPublicKeyHex(
+    pubKey: CryptoKey,
+): Promise<string> {
     const raw = new Uint8Array(await crypto.subtle.exportKey("raw", pubKey));
     // 65 bytes: 0x04 || X(32) || Y(32)
     return bytesToHex(raw);
@@ -74,7 +77,11 @@ export async function exportRawPublicKeyHex(pubKey: CryptoKey): Promise<string> 
 export async function signSaltTokenHex(privateKey: CryptoKey): Promise<string> {
     const msg = new TextEncoder().encode(AUTH_SALT);
     const sig = new Uint8Array(
-        await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, msg),
+        await crypto.subtle.sign(
+            { name: "ECDSA", hash: "SHA-256" },
+            privateKey,
+            msg,
+        ),
     );
     // DER signature bytes -> hex
     return bytesToHex(sig);
@@ -163,7 +170,10 @@ export async function generatePairAndUrl(): Promise<{
         ["sign", "verify"],
     )) as CryptoKeyPair;
     const publicHex = await exportRawPublicKeyHex(publicKey);
-    const jwkPriv = (await crypto.subtle.exportKey("jwk", privateKey)) as JsonWebKey;
+    const jwkPriv = (await crypto.subtle.exportKey(
+        "jwk",
+        privateKey,
+    )) as JsonWebKey;
     const dB64 = jwkPriv.d ?? "";
     const dBytes = base64UrlToBytes(dB64);
     const privateHex = bytesToHex(dBytes);
@@ -175,7 +185,7 @@ export async function generatePairAndUrl(): Promise<{
 // IndexedDB persistence helpers
 // --------------------
 const DOC_DB_NAME = "loro-example-docs" as const;
-const DOC_DB_VERSION = 1 as const;
+const DOC_DB_VERSION = 2 as const; // bump to ensure all stores exist
 const DOC_STORE = "docs" as const;
 const KEY_STORE = "keys" as const;
 
@@ -190,6 +200,66 @@ export type WorkspaceRecord = {
     // Back-compat field
     label?: string;
 };
+
+export function MaterialSymbolsKeyboardArrowDown(
+    props: SVGProps<SVGSVGElement>,
+) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Material Symbols by Google - https://github.com/google/material-design-icons/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="m12 15.4l-6-6L7.4 8l4.6 4.6L16.6 8L18 9.4z"
+            />
+        </svg>
+    );
+}
+
+export function MdiGithub(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Material Design Icons by Pictogrammers - https://github.com/Templarian/MaterialDesign/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5c.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34c-.46-1.16-1.11-1.47-1.11-1.47c-.91-.62.07-.6.07-.6c1 .07 1.53 1.03 1.53 1.03c.87 1.52 2.34 1.07 2.91.83c.09-.65.35-1.09.63-1.34c-2.22-.25-4.55-1.11-4.55-4.92c0-1.11.38-2 1.03-2.71c-.1-.25-.45-1.29.1-2.64c0 0 .84-.27 2.75 1.02c.79-.22 1.65-.33 2.5-.33s1.71.11 2.5.33c1.91-1.29 2.75-1.02 2.75-1.02c.55 1.35.2 2.39.1 2.64c.65.71 1.03 1.6 1.03 2.71c0 3.82-2.34 4.66-4.57 4.91c.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2"
+            />
+        </svg>
+    );
+}
+
+export function StreamlinePlumpRecycleBin2Remix(
+    props: SVGProps<SVGSVGElement>,
+) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 48 48"
+            {...props}
+        >
+            {/* Icon from Plump free icons by Streamline - https://creativecommons.org/licenses/by/4.0/ */}
+            <path
+                fill="currentColor"
+                fillRule="evenodd"
+                d="M15.864 5.595a9.045 9.045 0 0 1 16.273 0c3.586.085 6.359.209 8.052.298c1.421.074 2.963.687 3.77 2.14a9.7 9.7 0 0 1 .954 2.461c.065.274.087.541.087.788c0 1.44-.801 2.722-2.024 3.345a659 659 0 0 1-.714 25.01c-.185 3.856-3.142 7.025-7.042 7.351c-3.036.254-7.12.512-11.22.512c-4.099 0-8.184-.258-11.22-.512c-3.9-.326-6.857-3.495-7.042-7.352a659 659 0 0 1-.715-25.009A3.74 3.74 0 0 1 3 11.282c0-.247.022-.514.087-.788c.23-.98.593-1.809.955-2.46c.806-1.454 2.348-2.067 3.77-2.142a283 283 0 0 1 8.052-.297m-6.835 9.58c.102 10.208.454 19.062.704 24.27c.092 1.904 1.531 3.403 3.38 3.557c2.976.25 6.94.498 10.888.498s7.91-.249 10.886-.498c1.849-.154 3.288-1.653 3.38-3.558c.25-5.207.602-14.061.704-24.27c-3.23.167-8.106.326-14.97.326s-11.741-.159-14.972-.326m10.97 6.262a2 2 0 1 0-3.998.125l.5 16a2 2 0 1 0 3.998-.124zM30.063 19.5A2 2 0 0 0 28 21.438l-.5 16a2 2 0 1 0 3.998.124l.5-16a2 2 0 0 0-1.936-2.061"
+                clipRule="evenodd"
+            />
+        </svg>
+    );
+}
 
 export function openDocDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -224,7 +294,8 @@ export function putDocSnapshot(
         const snap = bytes.buffer.slice(start, end);
         const putReq = store.put({ id, snapshot: snap } satisfies DocRecord);
         putReq.onsuccess = () => resolve();
-        putReq.onerror = () => reject(putReq.error ?? new Error("IDB put error"));
+        putReq.onerror = () =>
+            reject(putReq.error ?? new Error("IDB put error"));
     });
 }
 
@@ -244,7 +315,8 @@ export function getDocSnapshot(
                 resolve(null);
             }
         };
-        getReq.onerror = () => reject(getReq.error ?? new Error("IDB get error"));
+        getReq.onerror = () =>
+            reject(getReq.error ?? new Error("IDB get error"));
     });
 }
 
@@ -257,7 +329,8 @@ export function upsertWorkspace(
         const store = tx.objectStore(KEY_STORE);
         const putReq = store.put(rec);
         putReq.onsuccess = () => resolve();
-        putReq.onerror = () => reject(putReq.error ?? new Error("IDB put error"));
+        putReq.onerror = () =>
+            reject(putReq.error ?? new Error("IDB put error"));
     });
 }
 
@@ -269,7 +342,8 @@ export function getWorkspace(
         const tx = db.transaction(KEY_STORE, "readonly");
         const store = tx.objectStore(KEY_STORE);
         const req = store.get(id) as IDBRequest<WorkspaceRecord | undefined>;
-        req.onsuccess = () => resolve(req.result as WorkspaceRecord | undefined);
+        req.onsuccess = () =>
+            resolve(req.result as WorkspaceRecord | undefined);
         req.onerror = () => reject(req.error ?? new Error("IDB get error"));
     });
 }
@@ -288,10 +362,7 @@ export function listWorkspaces(db: IDBDatabase): Promise<WorkspaceRecord[]> {
     });
 }
 
-export function deleteWorkspace(
-    db: IDBDatabase,
-    id: string,
-): Promise<void> {
+export function deleteWorkspace(db: IDBDatabase, id: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(KEY_STORE, "readwrite");
         const store = tx.objectStore(KEY_STORE);
@@ -317,12 +388,13 @@ const todoSchema = schema({
 });
 
 export function App() {
+    const [routeEpoch, setRouteEpoch] = useState<number>(0);
     const doc = useMemo(() => {
-        const doc = new LoroDoc();
-        doc.setRecordTimestamp(true);
-        doc.setChangeMergeInterval(1);
-        return doc;
-    }, []);
+        const d = new LoroDoc();
+        d.setRecordTimestamp(true);
+        d.setChangeMergeInterval(1);
+        return d;
+    }, [routeEpoch]);
     (window as unknown as { doc?: LoroDoc }).doc = doc;
     const undo = useMemo(() => new UndoManager(doc, {}), [doc]);
 
@@ -343,9 +415,14 @@ export function App() {
     const [shareUrl, setShareUrl] = useState<string>("");
     const [copied, setCopied] = useState<boolean>(false);
     const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
-    const [routeEpoch, setRouteEpoch] = useState<number>(0);
-    const [workspaceTitle, setWorkspaceTitle] = useState<string>("Untitled Workspace");
+    const [workspaceTitle, setWorkspaceTitle] =
+        useState<string>("Untitled Workspace");
     const wsDebounceRef = useRef<number | undefined>(undefined);
+    const [showWsMenu, setShowWsMenu] = useState<boolean>(false);
+    const wsTitleRef = useRef<HTMLDivElement | null>(null);
+    const wsTitleInputRef = useRef<HTMLInputElement | null>(null);
+    const wsMeasureRef = useRef<HTMLSpanElement | null>(null);
+    const wsMenuRef = useRef<HTMLDivElement | null>(null);
 
     // Public Sync helpers/consts moved to module scope above for clarity
 
@@ -432,7 +509,8 @@ export function App() {
                         privateHex,
                         createdAt: existing?.createdAt ?? now,
                         lastUsedAt: now,
-                        name: workspaceTitle || existing?.name || existing?.label,
+                        name:
+                            workspaceTitle || existing?.name || existing?.label,
                     };
                     await upsertWorkspace(db, rec);
                     const all = await listWorkspaces(db);
@@ -564,8 +642,7 @@ export function App() {
             const rec = await getWorkspace(db, id);
             db.close();
             if (!rec) return;
-            history.replaceState(null, "", `/${rec.id}#${rec.privateHex}`);
-            setRouteEpoch((x) => x + 1);
+            window.location.assign(`/${rec.id}#${rec.privateHex}`);
         } catch (e) {
             // eslint-disable-next-line no-console
             console.warn("Switch workspace failed:", e);
@@ -574,8 +651,7 @@ export function App() {
 
     const createNewWorkspace = useCallback(async () => {
         const gen = await generatePairAndUrl();
-        history.replaceState(null, "", `/${gen.publicHex}#${gen.privateHex}`);
-        setRouteEpoch((x) => x + 1);
+        window.location.assign(`/${gen.publicHex}#${gen.privateHex}`);
     }, []);
 
     const removeCurrentWorkspace = useCallback(async () => {
@@ -589,12 +665,11 @@ export function App() {
             // If we removed current, move to another or create new
             const next = all.find((w) => w.id !== workspaceHex) ?? null;
             if (next) {
-                history.replaceState(null, "", `/${next.id}#${next.privateHex}`);
+                window.location.assign(`/${next.id}#${next.privateHex}`);
             } else {
                 const gen = await generatePairAndUrl();
-                history.replaceState(null, "", `/${gen.publicHex}#${gen.privateHex}`);
+                window.location.assign(`/${gen.publicHex}#${gen.privateHex}`);
             }
-            setRouteEpoch((x) => x + 1);
         } catch (e) {
             // eslint-disable-next-line no-console
             console.warn("Delete workspace failed:", e);
@@ -645,6 +720,66 @@ export function App() {
             if (timer) window.clearTimeout(timer);
         };
     }, [workspaceTitle, workspaceHex]);
+
+    // Close workspace menu on outside click or Escape
+    useEffect(() => {
+        if (!showWsMenu) return;
+        const onDown = (e: MouseEvent) => {
+            if (!wsTitleRef.current) return;
+            if (!wsTitleRef.current.contains(e.target as Node)) {
+                setShowWsMenu(false);
+            }
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setShowWsMenu(false);
+        };
+        document.addEventListener("mousedown", onDown);
+        document.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("mousedown", onDown);
+            document.removeEventListener("keydown", onKey);
+        };
+    }, [showWsMenu]);
+
+    // Measure workspace title width to fit content precisely
+    useEffect(() => {
+        const input = wsTitleInputRef.current;
+        const meas = wsMeasureRef.current;
+        if (!input || !meas) return;
+        input.style.width = meas.offsetWidth + 12 + "px";
+    }, [workspaceTitle]);
+
+    // Ensure workspace menu stays inside the viewport with margin
+    useEffect(() => {
+        if (!showWsMenu) return;
+        const menu = wsMenuRef.current;
+        if (!menu) return;
+        const margin = 12;
+        const adjust = () => {
+            const rect = menu.getBoundingClientRect();
+            let dx = 0;
+            if (rect.right > window.innerWidth - margin) {
+                dx = window.innerWidth - margin - rect.right;
+            }
+            if (rect.left + dx < margin) {
+                dx = margin - rect.left;
+            }
+            menu.style.transform = `translateX(${dx}px)`;
+            const available = Math.max(
+                120,
+                window.innerHeight - margin - rect.top,
+            );
+            menu.style.maxHeight = available + "px";
+            menu.style.overflowY = "auto";
+        };
+        const raf = requestAnimationFrame(adjust);
+        const onResize = () => adjust();
+        window.addEventListener("resize", onResize);
+        return () => {
+            cancelAnimationFrame(raf);
+            window.removeEventListener("resize", onResize);
+        };
+    }, [showWsMenu]);
 
     function addTodo(text: string) {
         if (!text.trim()) return;
@@ -774,14 +909,16 @@ export function App() {
     return (
         <div className="app">
             <header className="app-header">
-                <div className="workspace-title">
+                <div className="workspace-title" ref={wsTitleRef}>
                     <input
                         className="workspace-title-input"
+                        ref={wsTitleInputRef}
                         value={workspaceTitle}
                         onChange={(e) => {
                             const v = e.currentTarget.value;
                             setWorkspaceTitle(v);
-                            if (wsDebounceRef.current) window.clearTimeout(wsDebounceRef.current);
+                            if (wsDebounceRef.current)
+                                window.clearTimeout(wsDebounceRef.current);
                             wsDebounceRef.current = window.setTimeout(() => {
                                 void setState((s) => {
                                     s.workspace.name = v;
@@ -792,108 +929,122 @@ export function App() {
                         disabled={detached}
                         aria-label="Workspace name"
                     />
-                </div>
-                <div className="header-controls" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                    <div style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                        <label style={{ fontSize: 12, opacity: 0.8 }}>Workspace:</label>
-                        {(() => {
-                            // Build option list with names
-                            const options: { id: string; name: string }[] = [];
-                            // Ensure current workspace appears first
-                            if (workspaceHex) {
-                                options.push({
-                                    id: workspaceHex,
-                                    name:
-                                        workspaceTitle ||
-                                        `${workspaceHex.slice(0, 16)}`,
-                                });
-                            }
-                            for (const w of workspaces) {
-                                if (w.id === workspaceHex) continue;
-                                options.push({
-                                    id: w.id,
-                                    name: w.name || w.label || w.id.slice(0, 16),
-                                });
-                            }
-                            const optionIds = options.map((o) => o.id);
-                            const onChange = async (v: string) => {
-                                if (v === "__create__") {
-                                    await createNewWorkspace();
-                                    return;
-                                }
-                                if (v === "__delete__") {
-                                    await removeCurrentWorkspace();
-                                    return;
-                                }
-                                await switchToWorkspace(v);
-                            };
-                            return (
-                                <select
-                                    className="select"
-                                    value={workspaceHex || (optionIds[0] ?? "")}
-                                    onChange={(e) => void onChange(e.currentTarget.value)}
-                                >
-                                    {optionIds.length === 0 && (
-                                        <option value="" disabled>
-                                            Loading…
-                                        </option>
-                                    )}
-                                    {options.map(({ id, name }) => (
-                                        <option key={id} value={id}>
-                                            {name}
-                                        </option>
-                                    ))}
-                                    <optgroup label="Actions">
-                                        <option value="__create__">＋ New workspace…</option>
-                                        {workspaceHex && (
-                                            <option value="__delete__">🗑 Delete current…</option>
-                                        )}
-                                    </optgroup>
-                                </select>
-                            );
-                        })()}
-                    </div>
                     <span
-                        className="status-inline btn-text"
-                        title={online ? "Online" : "Offline"}
-                        aria-live="polite"
-                        aria-label={online ? "Online" : "Offline"}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                        className="workspace-title-measure"
+                        ref={wsMeasureRef}
+                        aria-hidden
                     >
-                        <span
-                            style={{
-                                color: online ? "#29a329" : "#c0392b",
-                            }}
-                        >
-                            {online ? "●" : "○"}
-                        </span>
-                        {online ? "Online" : "Offline"}
+                        {workspaceTitle || "Untitled Workspace"}
                     </span>
                     <button
-                        className="btn-text"
-                        onClick={async () => {
-                            try {
-                                await navigator.clipboard.writeText(shareUrl);
-                                setCopied(true);
-                                setTimeout(() => setCopied(false), 1600);
-                            } catch {
-                                // Fallback: prompt
-                                window.prompt(
-                                    "Copy this invite URL and share it:",
-                                    shareUrl,
-                                );
-                            }
-                        }}
-                        title="Copy invite URL"
+                        className="title-dropdown btn-text"
+                        type="button"
+                        onClick={() => setShowWsMenu((v) => !v)}
+                        aria-label="Switch workspace"
+                        title="Switch workspace"
+                        disabled={false}
                     >
-                        Share
+                        <MaterialSymbolsKeyboardArrowDown />
                     </button>
-                    {copied && (
-                        <span style={{ fontSize: 12 }}>
-                            Link copied — invite others with this URL
-                        </span>
+                    {showWsMenu && (
+                        <div
+                            className="workspace-selector-pop"
+                            ref={wsMenuRef}
+                            role="menu"
+                        >
+                            {(() => {
+                                const options: { id: string; name: string }[] =
+                                    [];
+                                if (workspaceHex) {
+                                    options.push({
+                                        id: workspaceHex,
+                                        name:
+                                            workspaceTitle ||
+                                            `${workspaceHex.slice(0, 16)}`,
+                                    });
+                                }
+                                for (const w of workspaces) {
+                                    if (w.id === workspaceHex) continue;
+                                    options.push({
+                                        id: w.id,
+                                        name:
+                                            w.name ||
+                                            w.label ||
+                                            w.id.slice(0, 16),
+                                    });
+                                }
+                                const onChoose = async (id: string) => {
+                                    await switchToWorkspace(id);
+                                    setShowWsMenu(false);
+                                };
+                                const onCreate = async () => {
+                                    await createNewWorkspace();
+                                    setShowWsMenu(false);
+                                };
+                                const onDelete = async () => {
+                                    await removeCurrentWorkspace();
+                                    setShowWsMenu(false);
+                                };
+                                return (
+                                    <div className="ws-menu">
+                                        {options.length === 0 && (
+                                            <div className="ws-empty">
+                                                No workspaces
+                                            </div>
+                                        )}
+                                        {options.map(({ id, name }) => (
+                                            <button
+                                                key={id}
+                                                className={`ws-item${id === workspaceHex ? " current" : ""}`}
+                                                onClick={() =>
+                                                    void onChoose(id)
+                                                }
+                                                role="menuitem"
+                                            >
+                                                {name}
+                                            </button>
+                                        ))}
+                                        <div className="ws-sep" />
+                                        <button
+                                            className="ws-action"
+                                            onClick={() => void onCreate()}
+                                            role="menuitem"
+                                        >
+                                            ＋ New workspace…
+                                        </button>
+                                        {workspaceHex && (
+                                            <button
+                                                className="ws-action danger"
+                                                onClick={() => void onDelete()}
+                                                role="menuitem"
+                                            >
+                                                <StreamlinePlumpRecycleBin2Remix />{" "}
+                                                Delete current…
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
                     )}
                 </div>
+                <span
+                    className="status-inline btn-text"
+                    title={online ? "Online" : "Offline"}
+                    aria-live="polite"
+                    aria-label={online ? "Online" : "Offline"}
+                    style={{ display: "inline-flex", alignItems: "center" }}
+                >
+                    <span>{online ? "Online" : "Offline"}</span>
+                    <span
+                        style={{
+                            color: online ? "#29a329" : "#c0392b",
+                            marginLeft: 8,
+                        }}
+                    >
+                        {online ? "●" : "○"}
+                    </span>
+                </span>
                 {/* Room ID inline display removed; shown via selector options */}
             </header>
 
@@ -929,9 +1080,6 @@ export function App() {
                     }}
                     disabled={!undo.canUndo?.() || detached}
                 >
-                    <span className="btn-icon" aria-hidden>
-                        ⟲
-                    </span>
                     Undo
                 </button>
                 <button
@@ -941,11 +1089,32 @@ export function App() {
                     }}
                     disabled={!undo.canRedo?.() || detached}
                 >
-                    <span className="btn-icon" aria-hidden>
-                        ⟳
-                    </span>
                     Redo
                 </button>
+                <button
+                    className="btn btn-secondary"
+                    onClick={async () => {
+                        try {
+                            await navigator.clipboard.writeText(shareUrl);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1600);
+                        } catch {
+                            // Fallback: prompt
+                            window.prompt(
+                                "Copy this invite URL and share it:",
+                                shareUrl,
+                            );
+                        }
+                    }}
+                    title="Copy invite URL"
+                >
+                    Share
+                </button>
+                {copied && (
+                    <span style={{ fontSize: 12, marginLeft: 6 }}>
+                        Link copied — invite others with this URL
+                    </span>
+                )}
                 <button
                     className="btn btn-secondary push-right"
                     onClick={() => setShowHistory((v) => !v)}
@@ -986,7 +1155,17 @@ export function App() {
             </ul>
 
             <footer className="app-footer">
-                Built by <a href="https://loro.dev" target="_blank" rel="noopener noreferrer">Loro</a>
+                <span>Built by Loro</span>
+                <a
+                    className="footer-gh"
+                    href="https://github.com/loro-dev/loro-mirror"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="GitHub repository"
+                    title="GitHub repository"
+                >
+                    <MdiGithub />
+                </a>
             </footer>
         </div>
     );

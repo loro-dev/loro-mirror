@@ -77,12 +77,21 @@ body {
 
 .app {
     max-width: 720px;
-    margin: 48px auto;
+    margin: 32px auto;
     padding: 0 16px 80px; /* extra bottom padding to avoid fixed footer overlap */
 }
 
 .app-header h1 {
     display: none;
+}
+
+/* Header layout: title left, status right */
+.app-header {
+    display: flex;
+    align-items: middle;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
 }
 
 .subtitle {
@@ -217,7 +226,7 @@ body {
     background: transparent;
     border: none;
     color: var(--text);
-    padding: 0 6px;
+    padding: 2px 6px;
     border-radius: 6px;
     font-size: 14px;
     line-height: 1;
@@ -233,9 +242,8 @@ body {
 }
 
 /* Online indicator: share padding/margins with .btn-text but no hover effect */
-.status-inline:hover {
-    background: transparent;
-    cursor: default;
+.status-inline {
+    padding: 2px 6px;
 }
 
 /* Header controls spacing */
@@ -246,10 +254,17 @@ body {
 
 /* Workspace title */
 .workspace-title {
-    margin: 0 0 4px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
 }
 .workspace-title-input {
-    width: 100%;
+    width: auto;
+    display: inline-block;
+    min-width: 1ch;
+    padding: 0;
+    -webkit-appearance: none;
+    appearance: none;
     border: none;
     outline: none;
     background: transparent;
@@ -258,11 +273,82 @@ body {
     letter-spacing: 0.2px;
     color: var(--brand);
 }
+.workspace-title-measure {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    visibility: hidden;
+    white-space: pre;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+}
 .workspace-title-input::placeholder {
     color: color-mix(in oklab, var(--brand) 40%, var(--muted));
 }
 .workspace-title-input:disabled {
     opacity: 0.6;
+}
+
+/* Title chevron + popover */
+.title-dropdown {
+    font-size: 22px; /* larger arrow icon */
+    margin-left: 0px;
+    color: var(--brand);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+}
+.workspace-selector-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    padding: 8px;
+    background: var(--card);
+    border: 1px solid color-mix(in oklab, var(--border) 60%, var(--card));
+    border-radius: 10px;
+    z-index: 20;
+    box-shadow: none;
+}
+.ws-menu {
+    display: grid;
+    gap: 4px;
+    min-width: 240px;
+}
+.ws-item,
+.ws-action {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.ws-item:hover,
+.ws-action:hover {
+    background: color-mix(in oklab, var(--bg) 80%, var(--brand) 20%);
+}
+.ws-sep {
+    height: 1px;
+    background: color-mix(in oklab, var(--btn-border) 60%, var(--card));
+    margin: 6px 0;
+}
+.ws-empty {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 6px 8px;
 }
 
 /* Flat select control (no card UI), with hover highlight and chevron */
@@ -285,11 +371,19 @@ body {
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23e04020' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
 }
 .select:hover {
-    border-bottom-color: color-mix(in oklab, var(--brand) 45%, var(--btn-border));
+    border-bottom-color: color-mix(
+        in oklab,
+        var(--brand) 45%,
+        var(--btn-border)
+    );
 }
 .select:focus {
     outline: none;
-    border-bottom-color: color-mix(in oklab, var(--brand) 70%, var(--btn-border));
+    border-bottom-color: color-mix(
+        in oklab,
+        var(--brand) 70%,
+        var(--btn-border)
+    );
 }
 
 .todo-list {
@@ -492,18 +586,33 @@ body {
     bottom: 0;
     background: var(--bg);
     padding: 10px 16px;
-    border-top: 1px solid color-mix(in oklab, var(--btn-border) 60%, var(--card));
-    text-align: center;
+    border-top: 1px solid
+        color-mix(in oklab, var(--btn-border) 60%, var(--card));
     color: var(--muted);
     font-size: 12px;
     z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
 }
 .app-footer a {
-    color: var(--brand);
+    color: var(--muted);
     text-decoration: none;
 }
 .app-footer a:hover {
     text-decoration: underline;
+}
+.app-footer .footer-gh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px; /* icon size */
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.app-footer .footer-gh:hover {
+    background: color-mix(in oklab, var(--bg) 94%, var(--brand) 6%);
 }
 
 /* Slider styling - brand colored track and thumb */
