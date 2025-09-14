@@ -106,7 +106,7 @@ body {
 
 .new-todo {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto; /* input grows, Add stays right */
     gap: 12px;
     margin-bottom: 14px;
     backdrop-filter: blur(6px);
@@ -114,6 +114,7 @@ body {
 
 .todo-input {
     width: 100%;
+    min-width: 0; /* allow shrinking in grid next to button */
     padding: 12px 14px;
     border-radius: 10px;
     border: 1px solid var(--border);
@@ -244,6 +245,8 @@ body {
 /* Online indicator: share padding/margins with .btn-text but no hover effect */
 .status-inline {
     padding: 2px 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
 }
 
 /* Header controls spacing */
@@ -257,11 +260,17 @@ body {
     position: relative;
     display: inline-flex;
     align-items: center;
+    /* Prevent the title area from exceeding viewport minus 100px */
+    max-width: calc(100vw - 100px);
+    min-width: 0;
+    overflow: hidden;
 }
 .workspace-title-input {
     width: auto;
     display: inline-block;
     min-width: 1ch;
+    /* Allow measured width to be clamped by parent max-width */
+    max-width: 100%;
     padding: 0;
     -webkit-appearance: none;
     appearance: none;
@@ -511,8 +520,9 @@ body {
 
 /* Responsive tweaks */
 @media (max-width: 520px) {
+    /* Keep Add button on the right even on small screens */
     .new-todo {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr) auto;
     }
     .todo-item {
         grid-template-columns: auto 1fr; /* keep checkbox near edge on small screens */

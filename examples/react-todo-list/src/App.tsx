@@ -1029,16 +1029,16 @@ export function App() {
                     )}
                 </div>
                 <span
-                    className="status-inline btn-text"
+                    className="status-inline"
                     title={online ? "Online" : "Offline"}
                     aria-live="polite"
                     aria-label={online ? "Online" : "Offline"}
                     style={{ display: "inline-flex", alignItems: "center" }}
                 >
-                    <span>{online ? "Online" : "Offline"}</span>
+                    {/*<span>{online ? "Online" : "Offline"}</span>*/}
                     <span
                         style={{
-                            color: online ? "#29a329" : "#c0392b",
+                            color: online ? "#29c329" : "#c0392b",
                             marginLeft: 8,
                         }}
                     >
