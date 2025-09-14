@@ -413,7 +413,8 @@ export function App() {
     const [online, setOnline] = useState<boolean>(false);
     const [workspaceHex, setWorkspaceHex] = useState<string>("");
     const [shareUrl, setShareUrl] = useState<string>("");
-    const [copied, setCopied] = useState<boolean>(false);
+    const [toast, setToast] = useState<string | null>(null);
+    const toastTimerRef = useRef<number | undefined>(undefined);
     const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
     const [workspaceTitle, setWorkspaceTitle] =
         useState<string>("Untitled Workspace");
@@ -1096,8 +1097,12 @@ export function App() {
                     onClick={async () => {
                         try {
                             await navigator.clipboard.writeText(shareUrl);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 1600);
+                            if (toastTimerRef.current)
+                                window.clearTimeout(toastTimerRef.current);
+                            setToast("Invite link copied");
+                            toastTimerRef.current = window.setTimeout(() => {
+                                setToast(null);
+                            }, 1600);
                         } catch {
                             // Fallback: prompt
                             window.prompt(
@@ -1110,11 +1115,6 @@ export function App() {
                 >
                     Share
                 </button>
-                {copied && (
-                    <span style={{ fontSize: 12, marginLeft: 6 }}>
-                        Link copied — invite others with this URL
-                    </span>
-                )}
                 <button
                     className="btn btn-secondary push-right"
                     onClick={() => setShowHistory((v) => !v)}
@@ -1167,6 +1167,11 @@ export function App() {
                     <MdiGithub />
                 </a>
             </footer>
+            {toast && (
+                <div className="toast" role="status" aria-live="polite">
+                    {toast}
+                </div>
+            )}
         </div>
     );
 }

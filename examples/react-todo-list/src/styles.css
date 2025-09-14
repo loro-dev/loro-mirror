@@ -263,7 +263,8 @@ body {
     /* Prevent the title area from exceeding viewport minus 100px */
     max-width: calc(100vw - 100px);
     min-width: 0;
-    overflow: hidden;
+    /* Allow popover to render outside while title width is clamped */
+    overflow: visible;
 }
 .workspace-title-input {
     width: auto;
@@ -322,7 +323,10 @@ body {
     border: 1px solid color-mix(in oklab, var(--border) 60%, var(--card));
     border-radius: 10px;
     z-index: 20;
-    box-shadow: none;
+    /* Soft drop shadow for depth */
+    box-shadow:
+        0 10px 24px rgba(0, 0, 0, 0.12),
+        0 4px 12px rgba(0, 0, 0, 0.08);
 }
 .ws-menu {
     display: grid;
@@ -623,6 +627,33 @@ body {
 }
 .app-footer .footer-gh:hover {
     background: color-mix(in oklab, var(--bg) 94%, var(--brand) 6%);
+}
+
+/* Toast */
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: 72px; /* sits above fixed footer */
+    transform: translateX(-50%);
+    z-index: 20; /* above footer (z:10) */
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid color-mix(in oklab, var(--btn-border) 60%, var(--card));
+    border-radius: 12px;
+    padding: 10px 14px;
+    pointer-events: none; /* avoid intercepting clicks */
+    animation: toast-in 140ms ease-out;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
 }
 
 /* Slider styling - brand colored track and thumb */

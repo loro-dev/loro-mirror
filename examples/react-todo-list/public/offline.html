@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#e06040" />
+    <title>Offline — Loro Todo Example</title>
+    <style>
+      :root {
+        --bg: #ebe4d2; --text: #5a5a5a; --brand: #e06040;
+      }
+      html, body { height: 100%; }
+      body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+      .wrap { min-height: 100%; display: grid; place-items: center; padding: 24px; }
+      .card { max-width: 560px; width: 100%; background: #e0e0c0; border: 1px solid #e0a0a0; border-radius: 12px; padding: 20px; box-sizing: border-box; }
+      h1 { margin: 0 0 8px; color: var(--brand); font-size: 24px; }
+      p { margin: 8px 0; }
+      .cta { display: inline-block; margin-top: 12px; padding: 10px 14px; border: 1px solid #e0a0a0; border-radius: 10px; color: inherit; text-decoration: none; background: #e2e2ce; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>You are offline</h1>
+        <p>The app shell is cached and can load without a network connection, but some live features may be unavailable.</p>
+        <p>When you’re back online, changes will sync again.</p>
+        <a class="cta" href="/">Reload app</a>
+      </div>
+    </div>
+  </body>
+  </html>
