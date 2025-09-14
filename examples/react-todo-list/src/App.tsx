@@ -239,6 +239,67 @@ export function MdiGithub(props: SVGProps<SVGSVGElement>) {
     );
 }
 
+export function MdiBroom(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Material Design Icons by Pictogrammers - https://github.com/Templarian/MaterialDesign/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="m19.36 2.72l1.42 1.42l-5.72 5.71c1.07 1.54 1.22 3.39.32 4.59L9.06 8.12c1.2-.9 3.05-.75 4.59.32zM5.93 17.57c-2.01-2.01-3.24-4.41-3.58-6.65l4.88-2.09l7.44 7.44l-2.09 4.88c-2.24-.34-4.64-1.57-6.65-3.58"
+            />
+        </svg>
+    );
+}
+
+// Lucide Undo2 icon for undo/redo buttons
+// Icon from Lucide by Lucide Contributors - https://github.com/lucide-icons/lucide/blob/main/LICENSE
+export function LucideUndo2(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            <g
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+            >
+                <path d="M9 14L4 9l5-5" />
+                <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+            </g>
+        </svg>
+    );
+}
+
+export function IcSharpHistory(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Google Material Icons by Material Design Authors - https://github.com/material-icons/material-icons/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89l.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7s-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.95 8.95 0 0 0 13 21a9 9 0 0 0 0-18m-1 5v5l4.25 2.52l.77-1.29l-3.52-2.09V8z"
+            />
+        </svg>
+    );
+}
+
 export function StreamlinePlumpRecycleBin2Remix(
     props: SVGProps<SVGSVGElement>,
 ) {
@@ -424,6 +485,10 @@ export function App() {
     const wsTitleInputRef = useRef<HTMLInputElement | null>(null);
     const wsMeasureRef = useRef<HTMLSpanElement | null>(null);
     const wsMenuRef = useRef<HTMLDivElement | null>(null);
+    const hasDone = useMemo(
+        () => state.todos.some((t) => t.status === "done"),
+        [state.todos],
+    );
 
     // Public Sync helpers/consts moved to module scope above for clarity
 
@@ -1075,25 +1140,50 @@ export function App() {
 
             <div className="toolbar">
                 <button
-                    className="btn btn-secondary"
+                    className="btn btn-secondary btn-icon-only"
                     onClick={() => {
                         undo.undo();
                     }}
                     disabled={!undo.canUndo?.() || detached}
+                    aria-label="Undo"
+                    title="Undo"
                 >
-                    Undo
+                    <LucideUndo2 className="btn-icon" aria-hidden />
                 </button>
                 <button
-                    className="btn btn-secondary"
+                    className="btn btn-secondary btn-icon-only"
                     onClick={() => {
                         undo.redo();
                     }}
                     disabled={!undo.canRedo?.() || detached}
+                    aria-label="Redo"
+                    title="Redo"
                 >
-                    Redo
+                    <LucideUndo2
+                        className="btn-icon"
+                        style={{ transform: "scaleX(-1)" }}
+                        aria-hidden
+                    />
                 </button>
                 <button
-                    className="btn btn-secondary"
+                    className="btn btn-secondary btn-icon-only"
+                    onClick={() =>
+                        void setState((s) => {
+                            for (let i = s.todos.length - 1; i >= 0; i--) {
+                                if (s.todos[i].status === "done") {
+                                    s.todos.splice(i, 1);
+                                }
+                            }
+                        })
+                    }
+                    disabled={detached || !hasDone}
+                    aria-label="Clear completed"
+                    title="Clear completed"
+                >
+                    <MdiBroom className="btn-icon" aria-hidden />
+                </button>
+                <button
+                    className="btn btn-secondary push-right"
                     onClick={async () => {
                         try {
                             await navigator.clipboard.writeText(shareUrl);
@@ -1116,10 +1206,17 @@ export function App() {
                     Share
                 </button>
                 <button
-                    className="btn btn-secondary push-right"
+                    className={
+                        "btn btn-secondary " +
+                        (showHistory ? "" : "btn-icon-only")
+                    }
                     onClick={() => setShowHistory((v) => !v)}
                 >
-                    {showHistory ? "Hide History" : "History"}
+                    {showHistory ? (
+                        "Hide History"
+                    ) : (
+                        <IcSharpHistory className="btn-icon" />
+                    )}
                 </button>
             </div>
             {showHistory && <HistoryView doc={doc} />}
@@ -1155,7 +1252,6 @@ export function App() {
             </ul>
 
             <footer className="app-footer">
-                <span>Built by Loro</span>
                 <a
                     className="footer-gh"
                     href="https://github.com/loro-dev/loro-mirror"
@@ -1164,6 +1260,9 @@ export function App() {
                     aria-label="GitHub repository"
                     title="GitHub repository"
                 >
+                    <span style={{ marginRight: 8, fontSize: "0.9rem" }}>
+                        Built with Loro
+                    </span>
                     <MdiGithub />
                 </a>
             </footer>

@@ -215,6 +215,19 @@ body {
 .toolbar .push-right {
     margin-left: auto;
 }
+/* Uniform height for all controls in toolbar */
+.toolbar {
+    --toolbar-btn-height: 36px;
+}
+.toolbar .btn,
+.toolbar .btn-text {
+    height: var(--toolbar-btn-height);
+}
+.toolbar .btn-icon-only {
+    width: var(--toolbar-btn-height);
+    padding: 0; /* square; center icon */
+    justify-content: center;
+}
 .toolbar .btn {
     padding-top: 6px;
     padding-bottom: 6px;
