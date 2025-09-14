@@ -7,12 +7,5 @@
   "background_color": "#ebe4d2",
   "theme_color": "#e06040",
   "description": "A lightweight React + Loro CRDT todo example that works offline.",
-  "icons": [
-    {
-      "src": "/icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ]
+  "icons": []
 }
