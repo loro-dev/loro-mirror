@@ -12,6 +12,8 @@
     },
     "dependencies": {
         "loro-crdt": "^1.7.3",
+        "loro-adaptors": "latest",
+        "loro-websocket": "latest",
         "loro-mirror": "workspace:*",
         "loro-mirror-react": "workspace:*",
         "react": "^18.2.0",

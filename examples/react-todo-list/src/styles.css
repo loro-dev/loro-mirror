@@ -78,20 +78,15 @@ body {
 .app {
     max-width: 720px;
     margin: 48px auto;
-    padding: 0 16px 40px;
+    padding: 0 16px 80px; /* extra bottom padding to avoid fixed footer overlap */
 }
 
 .app-header h1 {
-    margin: 0 0 4px;
-    font-weight: 800;
-    letter-spacing: 0.2px;
-    color: var(--brand);
-    font-size: 2rem;
+    display: none;
 }
 
 .subtitle {
-    margin: 0 0 20px;
-    color: var(--muted);
+    display: none;
 }
 
 .card {
@@ -213,6 +208,88 @@ body {
 .toolbar .btn {
     padding-top: 6px;
     padding-bottom: 6px;
+}
+
+/* Text-style button (no bg/border), highlighted on hover */
+.btn-text {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    padding: 0 6px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    transition: background 120ms ease;
+}
+.btn-text:hover {
+    /* Subtle tint close to page background */
+    background: color-mix(in oklab, var(--bg) 94%, var(--brand) 6%);
+    cursor: pointer;
+    color: var(--text);
+}
+
+/* Online indicator: share padding/margins with .btn-text but no hover effect */
+.status-inline:hover {
+    background: transparent;
+    cursor: default;
+}
+
+/* Header controls spacing */
+.header-controls {
+    margin-top: 6px;
+    margin-bottom: 16px; /* extra space before new-todo row */
+}
+
+/* Workspace title */
+.workspace-title {
+    margin: 0 0 4px;
+}
+.workspace-title-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    color: var(--brand);
+}
+.workspace-title-input::placeholder {
+    color: color-mix(in oklab, var(--brand) 40%, var(--muted));
+}
+.workspace-title-input:disabled {
+    opacity: 0.6;
+}
+
+/* Flat select control (no card UI), with hover highlight and chevron */
+.select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid transparent;
+    border-bottom-color: var(--btn-border);
+    border-radius: 0;
+    padding: 4px 26px 4px 6px; /* leave space for chevron */
+    font-size: 12px;
+    line-height: 1.2;
+    cursor: pointer;
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 12px 12px;
+    /* inline SVG chevron using brand color */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23e04020' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+}
+.select:hover {
+    border-bottom-color: color-mix(in oklab, var(--brand) 45%, var(--btn-border));
+}
+.select:focus {
+    outline: none;
+    border-bottom-color: color-mix(in oklab, var(--brand) 70%, var(--btn-border));
 }
 
 .todo-list {
@@ -405,6 +482,28 @@ body {
 .history-actions {
     display: flex;
     justify-content: flex-end;
+}
+
+/* Footer */
+.app-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg);
+    padding: 10px 16px;
+    border-top: 1px solid color-mix(in oklab, var(--btn-border) 60%, var(--card));
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    z-index: 10;
+}
+.app-footer a {
+    color: var(--brand);
+    text-decoration: none;
+}
+.app-footer a:hover {
+    text-decoration: underline;
 }
 
 /* Slider styling - brand colored track and thumb */

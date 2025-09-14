@@ -39,6 +39,9 @@ importers:
 
   examples/react-todo-list:
     dependencies:
+      loro-adaptors:
+        specifier: latest
+        version: 0.1.0(loro-crdt@1.7.3)
       loro-crdt:
         specifier: ^1.7.3
         version: 1.7.3
@@ -48,6 +51,9 @@ importers:
       loro-mirror-react:
         specifier: workspace:*
         version: link:../../packages/react
+      loro-websocket:
+        specifier: latest
+        version: 0.1.0(loro-crdt@1.7.3)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -960,6 +966,9 @@ packages:
   '@types/semver@7.5.8':
     resolution: {integrity: sha512-I8EUhyrgfLrcTkzV3TSsGyl1tSuPrEDzr0yd5m90UgNxQkyDXULk3b6MlQqTCpZpNtWe1K0hzclnZkTcLBe2UQ==}
 
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@typescript-eslint/eslint-plugin@5.62.0':
     resolution: {integrity: sha512-TiZzBSJja/LbhNPvk6yc0JrX9XqhQ0hdh6M2svYfsHGejaKFIAGd9MQ+ERIMzLGlN/kZoYIgdxFV0PuljTKXag==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
@@ -1661,8 +1670,24 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
+  loro-adaptors@0.1.0:
+    resolution: {integrity: sha512-txtN0gS6kZcdmlxdeXAv20Ag53HcJ3nJgjyI/w1a0/BoXMOQ66RrhC8+TFpFIOshPamd4Ms0i3QLu9kLsCBDZw==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      loro-crdt: ^1.7.1
+
   loro-crdt@1.7.3:
     resolution: {integrity: sha512-bP/Su2mVDf0ieIdOH8RyQ4Dg8hIJUQCzwTfzpuPtQl7XoAk2tzYe5Dt77kIAmioN6DyCI0Frbt2Nr9lHBPf9Mw==}
+
+  loro-protocol@0.1.0:
+    resolution: {integrity: sha512-cImsQOwKn4ax0ptsmnUfPKyct7AzOhB/NnXNu911fSLIm4n9T0a2pCf6AzriyxZwGqMx/uIZlYq5QNUKRKZaXw==}
+    engines: {node: '>=18.0.0'}
+
+  loro-websocket@0.1.0:
+    resolution: {integrity: sha512-y0rImUH1rwANlE4ZSTcCAh7Z24Pe148+vfZUwf9WbpzCSHHorIptGCXr775a+nCy2dqJQQsXZejpxsAZtbBTwQ==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      loro-crdt: ^1.7.1
 
   loupe@2.3.7:
     resolution: {integrity: sha512-zSMINGVYkdpYSOBmLi0D1Uo7JU9nVdQKrHxC8eYlV+9YKK9WePqAlL7lSlorG/U2Fw1w0hTBmaa/jrQ3UbPHtA==}
@@ -2923,6 +2948,10 @@ snapshots:
 
   '@types/semver@7.5.8': {}
 
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 20.17.19
+
   '@typescript-eslint/eslint-plugin@5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@4.9.5))(eslint@8.57.1)(typescript@4.9.5)':
     dependencies:
       '@eslint-community/regexpp': 4.12.1
@@ -3723,7 +3752,25 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
+  loro-adaptors@0.1.0(loro-crdt@1.7.3):
+    dependencies:
+      loro-crdt: 1.7.3
+      loro-protocol: 0.1.0
+
   loro-crdt@1.7.3: {}
+
+  loro-protocol@0.1.0: {}
+
+  loro-websocket@0.1.0(loro-crdt@1.7.3):
+    dependencies:
+      '@types/ws': 8.18.1
+      loro-adaptors: 0.1.0(loro-crdt@1.7.3)
+      loro-crdt: 1.7.3
+      loro-protocol: 0.1.0
+      ws: 8.18.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   loupe@2.3.7:
     dependencies:
