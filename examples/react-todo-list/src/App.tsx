@@ -176,6 +176,8 @@ export function StreamlinePlumpRecycleBin2Remix(
 // Schema/types are imported from loro-state.ts
 
 export function App() {
+    const capitalizeFirst = (s: string): string =>
+        s.length ? s.charAt(0).toUpperCase() + s.slice(1) : s;
     const [routeEpoch, setRouteEpoch] = useState<number>(0);
     const doc = useMemo(() => createConfiguredDoc(), [routeEpoch]);
     (window as unknown as { doc?: unknown }).doc = doc;
@@ -802,6 +804,39 @@ export function App() {
                                     await removeCurrentWorkspace();
                                     setShowWsMenu(false);
                                 };
+                                const onJoin = async () => {
+                                    const input = window.prompt(
+                                        "Paste the invite URL to join:",
+                                        "",
+                                    );
+                                    if (!input) return;
+                                    const url = input.trim();
+                                    try {
+                                        if (workspaceHex) {
+                                            try {
+                                                const db = await openDocDb();
+                                                const bytes = doc.export({
+                                                    mode: "snapshot" as const,
+                                                });
+                                                await putDocSnapshot(
+                                                    db,
+                                                    workspaceHex,
+                                                    bytes,
+                                                );
+                                                db.close();
+                                            } catch (e) {
+                                                // eslint-disable-next-line no-console
+                                                console.warn(
+                                                    "Failed to persist before join:",
+                                                    e,
+                                                );
+                                            }
+                                        }
+                                    } finally {
+                                        setShowWsMenu(false);
+                                        window.location.assign(url);
+                                    }
+                                };
                                 return (
                                     <div className="ws-menu">
                                         {options.length === 0 && (
@@ -822,6 +857,13 @@ export function App() {
                                             </button>
                                         ))}
                                         <div className="ws-sep" />
+                                        <button
+                                            className="ws-action"
+                                            onClick={() => void onJoin()}
+                                            role="menuitem"
+                                        >
+                                            Join by URL…
+                                        </button>
                                         <button
                                             className="ws-action"
                                             onClick={() => void onCreate()}
@@ -870,7 +912,7 @@ export function App() {
                                 : `connected with ${presenceCount - 1} collaborators`;
                             if (toastTimerRef.current)
                                 window.clearTimeout(toastTimerRef.current);
-                            setToast(msg);
+                            setToast(capitalizeFirst(msg));
                             toastTimerRef.current = window.setTimeout(() => {
                                 setToast(null);
                             }, TOAST_DURATION_MS);
@@ -884,7 +926,7 @@ export function App() {
                             : `connected with ${presenceCount - 1} collaborators`;
                         if (toastTimerRef.current)
                             window.clearTimeout(toastTimerRef.current);
-                        setToast(msg);
+                        setToast(capitalizeFirst(msg));
                         toastTimerRef.current = window.setTimeout(() => {
                             setToast(null);
                         }, TOAST_DURATION_MS);

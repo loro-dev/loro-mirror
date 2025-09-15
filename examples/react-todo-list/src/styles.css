@@ -550,6 +550,7 @@ body {
     transform: translateY(-50%);
     z-index: 2;
     background: var(--card);
+    border: none;
     color: var(--muted);
     width: 28px;
     height: 28px;
@@ -698,6 +699,9 @@ body {
     padding: 10px 14px;
     pointer-events: none; /* avoid intercepting clicks */
     animation: toast-in 140ms ease-out;
+    box-shadow:
+        0 10px 24px rgba(0, 0, 0, 0.12),
+        0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 @keyframes toast-in {
