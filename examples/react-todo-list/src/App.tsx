@@ -211,6 +211,8 @@ export function App() {
     const wsTitleInputRef = useRef<HTMLInputElement | null>(null);
     const wsMeasureRef = useRef<HTMLSpanElement | null>(null);
     const wsMenuRef = useRef<HTMLDivElement | null>(null);
+    // Flag to skip snapshot on navigations that intentionally delete the workspace
+    const skipSnapshotOnUnloadRef = useRef<boolean>(false);
     const hasDone = useMemo(
         () => state.todos.some((t) => t.status === "done"),
         [state.todos],
@@ -492,6 +494,8 @@ export function App() {
     const removeCurrentWorkspace = useCallback(async () => {
         if (!workspaceHex) return;
         try {
+            // We are deleting the current workspace; skip forced snapshot
+            skipSnapshotOnUnloadRef.current = true;
             const db = await openDocDb();
             await deleteWorkspace(db, workspaceHex);
             const all = await listWorkspaces(db);
@@ -507,8 +511,24 @@ export function App() {
         } catch (e) {
             // eslint-disable-next-line no-console
             console.warn("Delete workspace failed:", e);
+            // Reset skip flag if deletion fails
+            skipSnapshotOnUnloadRef.current = false;
         }
     }, [workspaceHex]);
+
+    // Persist the latest snapshot immediately (used before programmatic navigations)
+    const persistSnapshotNow = useCallback(async (): Promise<void> => {
+        if (!workspaceHex) return;
+        try {
+            const db = await openDocDb();
+            const bytes = doc.export({ mode: "snapshot" as const });
+            await putDocSnapshot(db, workspaceHex, bytes);
+            db.close();
+        } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn("Forced snapshot save failed:", e);
+        }
+    }, [doc, workspaceHex]);
 
     useEffect(() => {
         const unsub = doc.subscribe(() => {
@@ -622,6 +642,20 @@ export function App() {
         });
         setNewText("");
     }
+
+    // Best-effort snapshot flush on page navigation/close (skip when deleting workspace)
+    useEffect(() => {
+        const onLeave = () => {
+            if (skipSnapshotOnUnloadRef.current) return;
+            void persistSnapshotNow();
+        };
+        window.addEventListener("pagehide", onLeave);
+        window.addEventListener("beforeunload", onLeave);
+        return () => {
+            window.removeEventListener("pagehide", onLeave);
+            window.removeEventListener("beforeunload", onLeave);
+        };
+    }, [persistSnapshotNow]);
 
     const handleTextChange = useCallback(
         (cid: string, value: string) => {
@@ -844,10 +878,14 @@ export function App() {
                                     });
                                 }
                                 const onChoose = async (id: string) => {
+                                    // Force-save current snapshot before navigating
+                                    await persistSnapshotNow();
                                     await switchToWorkspace(id);
                                     setShowWsMenu(false);
                                 };
                                 const onCreate = async () => {
+                                    // Force-save current snapshot before navigating
+                                    await persistSnapshotNow();
                                     await createNewWorkspace();
                                     setShowWsMenu(false);
                                 };
@@ -864,24 +902,7 @@ export function App() {
                                     const url = input.trim();
                                     try {
                                         if (workspaceHex) {
-                                            try {
-                                                const db = await openDocDb();
-                                                const bytes = doc.export({
-                                                    mode: "snapshot" as const,
-                                                });
-                                                await putDocSnapshot(
-                                                    db,
-                                                    workspaceHex,
-                                                    bytes,
-                                                );
-                                                db.close();
-                                            } catch (e) {
-                                                // eslint-disable-next-line no-console
-                                                console.warn(
-                                                    "Failed to persist before join:",
-                                                    e,
-                                                );
-                                            }
+                                            await persistSnapshotNow();
                                         }
                                     } finally {
                                         setShowWsMenu(false);
