@@ -638,7 +638,8 @@ export function App() {
     function addTodo(text: string) {
         if (!text.trim()) return;
         void setState((s) => {
-            s.todos.push({ text, status: "todo" });
+            // Insert new todos at the top of the list
+            s.todos.splice(0, 0, { text, status: "todo" });
         });
         setNewText("");
     }
