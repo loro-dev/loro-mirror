@@ -611,8 +611,23 @@ export function App() {
     const handleDoneChange = useCallback(
         (cid: string, done: boolean) => {
             void setState((s) => {
-                const i = s.todos.findIndex((x) => x.$cid === cid);
-                if (i !== -1) s.todos[i].status = done ? "done" : "todo";
+                const from = s.todos.findIndex((x) => x.$cid === cid);
+                if (from === -1) return;
+                s.todos[from].status = done ? "done" : "todo";
+                if (done) {
+                    // Count trailing done items (contiguous from the end)
+                    let trailingDone = 0;
+                    for (let idx = s.todos.length - 1; idx >= 0; idx--) {
+                        if (s.todos[idx].status === "done") trailingDone++;
+                        else break;
+                    }
+                    let startIdx = s.todos.length - trailingDone; // first index of trailing done block
+                    // Move this item to the start of the trailing done block
+                    let to = startIdx;
+                    if (from < to) to -= 1; // account for index shift after removal
+                    const [item] = s.todos.splice(from, 1);
+                    s.todos.splice(to, 0, item);
+                }
             });
         },
         [setState],
@@ -1207,9 +1222,13 @@ function TodoItemRow({
     detached: boolean;
 }) {
     const selection = React.useRef<{ start: number; end: number } | null>(null);
-    const inputRef = React.useRef<HTMLInputElement | null>(null);
+    const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
     const isComposingRef = React.useRef<boolean>(false);
     const [localText, setLocalText] = React.useState<string>(todo.text);
+    const sanitizeSingleLine = React.useCallback((s: string): string => {
+        // Replace line breaks with spaces; strip stray CR
+        return s.replace(/\r/g, "").replace(/\n/g, " ");
+    }, []);
 
     // Restore caret/selection after state-driven rerender
     React.useLayoutEffect(() => {
@@ -1220,13 +1239,19 @@ function TodoItemRow({
             } catch {}
             selection.current = null;
         }
+        // Auto-resize textarea height to fit content
+        if (inputRef.current) {
+            const el = inputRef.current;
+            el.style.height = "auto";
+            el.style.height = `${el.scrollHeight}px`;
+        }
     }, [localText]);
 
     // Keep local text in sync with CRDT text when not actively editing
     React.useEffect(() => {
         const isFocused = document.activeElement === inputRef.current;
         if (!isComposingRef.current && !isFocused) {
-            setLocalText(todo.text);
+            setLocalText(sanitizeSingleLine(todo.text));
         }
         // If focused or composing, defer sync until editing finishes
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1266,10 +1291,26 @@ function TodoItemRow({
                 aria-label={isDone ? "Mark as todo" : "Mark as done"}
                 disabled={detached}
             />
-            <input
+            <textarea
                 ref={inputRef}
                 className="todo-text"
                 value={localText}
+                rows={1}
+                onFocus={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = `${el.scrollHeight}px`;
+                }}
+                onInput={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = `${el.scrollHeight}px`;
+                }}
+                onKeyDown={(e) => {
+                    if (!isComposingRef.current && e.key === "Enter") {
+                        e.preventDefault();
+                    }
+                }}
                 onCompositionStart={() => {
                     isComposingRef.current = true;
                 }}
@@ -1281,9 +1322,12 @@ function TodoItemRow({
                     const end = e.currentTarget.selectionEnd ?? start;
                     selection.current = { start, end };
                     // Commit the composed text once composition finishes
-                    const v = e.currentTarget.value;
+                    const v = sanitizeSingleLine(e.currentTarget.value);
                     setLocalText(v);
                     onTextChange(todo.$cid, v);
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = `${el.scrollHeight}px`;
                 }}
                 onChange={(e) => {
                     const start =
@@ -1291,7 +1335,7 @@ function TodoItemRow({
                         e.currentTarget.value.length;
                     const end = e.currentTarget.selectionEnd ?? start;
                     selection.current = { start, end };
-                    const v = e.currentTarget.value;
+                    const v = sanitizeSingleLine(e.currentTarget.value);
                     setLocalText(v);
                     if (isComposingRef.current) return;
                     onTextChange(todo.$cid, v);
