@@ -76,6 +76,7 @@ body {
     /* Background base — overridden when body has .texture-bg */
     background: var(--bg);
     color: var(--text);
+    min-height: 100vh;
     background-image:
         repeating-linear-gradient(
             0deg,
