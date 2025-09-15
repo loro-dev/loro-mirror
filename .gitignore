@@ -2,3 +2,4 @@ node_modules
 dist
 # Ignore TS incremental build info everywhere in the repo
 *.tsbuildinfo
+.Ds_Store

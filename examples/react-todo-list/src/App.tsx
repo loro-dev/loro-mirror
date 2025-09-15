@@ -694,7 +694,14 @@ export function App() {
                         setNewText(e.target.value);
                     }}
                     onKeyDown={(e) => {
-                        if (e.key === "Enter") addTodo(newText);
+                        const isComposing = (e.nativeEvent as KeyboardEvent)
+                            .isComposing;
+                        const isIMEKeyCode =
+                            (e.nativeEvent as KeyboardEvent).keyCode === 229;
+                        if (e.key === "Enter" && !isComposing && !isIMEKeyCode) {
+                            e.preventDefault();
+                            addTodo(newText);
+                        }
                     }}
                     disabled={detached}
                 />
@@ -871,6 +878,8 @@ function TodoItemRow({
 }) {
     const selection = React.useRef<{ start: number; end: number } | null>(null);
     const inputRef = React.useRef<HTMLInputElement | null>(null);
+    const isComposingRef = React.useRef<boolean>(false);
+    const [localText, setLocalText] = React.useState<string>(todo.text);
 
     // Restore caret/selection after state-driven rerender
     React.useLayoutEffect(() => {
@@ -881,6 +890,16 @@ function TodoItemRow({
             } catch {}
             selection.current = null;
         }
+    }, [localText]);
+
+    // Keep local text in sync with CRDT text when not actively editing
+    React.useEffect(() => {
+        const isFocused = document.activeElement === inputRef.current;
+        if (!isComposingRef.current && !isFocused) {
+            setLocalText(todo.text);
+        }
+        // If focused or composing, defer sync until editing finishes
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [todo.text]);
 
     const isDone = todo.status === "done";
@@ -920,14 +939,32 @@ function TodoItemRow({
             <input
                 ref={inputRef}
                 className="todo-text"
-                value={todo.text}
+                value={localText}
+                onCompositionStart={() => {
+                    isComposingRef.current = true;
+                }}
+                onCompositionEnd={(e) => {
+                    isComposingRef.current = false;
+                    const start =
+                        e.currentTarget.selectionStart ??
+                        e.currentTarget.value.length;
+                    const end = e.currentTarget.selectionEnd ?? start;
+                    selection.current = { start, end };
+                    // Commit the composed text once composition finishes
+                    const v = e.currentTarget.value;
+                    setLocalText(v);
+                    onTextChange(todo.$cid, v);
+                }}
                 onChange={(e) => {
                     const start =
                         e.currentTarget.selectionStart ??
                         e.currentTarget.value.length;
                     const end = e.currentTarget.selectionEnd ?? start;
                     selection.current = { start, end };
-                    onTextChange(todo.$cid, e.currentTarget.value);
+                    const v = e.currentTarget.value;
+                    setLocalText(v);
+                    if (isComposingRef.current) return;
+                    onTextChange(todo.$cid, v);
                 }}
                 readOnly={detached}
             />

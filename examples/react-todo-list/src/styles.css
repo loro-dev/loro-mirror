@@ -55,6 +55,11 @@ body,
     height: 100%;
 }
 
+/* Ensure no white canvas shows above body (e.g., iOS safe area/overscroll) */
+html {
+    background: var(--bg);
+}
+
 body {
     margin: 0;
     font-family:
@@ -70,15 +75,17 @@ body {
         Arial,
         "Apple Color Emoji",
         "Segoe UI Emoji";
-    /* Solid neutral background to better harmonize with muted pinks */
+    /* Background base — overridden when body has .texture-bg */
     background: var(--bg);
     color: var(--text);
 }
 
 .app {
     max-width: 720px;
-    margin: 32px auto;
-    padding: 0 16px 80px; /* extra bottom padding to avoid fixed footer overlap */
+    margin: 0px auto;
+    padding: 48px 16px 80px; /* extra bottom padding to avoid fixed footer overlap */
+    position: relative; /* ensure overlay stays behind content */
+    z-index: 1;
 }
 
 .app-header h1 {
