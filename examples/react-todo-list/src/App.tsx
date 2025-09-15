@@ -216,6 +216,30 @@ export function App() {
         [state.todos],
     );
 
+    // Layout: transform-translate positioning for smooth transitions
+    const [itemHeights, setItemHeights] = useState<Record<string, number>>({});
+    const ITEM_GAP = 10; // vertical gap between items (px)
+    const DEFAULT_HEIGHT = 48; // fallback before first measurement
+
+    const handleRowHeight = useCallback((cid: string, h: number) => {
+        setItemHeights((prev) => {
+            if (prev[cid] === h) return prev;
+            return { ...prev, [cid]: h };
+        });
+    }, []);
+
+    const positions = useMemo(() => {
+        let y = 0;
+        const pos: Record<string, number> = {};
+        for (const t of state.todos) {
+            pos[t.$cid] = y;
+            const h = itemHeights[t.$cid] ?? DEFAULT_HEIGHT;
+            y += h + ITEM_GAP;
+        }
+        const height = Math.max(0, y - (state.todos.length > 0 ? ITEM_GAP : 0));
+        return { pos, height } as const;
+    }, [state.todos, itemHeights]);
+
     // Ensure mobile viewport is not scalable (disable pinch-zoom)
     useEffect(() => {
         if (typeof document === "undefined") return;
@@ -677,34 +701,25 @@ export function App() {
         (clientY: number) => {
             const ul = listRef.current;
             if (!ul) return;
-            const items = Array.from(
-                ul.querySelectorAll<HTMLLIElement>("li.todo-item"),
-            );
-            if (items.length === 0) {
-                setInsertIndex(0);
-                return;
-            }
-            const filtered = items.filter(
-                (el) => !el.classList.contains("dragging"),
-            );
-            // default to end of the full list (after last item)
+            // convert to container-local Y
+            const rect = ul.getBoundingClientRect();
+            const y = clientY - rect.top;
+            // default to end of list
             let idx = state.todos.length;
-            for (let i = 0; i < filtered.length; i++) {
-                const rect = filtered[i].getBoundingClientRect();
-                const midpoint = rect.top + rect.height / 2;
-                if (clientY < midpoint) {
-                    // insert before this element's current index in the full list
-                    const cid = filtered[i].dataset.cid;
-                    const realIndex = state.todos.findIndex(
-                        (t) => t.$cid === cid,
-                    );
-                    idx = realIndex === -1 ? i : realIndex;
+            for (let i = 0; i < state.todos.length; i++) {
+                const t = state.todos[i];
+                if (t.$cid === dragCid) continue; // ignore dragging item
+                const top = positions.pos[t.$cid] ?? 0;
+                const h = itemHeights[t.$cid] ?? DEFAULT_HEIGHT;
+                const midpoint = top + h / 2;
+                if (y < midpoint) {
+                    idx = i;
                     break;
                 }
             }
             setInsertIndex(idx);
         },
-        [state.todos],
+        [state.todos, positions.pos, itemHeights, dragCid],
     );
 
     const handleListDragOver = useCallback(
@@ -1166,30 +1181,50 @@ export function App() {
                 ref={listRef}
                 onDragOver={handleListDragOver}
                 onDrop={handleListDrop}
+                style={{ height: positions.height }}
             >
-                {state.todos.map((t, i) => {
-                    const isInsertTop =
-                        insertIndex != null && insertIndex === i;
-                    const isInsertBottom =
-                        insertIndex != null &&
-                        insertIndex === state.todos.length &&
-                        i === state.todos.length - 1;
-                    return (
-                        <TodoItemRow
-                            key={t.$cid}
-                            todo={t}
-                            onTextChange={handleTextChange}
-                            onDoneChange={handleDoneChange}
-                            onDelete={handleDelete}
-                            dragging={dragCid === t.$cid}
-                            insertTop={!!isInsertTop}
-                            insertBottom={!!isInsertBottom}
-                            onDragStart={handleDragStart}
-                            onDragEnd={handleDragEnd}
-                            detached={detached}
-                        />
+                {(() => {
+                    const stableTodos = [...state.todos].sort((a, b) =>
+                        a.$cid.localeCompare(b.$cid),
                     );
-                })}
+                    const indexByCid: Record<string, number> = {};
+                    for (let i = 0; i < state.todos.length; i++) {
+                        indexByCid[state.todos[i].$cid] = i;
+                    }
+                    return stableTodos.map((t) => {
+                        const realIndex = indexByCid[t.$cid] ?? 0;
+                        const isInsertTop =
+                            insertIndex != null && insertIndex === realIndex;
+                        const isInsertBottom =
+                            insertIndex != null &&
+                            insertIndex === state.todos.length &&
+                            realIndex === state.todos.length - 1;
+                        return (
+                            <TodoItemRow
+                                key={t.$cid}
+                                todo={t}
+                                onTextChange={handleTextChange}
+                                onDoneChange={handleDoneChange}
+                                onDelete={handleDelete}
+                                dragging={dragCid === t.$cid}
+                                insertTop={!!isInsertTop}
+                                insertBottom={!!isInsertBottom}
+                                onDragStart={handleDragStart}
+                                onDragEnd={handleDragEnd}
+                                detached={detached}
+                                onHeightChange={handleRowHeight}
+                                style={{
+                                    position: "absolute",
+                                    left: 0,
+                                    right: 0,
+                                    transform: `translateY(${positions.pos[t.$cid] ?? 0}px)`,
+                                    transition: "transform 240ms ease",
+                                    willChange: "transform",
+                                }}
+                            />
+                        );
+                    });
+                })()}
             </ul>
 
             <footer className="app-footer">
@@ -1229,6 +1264,8 @@ function TodoItemRow({
     onDragStart,
     onDragEnd,
     detached,
+    onHeightChange,
+    style,
 }: {
     todo: Todo;
     onTextChange: (cid: string, value: string) => void;
@@ -1240,9 +1277,12 @@ function TodoItemRow({
     onDragStart: (cid: string) => void;
     onDragEnd: () => void;
     detached: boolean;
+    onHeightChange?: (cid: string, height: number) => void;
+    style?: React.CSSProperties;
 }) {
     const selection = React.useRef<{ start: number; end: number } | null>(null);
     const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
+    const rowRef = React.useRef<HTMLLIElement | null>(null);
     const isComposingRef = React.useRef<boolean>(false);
     const [localText, setLocalText] = React.useState<string>(todo.text);
     const sanitizeSingleLine = React.useCallback((s: string): string => {
@@ -1278,10 +1318,29 @@ function TodoItemRow({
     }, [todo.text]);
 
     const isDone = todo.status === "done";
+
+    // Report row height for transform-based layout; observe changes
+    React.useLayoutEffect(() => {
+        const el = rowRef.current;
+        if (!el || !onHeightChange) return;
+        const report = () => onHeightChange(todo.$cid, el.offsetHeight);
+        report();
+        let ro: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== "undefined") {
+            ro = new ResizeObserver(() => report());
+            ro.observe(el);
+        }
+        return () => {
+            if (ro) ro.disconnect();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [localText, isDone]);
     return (
         <li
             className={`todo-item card${isDone ? " done" : ""}${dragging ? " dragging" : ""}${insertTop ? " insert-top" : ""}${insertBottom ? " insert-bottom" : ""}`}
+            ref={rowRef}
             data-cid={todo.$cid}
+            style={style}
         >
             <button
                 className="drag-handle"

@@ -423,16 +423,17 @@ body {
     list-style: none;
     padding: 0;
     margin: 0;
-    display: grid;
-    gap: 10px;
+    position: relative; /* container for absolutely positioned items */
 }
 
 .todo-item {
-    position: relative;
-    display: flex; /* use flex so children vertically center, even with multi-line */
+    position: absolute; /* positioned via transform translateY */
+    display: flex; /* children vertically center, even with multi-line */
     gap: 8px;
     align-items: center;
     padding: 6px 10px;
+    transition: transform 240ms ease;
+    will-change: transform;
 }
 
 /* Insertion preview line */
