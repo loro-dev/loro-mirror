@@ -484,8 +484,15 @@ body {
 /* Deprecated drag-over visual removed in favor of insert line */
 
 .todo-checkbox {
-    width: 16px;
-    height: 16px;
+    /* Use content-box so border doesn't shrink content size */
+    box-sizing: content-box;
+    /* Keep visual size ~16px including 2px border on each side */
+    width: 12px;
+    height: 12px;
+    /* Prevent flexbox from shrinking below intended size on narrow rows */
+    flex: 0 0 auto;
+    min-width: 12px;
+    min-height: 12px;
     /* Ensure brand-colored border shows consistently */
     -webkit-appearance: none;
     appearance: none;
@@ -500,6 +507,8 @@ body {
 }
 .todo-checkbox::after {
     content: "";
+    /* Ensure pseudo element sizing is based on content only */
+    box-sizing: content-box;
     width: 10px;
     height: 10px;
     transform: scale(0);
