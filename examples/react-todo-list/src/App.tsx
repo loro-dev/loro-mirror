@@ -14,6 +14,12 @@ import {
     todoSchema,
     initialTodoState,
     setupPublicSync,
+    // Auth + URL helpers reused for ephemeral presence
+    importKeyPairFromHex,
+    signSaltTokenHex,
+    buildAuthUrl,
+    SYNC_BASE,
+    ROOM_ID,
     openDocDb,
     putDocSnapshot,
     getDocSnapshot,
@@ -26,6 +32,11 @@ import {
     type WorkspaceRecord,
     type TodoStatus,
 } from "./loro-state";
+import { EphemeralStore } from "loro-crdt";
+import {
+    LoroWebsocketClient,
+    createLoroEphemeralAdaptorFromStore,
+} from "loro-websocket";
 
 // --------------------
 // Public Sync constants
@@ -183,7 +194,9 @@ export function App() {
     const [detached, setDetached] = useState<boolean>(doc.isDetached());
     const [showHistory, setShowHistory] = useState<boolean>(false);
     const [online, setOnline] = useState<boolean>(false);
+    const [presenceCount, setPresenceCount] = useState<number>(1);
     const [workspaceHex, setWorkspaceHex] = useState<string>("");
+    const [presencePeers, setPresencePeers] = useState<string[]>([]);
     const [shareUrl, setShareUrl] = useState<string>("");
     const [toast, setToast] = useState<string | null>(null);
     const toastTimerRef = useRef<number | undefined>(undefined);
@@ -200,6 +213,12 @@ export function App() {
         () => state.todos.some((t) => t.status === "done"),
         [state.todos],
     );
+
+    // Presence tuning
+    const PRESENCE_TTL_MS = 45000; // expire stale peers after 45s
+    const HEARTBEAT_MS = 15000; // heartbeat every 15s to reduce chatter
+    const FRESH_WINDOW_MS = 35000; // show as online if beat < 35s ago
+    const TOAST_DURATION_MS = 2600; // slightly longer toast display
 
     // Public Sync setup moved into loro-state.ts
     useEffect(() => {
@@ -226,6 +245,135 @@ export function App() {
         // doc is stable (memoized)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [doc, routeEpoch]);
+
+    // Ephemeral presence: join an EphemeralStore room and broadcast presence heartbeat
+    useEffect(() => {
+        if (!workspaceHex) return;
+        let disposed = false; // guard for React StrictMode double-invoke
+        let heartbeat: number | undefined;
+        let roomCleanup: (() => Promise<void> | void) | undefined;
+        let removeVisListener: (() => void) | undefined;
+
+        // Helper to parse private key from location
+        const parsePrivateHex = (): string | null => {
+            const h = window.location.hash.trim();
+            if (!h || h.length < 2) return null;
+            const hex = h.slice(1);
+            return /^[0-9a-fA-F]+$/.test(hex) ? hex.toLowerCase() : null;
+        };
+
+        const start = async () => {
+            try {
+                // Build ephemeral store and adaptor
+                const store = new EphemeralStore<Record<string, number>>(
+                    PRESENCE_TTL_MS,
+                );
+                const adaptor = createLoroEphemeralAdaptorFromStore(store);
+
+                // Live count: keys starting with "p:" represent per-peer presence
+                const updateCount = () => {
+                    const all = store.getAllStates() as Record<string, unknown>;
+                    const now = Date.now();
+                    const peers = Object.entries(all)
+                        .filter(([k, v]) =>
+                            k.startsWith("p:") &&
+                            typeof v === "number" &&
+                            now - (v as number) < FRESH_WINDOW_MS,
+                        )
+                        .map(([k]) => k.slice(2))
+                        .sort();
+                    setPresencePeers(peers);
+                    const count = peers.length;
+                    setPresenceCount(count > 0 ? count : 1);
+                };
+                const unsub = store.subscribe(() => updateCount());
+                updateCount();
+
+                // Heartbeat our presence (Last-Write-Wins per key)
+                const myKey = `p:${doc.peerIdStr}`;
+                const sendBeat = () => store.set(myKey, Date.now());
+                sendBeat();
+                heartbeat = window.setInterval(sendBeat, HEARTBEAT_MS);
+
+                // Define local cleanup early so we can call it if disposed flips while awaiting
+                const localCleanup = async () => {
+                    try {
+                        unsub();
+                    } catch {}
+                    try {
+                        store.delete(myKey as keyof Record<string, number>);
+                    } catch {}
+                    try {
+                        store.destroy();
+                    } catch {}
+                    try {
+                        adaptor.destroy();
+                    } catch {}
+                };
+
+                // Connect to the public sync and join the same room
+                const privHex = parsePrivateHex();
+                if (!privHex) return;
+                const imported = await importKeyPairFromHex(
+                    workspaceHex,
+                    privHex,
+                );
+                if (!imported) {
+                    await localCleanup();
+                    return;
+                }
+                const token = await signSaltTokenHex(imported.privateKey);
+                const url = buildAuthUrl(SYNC_BASE, workspaceHex, token);
+                const client = new LoroWebsocketClient({ url });
+                try {
+                    await client.waitConnected();
+                } catch {
+                    await localCleanup();
+                    return;
+                }
+                const room = await client.join({
+                    roomId: ROOM_ID,
+                    crdtAdaptor: adaptor,
+                });
+                if (disposed) {
+                    try {
+                        await room.destroy();
+                    } catch {}
+                    await localCleanup();
+                    return;
+                }
+
+                roomCleanup = async () => {
+                    try {
+                        await room.destroy();
+                    } catch {
+                        /* noop */
+                    }
+                    await localCleanup();
+                };
+
+                // Update on visibility changes too
+                const onVis = () => sendBeat();
+                document.addEventListener("visibilitychange", onVis);
+                removeVisListener = () =>
+                    document.removeEventListener("visibilitychange", onVis);
+            } catch {
+                // Ignore presence errors; main doc sync still functions
+            }
+        };
+
+        void start();
+
+        return () => {
+            disposed = true;
+            if (heartbeat) window.clearInterval(heartbeat);
+            if (roomCleanup) void roomCleanup();
+            if (removeVisListener) removeVisListener();
+            // Reset presence to a sane default
+            setPresencePeers([]);
+            setPresenceCount(1);
+        };
+    }, [doc.peerIdStr, workspaceHex]);
 
     // Debounced persistence to IndexedDB keyed by workspace
     useEffect(() => {
@@ -667,20 +815,124 @@ export function App() {
                 </div>
                 <span
                     className="status-inline"
-                    title={online ? "Online" : "Offline"}
+                    title={
+                        online
+                            ? `${presenceCount} online`
+                            : "Offline"
+                    }
                     aria-live="polite"
-                    aria-label={online ? "Online" : "Offline"}
-                    style={{ display: "inline-flex", alignItems: "center" }}
+                    aria-label={
+                        online
+                            ? `${presenceCount} online`
+                            : "Offline"
+                    }
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            const msg = !online
+                                ? "disconnected"
+                                : presenceCount <= 1
+                                ? "connected"
+                                : `connected with ${presenceCount - 1} collaborators`;
+                            if (toastTimerRef.current)
+                                window.clearTimeout(toastTimerRef.current);
+                            setToast(msg);
+                            toastTimerRef.current = window.setTimeout(() => {
+                                setToast(null);
+                            }, TOAST_DURATION_MS);
+                        }
+                    }}
+                    onClick={() => {
+                        const msg = !online
+                            ? "disconnected"
+                            : presenceCount <= 1
+                            ? "connected"
+                            : `connected with ${presenceCount - 1} collaborators`;
+                        if (toastTimerRef.current)
+                            window.clearTimeout(toastTimerRef.current);
+                        setToast(msg);
+                        toastTimerRef.current = window.setTimeout(() => {
+                            setToast(null);
+                        }, TOAST_DURATION_MS);
+                    }}
+                    style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        cursor: "pointer",
+                        userSelect: "none",
+                    }}
                 >
                     {/*<span>{online ? "Online" : "Offline"}</span>*/}
-                    <span
-                        style={{
-                            color: online ? "#29c329" : "#c0392b",
-                            marginLeft: 8,
-                        }}
-                    >
-                        {online ? "●" : "○"}
-                    </span>
+                    {online ? (
+                        <span
+                            style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                marginLeft: 8,
+                            }}
+                        >
+                            {(() => {
+                                const DOT_COLORS = [
+                                    // Brand-centric palette: brand tints first, then adjacent accents
+                                    "var(--brand)",
+                                    "color-mix(in oklab, var(--brand) 80%, #ffffff)",
+                                    "color-mix(in oklab, var(--brand) 65%, #ffffff)",
+                                    "color-mix(in oklab, var(--brand) 50%, #ffffff)",
+                                    "var(--crimson)",
+                                    "var(--secondary)",
+                                    "var(--burnt)",
+                                    "var(--golden)",
+                                ];
+                                const peers = presencePeers;
+                                const dots = peers.slice(0, 8).map((_, i) => (
+                                    <span
+                                        key={i}
+                                        aria-hidden
+                                        style={{
+                                            marginLeft: i === 0 ? 0 : -4,
+                                            color: DOT_COLORS[i % DOT_COLORS.length],
+                                        }}
+                                    >
+                                        ●
+                                    </span>
+                                ));
+                                // If no peers resolved (fallback), show a single green dot
+                                const safeDots =
+                                    dots.length > 0 ? (
+                                        dots
+                                    ) : (
+                                        <span aria-hidden style={{ color: "#29c329" }}>
+                                            ●
+                                        </span>
+                                    );
+                                return (
+                                    <>
+                                        {safeDots}
+                                        {presenceCount !== 1 && (
+                                            <span
+                                                style={{
+                                                    marginLeft: 6,
+                                                    fontSize: "0.8rem",
+                                                    lineHeight: 1,
+                                                    color: "var(--muted)",
+                                                }}
+                                            >
+                                                {presenceCount}
+                                            </span>
+                                        )}
+                                    </>
+                                );
+                            })()}
+                        </span>
+                    ) : (
+                        <span
+                            style={{ color: "#c0392b", marginLeft: 8 }}
+                        >
+                            ○
+                        </span>
+                    )}
                 </span>
                 {/* Room ID inline display removed; shown via selector options */}
             </header>
@@ -770,7 +1022,7 @@ export function App() {
                             setToast("Invite link copied");
                             toastTimerRef.current = window.setTimeout(() => {
                                 setToast(null);
-                            }, 1600);
+                            }, TOAST_DURATION_MS);
                         } catch {
                             // Fallback: prompt
                             window.prompt(
