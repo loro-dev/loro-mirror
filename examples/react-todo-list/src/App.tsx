@@ -214,6 +214,28 @@ export function App() {
         [state.todos],
     );
 
+    // Ensure mobile viewport is not scalable (disable pinch-zoom)
+    useEffect(() => {
+        if (typeof document === "undefined") return;
+        const selector = 'meta[name="viewport"]';
+        let meta = document.querySelector<HTMLMetaElement>(selector);
+        const previous = meta?.getAttribute("content") ?? null;
+        const content =
+            "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
+        if (!meta) {
+            meta = document.createElement("meta");
+            meta.setAttribute("name", "viewport");
+            document.head.appendChild(meta);
+        }
+        meta.setAttribute("content", content);
+        return () => {
+            if (!meta) return;
+            if (previous !== null) {
+                meta.setAttribute("content", previous);
+            }
+        };
+    }, []);
+
     // Presence tuning
     const PRESENCE_TTL_MS = 45000; // expire stale peers after 45s
     const HEARTBEAT_MS = 15000; // heartbeat every 15s to reduce chatter
@@ -940,6 +962,7 @@ export function App() {
             <div className="new-todo">
                 <input
                     className="todo-input"
+                    style={{ fontSize: 15 }}
                     placeholder="Add a todo..."
                     value={newText}
                     onChange={(e) => {
