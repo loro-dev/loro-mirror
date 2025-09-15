@@ -7,8 +7,7 @@ import { createLoroAdaptorFromDoc } from "loro-adaptors";
 // Public Sync constants
 // --------------------
 export const AUTH_SALT = "loro-public-sync-server" as const;
-export const SYNC_BASE =
-    "wss://loro-public-free-sync-server.remch183.workers.dev" as const;
+export const SYNC_BASE = "wss://sync.loro.dev" as const;
 export const ROOM_ID = "react-todo-list" as const;
 
 // --------------------
@@ -357,9 +356,7 @@ export async function setupPublicSync(
 
     try {
         // Parse keys from URL if present; otherwise generate and update URL.
-        const pathParts = window.location.pathname
-            .split("/")
-            .filter(Boolean);
+        const pathParts = window.location.pathname.split("/").filter(Boolean);
         const maybePubHex =
             pathParts.length >= 1 ? pathParts[pathParts.length - 1] : "";
         const maybePrivHex = window.location.hash.startsWith("#")
