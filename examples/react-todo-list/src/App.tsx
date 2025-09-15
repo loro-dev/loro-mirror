@@ -616,6 +616,16 @@ export function App() {
         [setState],
     );
 
+    const handleDelete = useCallback(
+        (cid: string) => {
+            void setState((s) => {
+                const i = s.todos.findIndex((x) => x.$cid === cid);
+                if (i !== -1) s.todos.splice(i, 1);
+            });
+        },
+        [setState],
+    );
+
     const handleDragStart = useCallback((cid: string) => {
         setDragCid(cid);
     }, []);
@@ -1093,6 +1103,7 @@ export function App() {
                             todo={t}
                             onTextChange={handleTextChange}
                             onDoneChange={handleDoneChange}
+                            onDelete={handleDelete}
                             dragging={dragCid === t.$cid}
                             insertTop={!!isInsertTop}
                             insertBottom={!!isInsertBottom}
@@ -1134,6 +1145,7 @@ function TodoItemRow({
     todo,
     onTextChange,
     onDoneChange,
+    onDelete,
     dragging,
     insertTop,
     insertBottom,
@@ -1144,6 +1156,7 @@ function TodoItemRow({
     todo: Todo;
     onTextChange: (cid: string, value: string) => void;
     onDoneChange: (cid: string, done: boolean) => void;
+    onDelete: (cid: string) => void;
     dragging: boolean;
     insertTop: boolean;
     insertBottom: boolean;
@@ -1243,6 +1256,15 @@ function TodoItemRow({
                 }}
                 readOnly={detached}
             />
+            <button
+                className="delete-btn"
+                onClick={() => onDelete(todo.$cid)}
+                aria-label="Delete todo"
+                title="Delete"
+                disabled={detached}
+            >
+                <StreamlinePlumpRecycleBin2Remix />
+            </button>
         </li>
     );
 }

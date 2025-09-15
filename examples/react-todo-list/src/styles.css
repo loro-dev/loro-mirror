@@ -430,7 +430,7 @@ body {
 .todo-item {
     position: relative;
     display: grid;
-    grid-template-columns: auto 1fr; /* checkbox + text */
+    grid-template-columns: auto 1fr; /* checkbox + text; delete is absolute */
     gap: 8px;
     align-items: center;
     padding: 6px 10px;
@@ -525,7 +525,7 @@ body {
     border: 1px solid transparent;
     color: var(--text);
     font-size: 15px;
-    padding: 6px 8px;
+    padding: 6px 42px 6px 8px; /* leave space for floating delete button */
     border-radius: 8px;
     outline: none;
     transition:
@@ -542,6 +542,41 @@ body {
     color: var(--disabled-text);
 }
 
+/* Delete button shown on row hover */
+.delete-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2;
+    background: var(--card);
+    color: var(--muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 120ms ease, color 120ms ease, transform 80ms ease, background 120ms ease;
+}
+.delete-btn:hover {
+    color: var(--text);
+    background: color-mix(in oklab, var(--card) 92%, #ffffff);
+}
+.delete-btn:active {
+    transform: translateY(1px);
+}
+.delete-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.todo-item:hover .delete-btn,
+.delete-btn:focus-visible {
+    opacity: 1;
+}
+
 /* Responsive tweaks */
 @media (max-width: 520px) {
     /* Keep Add button on the right even on small screens */
@@ -549,7 +584,7 @@ body {
         grid-template-columns: minmax(0, 1fr) auto;
     }
     .todo-item {
-        grid-template-columns: auto 1fr; /* keep checkbox near edge on small screens */
+        grid-template-columns: auto 1fr; /* checkbox + text; delete is absolute */
     }
 }
 
