@@ -299,10 +299,11 @@ export function App() {
                     const all = store.getAllStates() as Record<string, unknown>;
                     const now = Date.now();
                     const peers = Object.entries(all)
-                        .filter(([k, v]) =>
-                            k.startsWith("p:") &&
-                            typeof v === "number" &&
-                            now - (v as number) < FRESH_WINDOW_MS,
+                        .filter(
+                            ([k, v]) =>
+                                k.startsWith("p:") &&
+                                typeof v === "number" &&
+                                now - (v as number) < FRESH_WINDOW_MS,
                         )
                         .map(([k]) => k.slice(2))
                         .sort();
@@ -627,6 +628,26 @@ export function App() {
                     if (from < to) to -= 1; // account for index shift after removal
                     const [item] = s.todos.splice(from, 1);
                     s.todos.splice(to, 0, item);
+                } else {
+                    // Move to the start of the unfinished block (boundary before trailing done block)
+                    // Recompute trailing done items after status change
+                    let trailingDone = 0;
+                    for (let idx = s.todos.length - 1; idx >= 0; idx--) {
+                        if (
+                            s.todos[idx].status === "done" ||
+                            s.todos[idx].$cid === cid
+                        )
+                            trailingDone++;
+                        else break;
+                    }
+                    let to = s.todos.length - trailingDone; // index where done block starts
+                    if (from < to) to -= 1; // account for shift after removal
+                    if (to < 0) to = 0;
+                    if (to > s.todos.length) to = s.todos.length;
+                    if (from !== to) {
+                        const [item] = s.todos.splice(from, 1);
+                        s.todos.splice(to, 0, item);
+                    }
                 }
             });
         },
@@ -904,17 +925,9 @@ export function App() {
                 </div>
                 <span
                     className="status-inline"
-                    title={
-                        online
-                            ? `${presenceCount} online`
-                            : "Offline"
-                    }
+                    title={online ? `${presenceCount} online` : "Offline"}
                     aria-live="polite"
-                    aria-label={
-                        online
-                            ? `${presenceCount} online`
-                            : "Offline"
-                    }
+                    aria-label={online ? `${presenceCount} online` : "Offline"}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
@@ -923,8 +936,8 @@ export function App() {
                             const msg = !online
                                 ? "disconnected"
                                 : presenceCount <= 1
-                                ? "connected"
-                                : `connected with ${presenceCount - 1} collaborators`;
+                                  ? "connected"
+                                  : `connected with ${presenceCount - 1} collaborators`;
                             if (toastTimerRef.current)
                                 window.clearTimeout(toastTimerRef.current);
                             setToast(capitalizeFirst(msg));
@@ -937,8 +950,8 @@ export function App() {
                         const msg = !online
                             ? "disconnected"
                             : presenceCount <= 1
-                            ? "connected"
-                            : `connected with ${presenceCount - 1} collaborators`;
+                              ? "connected"
+                              : `connected with ${presenceCount - 1} collaborators`;
                         if (toastTimerRef.current)
                             window.clearTimeout(toastTimerRef.current);
                         setToast(capitalizeFirst(msg));
@@ -981,7 +994,9 @@ export function App() {
                                         aria-hidden
                                         style={{
                                             marginLeft: i === 0 ? 0 : -4,
-                                            color: DOT_COLORS[i % DOT_COLORS.length],
+                                            color: DOT_COLORS[
+                                                i % DOT_COLORS.length
+                                            ],
                                         }}
                                     >
                                         ●
@@ -992,7 +1007,10 @@ export function App() {
                                     dots.length > 0 ? (
                                         dots
                                     ) : (
-                                        <span aria-hidden style={{ color: "#29c329" }}>
+                                        <span
+                                            aria-hidden
+                                            style={{ color: "#29c329" }}
+                                        >
                                             ●
                                         </span>
                                     );
@@ -1016,9 +1034,7 @@ export function App() {
                             })()}
                         </span>
                     ) : (
-                        <span
-                            style={{ color: "#c0392b", marginLeft: 8 }}
-                        >
+                        <span style={{ color: "#c0392b", marginLeft: 8 }}>
                             ○
                         </span>
                     )}
@@ -1040,7 +1056,11 @@ export function App() {
                             .isComposing;
                         const isIMEKeyCode =
                             (e.nativeEvent as KeyboardEvent).keyCode === 229;
-                        if (e.key === "Enter" && !isComposing && !isIMEKeyCode) {
+                        if (
+                            e.key === "Enter" &&
+                            !isComposing &&
+                            !isIMEKeyCode
+                        ) {
                             e.preventDefault();
                             addTodo(newText);
                         }
