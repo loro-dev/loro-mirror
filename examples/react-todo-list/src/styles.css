@@ -409,6 +409,23 @@ body {
 .ws-action:hover {
     background: color-mix(in oklab, var(--bg) 80%, var(--brand) 20%);
 }
+.ws-icon {
+    width: 1em;
+    height: 1em;
+}
+.ws-help-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--muted);
+}
+.ws-help-icon svg {
+    width: 1em;
+    height: 1em;
+}
+.ws-action:hover .ws-help-icon,
+.ws-action:focus-visible .ws-help-icon {
+    color: var(--text);
+}
 .ws-sep {
     height: 1px;
     background: color-mix(in oklab, var(--btn-border) 60%, var(--card));

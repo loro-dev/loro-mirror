@@ -23,7 +23,7 @@ export type TodoItem = TodoDocState["todos"][number];
 
 export const initialTodoState: InferInputType<typeof todoSchema> = {
     todos: [],
-    workspace: { name: "Untitled Workspace" },
+    workspace: { name: "Untitled List" },
 };
 
 export function createConfiguredDoc(): LoroDoc {

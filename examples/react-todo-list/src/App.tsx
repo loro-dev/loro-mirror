@@ -127,6 +127,78 @@ export function MdiBroom(props: SVGProps<SVGSVGElement>) {
     );
 }
 
+export function MdiTrayArrowUp(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Material Design Icons by Pictogrammers - https://github.com/Templarian/MaterialDesign/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="M2 12h2v5h16v-5h2v5c0 1.11-.89 2-2 2H4a2 2 0 0 1-2-2zM12 2L6.46 7.46l1.42 1.42L11 5.75V15h2V5.75l3.13 3.13l1.42-1.43z"
+            />
+        </svg>
+    );
+}
+
+export function MdiTrayArrowDown(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Material Design Icons by Pictogrammers - https://github.com/Templarian/MaterialDesign/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="M2 12h2v5h16v-5h2v5c0 1.11-.89 2-2 2H4a2 2 0 0 1-2-2zm10 3l5.55-5.46l-1.42-1.41L13 11.25V2h-2v9.25L7.88 8.13L6.46 9.55z"
+            />
+        </svg>
+    );
+}
+
+export function MdiLinkVariant(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Material Design Icons by Pictogrammers - https://github.com/Templarian/MaterialDesign/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="M10.59 13.41c.41.39.41 1.03 0 1.42c-.39.39-1.03.39-1.42 0a5.003 5.003 0 0 1 0-7.07l3.54-3.54a5.003 5.003 0 0 1 7.07 0a5.003 5.003 0 0 1 0 7.07l-1.49 1.49c.01-.82-.12-1.64-.4-2.42l.47-.48a2.98 2.98 0 0 0 0-4.24a2.98 2.98 0 0 0-4.24 0l-3.53 3.53a2.98 2.98 0 0 0 0 4.24m2.82-4.24c.39-.39 1.03-.39 1.42 0a5.003 5.003 0 0 1 0 7.07l-3.54 3.54a5.003 5.003 0 0 1-7.07 0a5.003 5.003 0 0 1 0-7.07l1.49-1.49c-.01.82.12 1.64.4 2.43l-.47.47a2.98 2.98 0 0 0 0 4.24a2.98 2.98 0 0 0 4.24 0l3.53-3.53a2.98 2.98 0 0 0 0-4.24a.973.973 0 0 1 0-1.42"
+            />
+        </svg>
+    );
+}
+
+export function MdiHelpCircleOutline(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 24 24"
+            {...props}
+        >
+            {/* Icon from Material Design Icons by Pictogrammers - https://github.com/Templarian/MaterialDesign/blob/master/LICENSE */}
+            <path
+                fill="currentColor"
+                d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10a10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8s8 3.59 8 8s-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2a2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"
+            />
+        </svg>
+    );
+}
+
 // Lucide Undo2 icon for undo/redo buttons
 // Icon from Lucide by Lucide Contributors - https://github.com/lucide-icons/lucide/blob/main/LICENSE
 export function LucideUndo2(props: SVGProps<SVGSVGElement>) {
@@ -221,14 +293,14 @@ export function App() {
     const [toast, setToast] = useState<string | null>(null);
     const toastTimerRef = useRef<number | undefined>(undefined);
     const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
-    const [workspaceTitle, setWorkspaceTitle] =
-        useState<string>("Untitled Workspace");
+    const [workspaceTitle, setWorkspaceTitle] = useState<string>("Untitled List");
     const wsDebounceRef = useRef<number | undefined>(undefined);
     const [showWsMenu, setShowWsMenu] = useState<boolean>(false);
     const wsTitleRef = useRef<HTMLDivElement | null>(null);
     const wsTitleInputRef = useRef<HTMLInputElement | null>(null);
     const wsMeasureRef = useRef<HTMLSpanElement | null>(null);
     const wsMenuRef = useRef<HTMLDivElement | null>(null);
+    const wsImportInputRef = useRef<HTMLInputElement | null>(null);
     // Flag to skip snapshot on navigations that intentionally delete the workspace
     const skipSnapshotOnUnloadRef = useRef<boolean>(false);
 
@@ -261,6 +333,16 @@ export function App() {
         const height = Math.max(0, y - (state.todos.length > 0 ? ITEM_GAP : 0));
         return { pos, height } as const;
     }, [state.todos, itemHeights]);
+
+    const workspaceFileName = useMemo(() => {
+        const fallback = workspaceHex || "workspace";
+        const rawBase = workspaceTitle.trim() || fallback;
+        const safeBase = rawBase
+            .replace(/[^a-zA-Z0-9-_]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+        const base = safeBase.length > 0 ? safeBase : fallback;
+        return `${base}.loro`;
+    }, [workspaceHex, workspaceTitle]);
 
     useEffect(() => {
         let disposed = false;
@@ -632,6 +714,75 @@ export function App() {
         }
     }, [doc, workspaceHex]);
 
+    const handleExportWorkspace = useCallback(() => {
+        if (!workspaceHex) {
+            handleStatusToast("Workspace not ready");
+            return;
+        }
+        try {
+            const snapshot = doc.export({ mode: "snapshot" as const });
+            const blob = new Blob([snapshot], {
+                type: "application/octet-stream",
+            });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = workspaceFileName;
+            const body = document.body;
+            if (!body) {
+                throw new Error("Document body unavailable");
+            }
+            body.appendChild(anchor);
+            anchor.click();
+            body.removeChild(anchor);
+            window.setTimeout(() => URL.revokeObjectURL(url), 0);
+            handleStatusToast("Workspace exported");
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn("Export workspace failed:", error);
+            handleStatusToast("Export failed");
+        } finally {
+            setShowWsMenu(false);
+        }
+    }, [doc, handleStatusToast, setShowWsMenu, workspaceFileName, workspaceHex]);
+
+    const handleRequestImport = useCallback(() => {
+        if (!workspaceHex) {
+            handleStatusToast("Workspace not ready");
+            return;
+        }
+        setShowWsMenu(false);
+        window.setTimeout(() => {
+            wsImportInputRef.current?.click();
+        }, 0);
+    }, [handleStatusToast, setShowWsMenu, workspaceHex]);
+
+    const handleImportFileChange = useCallback(
+        async (event: React.ChangeEvent<HTMLInputElement>) => {
+            if (!workspaceHex) {
+                event.currentTarget.value = "";
+                handleStatusToast("Workspace not ready");
+                return;
+            }
+            const input = event.currentTarget;
+            const file = input.files?.[0] ?? null;
+            input.value = "";
+            if (!file) return;
+            try {
+                const buffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(buffer);
+                doc.import(bytes);
+                await persistSnapshotNow();
+                handleStatusToast("Workspace imported");
+            } catch (error) {
+                // eslint-disable-next-line no-console
+                console.warn("Import workspace failed:", error);
+                handleStatusToast("Import failed");
+            }
+        },
+        [doc, handleStatusToast, persistSnapshotNow, workspaceHex],
+    );
+
     useEffect(() => {
         const unsub = doc.subscribe(() => {
             setDetached(doc.isDetached());
@@ -992,7 +1143,7 @@ export function App() {
                         ref={wsMeasureRef}
                         aria-hidden
                     >
-                        {workspaceTitle || "Untitled Workspace"}
+                        {workspaceTitle || "Untitled List"}
                     </span>
                     <button
                         className="title-dropdown btn-text"
@@ -1085,9 +1236,50 @@ export function App() {
                                         <div className="ws-sep" />
                                         <button
                                             className="ws-action"
+                                            onClick={handleExportWorkspace}
+                                            role="menuitem"
+                                            type="button"
+                                        >
+                                            <MdiTrayArrowUp
+                                                className="ws-icon"
+                                                aria-hidden
+                                            />
+                                            <span>Export</span>
+                                            <span
+                                                className="ws-help-icon"
+                                                title="Exports a .loro CRDT snapshot (loro.dev format)"
+                                            >
+                                                <MdiHelpCircleOutline aria-hidden />
+                                            </span>
+                                        </button>
+                                        <button
+                                            className="ws-action"
+                                            onClick={handleRequestImport}
+                                            role="menuitem"
+                                            type="button"
+                                        >
+                                            <MdiTrayArrowDown
+                                                className="ws-icon"
+                                                aria-hidden
+                                            />
+                                            <span>Import</span>
+                                            <span
+                                                className="ws-help-icon"
+                                                title="Imports a .loro CRDT snapshot (loro.dev format) into this workspace"
+                                            >
+                                                <MdiHelpCircleOutline aria-hidden />
+                                            </span>
+                                        </button>
+                                        <button
+                                            className="ws-action"
                                             onClick={() => void onJoin()}
                                             role="menuitem"
+                                            type="button"
                                         >
+                                            <MdiLinkVariant
+                                                className="ws-icon"
+                                                aria-hidden
+                                            />
                                             Join by URL…
                                         </button>
                                         <button
@@ -1112,6 +1304,15 @@ export function App() {
                             })()}
                         </div>
                     )}
+                    <input
+                        ref={wsImportInputRef}
+                        type="file"
+                        accept=".loro,application/octet-stream"
+                        style={{ display: "none" }}
+                        onChange={(event) => {
+                            void handleImportFileChange(event);
+                        }}
+                    />
                 </div>
                 <NetworkStatusIndicator
                     connectionStatus={connectionStatus}
