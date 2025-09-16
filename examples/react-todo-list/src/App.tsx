@@ -233,7 +233,9 @@ export function App() {
     const wsMenuRef = useRef<HTMLDivElement | null>(null);
     // Flag to skip snapshot on navigations that intentionally delete the workspace
     const skipSnapshotOnUnloadRef = useRef<boolean>(false);
+
     const [selectedTextCid, setSelectedTextCid] = useState<string | null>(null);
+    const [readyForSync, setReadyForSync] = useState<boolean>(false);
     const hasDone = useMemo(
         () => state.todos.some((t) => t.status === "done"),
         [state.todos],
@@ -261,6 +263,73 @@ export function App() {
         const height = Math.max(0, y - (state.todos.length > 0 ? ITEM_GAP : 0));
         return { pos, height } as const;
     }, [state.todos, itemHeights]);
+
+    useEffect(() => {
+        let disposed = false;
+
+        const ensureWorkspace = async () => {
+            const pathParts = window.location.pathname.split("/").filter(Boolean);
+            const toLowerHex = (value: string): string => value.trim().toLowerCase();
+            const maybePub =
+                pathParts.length > 0 ? toLowerHex(pathParts[pathParts.length - 1]) : "";
+            const rawHash = window.location.hash.startsWith("#")
+                ? window.location.hash.slice(1)
+                : "";
+            const maybePriv = rawHash ? toLowerHex(rawHash) : "";
+            const hexPattern = /^[0-9a-f]+$/i;
+
+            let hasValidKeys = false;
+
+            if (
+                maybePub &&
+                maybePriv &&
+                hexPattern.test(maybePub) &&
+                hexPattern.test(maybePriv)
+            ) {
+                try {
+                    const { importKeyPairFromHex } = await loadCryptoModule();
+                    const imported = await importKeyPairFromHex(maybePub, maybePriv);
+                    hasValidKeys = imported !== null;
+                } catch {
+                    hasValidKeys = false;
+                }
+            }
+
+            if (!hasValidKeys) {
+                try {
+                    const storage = await loadStorageModule();
+                    const db = await storage.openDocDb();
+                    try {
+                        const all = await storage.listWorkspaces(db);
+                        if (all.length > 0) {
+                            if (!disposed) setWorkspaces(all);
+                            const latest = all[0];
+                            history.replaceState(
+                                null,
+                                "",
+                                `/${latest.id}#${latest.privateHex}`,
+                            );
+                        }
+                    } finally {
+                        db.close();
+                    }
+                } catch (error) {
+                    // eslint-disable-next-line no-console
+                    console.warn("Load last workspace failed:", error);
+                }
+            }
+
+            if (!disposed) {
+                setReadyForSync(true);
+            }
+        };
+
+        void ensureWorkspace();
+
+        return () => {
+            disposed = true;
+        };
+    }, []);
 
     useEffect(() => {
         if (!selectedTextCid) return;
@@ -297,6 +366,7 @@ export function App() {
     const TOAST_DURATION_MS = 2600; // slightly longer toast display
 
     useEffect(() => {
+        if (!readyForSync) return;
         const idleWindow = window as IdleWindow;
         let mounted = true;
         let cleanup: void | (() => void | Promise<void>);
@@ -351,7 +421,7 @@ export function App() {
         };
         // doc is stable (memoized)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [doc, routeEpoch]);
+    }, [doc, readyForSync, routeEpoch]);
 
     // Ephemeral presence: join an EphemeralStore room and broadcast presence heartbeat
     useEffect(() => {

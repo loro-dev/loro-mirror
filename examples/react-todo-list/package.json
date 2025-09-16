@@ -13,8 +13,8 @@
     },
     "dependencies": {
         "loro-crdt": "^1.7.3",
-        "loro-adaptors": "latest",
-        "loro-websocket": "latest",
+        "loro-adaptors": "0.1.0",
+        "loro-websocket": "0.1.1",
         "loro-mirror": "workspace:*",
         "loro-mirror-react": "workspace:*",
         "react": "^18.2.0",

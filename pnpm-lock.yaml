@@ -40,7 +40,7 @@ importers:
   examples/react-todo-list:
     dependencies:
       loro-adaptors:
-        specifier: latest
+        specifier: 0.1.0
         version: 0.1.0(loro-crdt@1.7.3)
       loro-crdt:
         specifier: ^1.7.3
@@ -52,8 +52,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/react
       loro-websocket:
-        specifier: latest
-        version: 0.1.0(loro-crdt@1.7.3)
+        specifier: 0.1.1
+        version: 0.1.1(loro-crdt@1.7.3)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -1683,8 +1683,8 @@ packages:
     resolution: {integrity: sha512-cImsQOwKn4ax0ptsmnUfPKyct7AzOhB/NnXNu911fSLIm4n9T0a2pCf6AzriyxZwGqMx/uIZlYq5QNUKRKZaXw==}
     engines: {node: '>=18.0.0'}
 
-  loro-websocket@0.1.0:
-    resolution: {integrity: sha512-y0rImUH1rwANlE4ZSTcCAh7Z24Pe148+vfZUwf9WbpzCSHHorIptGCXr775a+nCy2dqJQQsXZejpxsAZtbBTwQ==}
+  loro-websocket@0.1.1:
+    resolution: {integrity: sha512-r+bDEnA/lScjuy4qAPo508qqCUTVu9Nv79m/tG9L/JJRovaniKfhXPSQ1feCfjPSq/1sfV57+v5SdhBDEI7rTQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       loro-crdt: ^1.7.1
@@ -3761,7 +3761,7 @@ snapshots:
 
   loro-protocol@0.1.0: {}
 
-  loro-websocket@0.1.0(loro-crdt@1.7.3):
+  loro-websocket@0.1.1(loro-crdt@1.7.3):
     dependencies:
       '@types/ws': 8.18.1
       loro-adaptors: 0.1.0(loro-crdt@1.7.3)
