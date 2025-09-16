@@ -17,6 +17,7 @@ import {
 } from "./state/doc";
 import type { WorkspaceRecord } from "./state/storage";
 import type { ClientStatusValue } from "loro-websocket";
+import type { WorkspaceConnectionKeys } from "./state/publicSync";
 import { useLongPressDrag } from "./useLongPressDrag";
 import { NetworkStatusIndicator } from "./NetworkStatusIndicator";
 import {
@@ -29,6 +30,7 @@ const HistoryView = React.lazy(() => import("./HistoryView"));
 type StorageModule = typeof import("./state/storage");
 type PublicSyncModule = typeof import("./state/publicSync");
 type CryptoModule = typeof import("./state/crypto");
+type WorkspaceKeys = WorkspaceConnectionKeys;
 
 let storageModulePromise: Promise<StorageModule> | null = null;
 function loadStorageModule(): Promise<StorageModule> {
@@ -69,6 +71,19 @@ async function createNewWorkspace(): Promise<void> {
     const { generatePairAndUrl } = await loadCryptoModule();
     const generated = await generatePairAndUrl();
     window.location.assign(`/${generated.publicHex}#${generated.privateHex}`);
+}
+
+function getWorkspaceRouteKey(): string {
+    if (typeof window === "undefined") return "ssr";
+    const pathParts = window.location.pathname.split("/").filter(Boolean);
+    const toLowerHex = (value: string): string => value.trim().toLowerCase();
+    const maybePub =
+        pathParts.length > 0 ? toLowerHex(pathParts[pathParts.length - 1]) : "";
+    const rawHash = window.location.hash.startsWith("#")
+        ? window.location.hash.slice(1)
+        : "";
+    const maybePriv = rawHash ? toLowerHex(rawHash) : "";
+    return `${maybePub}#${maybePriv}`;
 }
 
 export function MaterialSymbolsKeyboardArrowDown(
@@ -264,9 +279,12 @@ export function StreamlinePlumpRecycleBin2Remix(
     );
 }
 
-export function App() {
-    const [routeEpoch, setRouteEpoch] = useState<number>(0);
-    const doc = useMemo(() => createConfiguredDoc(), [routeEpoch]);
+type WorkspaceSessionProps = {
+    workspace: WorkspaceKeys;
+};
+
+function WorkspaceSession({ workspace }: WorkspaceSessionProps) {
+    const doc = useMemo(() => createConfiguredDoc(), []);
     (window as unknown as { doc?: unknown }).doc = doc;
     const undo = useMemo(() => createUndoManager(doc), [doc]);
 
@@ -287,7 +305,7 @@ export function App() {
         useState<ClientStatusValue>("connecting");
     const [latencyMs, setLatencyMs] = useState<number | null>(null);
     const [presenceCount, setPresenceCount] = useState<number>(1);
-    const [workspaceHex, setWorkspaceHex] = useState<string>("");
+    const [workspaceHex, setWorkspaceHex] = useState<string>(workspace.publicHex);
     const [presencePeers, setPresencePeers] = useState<string[]>([]);
     const [shareUrl, setShareUrl] = useState<string>("");
     const [toast, setToast] = useState<string | null>(null);
@@ -305,7 +323,6 @@ export function App() {
     const skipSnapshotOnUnloadRef = useRef<boolean>(false);
 
     const [selectedTextCid, setSelectedTextCid] = useState<string | null>(null);
-    const [readyForSync, setReadyForSync] = useState<boolean>(false);
     const hasDone = useMemo(
         () => state.todos.some((t) => t.status === "done"),
         [state.todos],
@@ -343,73 +360,6 @@ export function App() {
         const base = safeBase.length > 0 ? safeBase : fallback;
         return `${base}.loro`;
     }, [workspaceHex, workspaceTitle]);
-
-    useEffect(() => {
-        let disposed = false;
-
-        const ensureWorkspace = async () => {
-            const pathParts = window.location.pathname.split("/").filter(Boolean);
-            const toLowerHex = (value: string): string => value.trim().toLowerCase();
-            const maybePub =
-                pathParts.length > 0 ? toLowerHex(pathParts[pathParts.length - 1]) : "";
-            const rawHash = window.location.hash.startsWith("#")
-                ? window.location.hash.slice(1)
-                : "";
-            const maybePriv = rawHash ? toLowerHex(rawHash) : "";
-            const hexPattern = /^[0-9a-f]+$/i;
-
-            let hasValidKeys = false;
-
-            if (
-                maybePub &&
-                maybePriv &&
-                hexPattern.test(maybePub) &&
-                hexPattern.test(maybePriv)
-            ) {
-                try {
-                    const { importKeyPairFromHex } = await loadCryptoModule();
-                    const imported = await importKeyPairFromHex(maybePub, maybePriv);
-                    hasValidKeys = imported !== null;
-                } catch {
-                    hasValidKeys = false;
-                }
-            }
-
-            if (!hasValidKeys) {
-                try {
-                    const storage = await loadStorageModule();
-                    const db = await storage.openDocDb();
-                    try {
-                        const all = await storage.listWorkspaces(db);
-                        if (all.length > 0) {
-                            if (!disposed) setWorkspaces(all);
-                            const latest = all[0];
-                            history.replaceState(
-                                null,
-                                "",
-                                `/${latest.id}#${latest.privateHex}`,
-                            );
-                        }
-                    } finally {
-                        db.close();
-                    }
-                } catch (error) {
-                    // eslint-disable-next-line no-console
-                    console.warn("Load last workspace failed:", error);
-                }
-            }
-
-            if (!disposed) {
-                setReadyForSync(true);
-            }
-        };
-
-        void ensureWorkspace();
-
-        return () => {
-            disposed = true;
-        };
-    }, []);
 
     useEffect(() => {
         if (!selectedTextCid) return;
@@ -454,7 +404,6 @@ export function App() {
     }, [setToast]);
 
     useEffect(() => {
-        if (!readyForSync) return;
         setConnectionStatus("connecting");
         setLatencyMs(null);
         setOnline(false);
@@ -476,7 +425,7 @@ export function App() {
             try {
                 const { setupPublicSync } = await loadPublicSyncModule();
                 if (!mounted) return;
-                const session = await setupPublicSync(doc, {
+                const session = await setupPublicSync(doc, workspace, {
                     setDetached,
                     setOnline,
                     setWorkspaceHex,
@@ -525,9 +474,9 @@ export function App() {
             if (startTimeout !== undefined) window.clearTimeout(startTimeout);
             if (sessionCleanup) void sessionCleanup();
         };
-        // doc is stable (memoized)
+        // doc/workspace stay stable within a session (component remounts on change)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [doc, readyForSync, routeEpoch]);
+    }, [doc, workspace]);
 
     // Debounced persistence to IndexedDB keyed by workspace
     useEffect(() => {
@@ -1597,6 +1546,158 @@ export function App() {
             )}
         </div>
     );
+}
+
+export function App() {
+    const [workspace, setWorkspace] = useState<WorkspaceKeys | null>(null);
+    const ensureCounterRef = useRef(0);
+    const workspaceRef = useRef<WorkspaceKeys | null>(null);
+    const currentKeyRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        workspaceRef.current = workspace;
+        currentKeyRef.current = workspace
+            ? `${workspace.publicHex}#${workspace.privateHex}`
+            : null;
+    }, [workspace]);
+
+    const ensureWorkspace = useCallback(async () => {
+        if (typeof window === "undefined") return;
+        const routeKey = getWorkspaceRouteKey();
+        const current = currentKeyRef.current;
+        const activeWorkspace = workspaceRef.current;
+        if (current === routeKey && activeWorkspace) {
+            const canonicalPath = `/${activeWorkspace.publicHex}`;
+            const canonicalHash = `#${activeWorkspace.privateHex}`;
+            if (
+                window.location.pathname !== canonicalPath ||
+                window.location.hash !== canonicalHash
+            ) {
+                history.replaceState(null, "", `${canonicalPath}${canonicalHash}`);
+            }
+            setWorkspace(activeWorkspace);
+            return;
+        }
+
+        ensureCounterRef.current += 1;
+        const ensureId = ensureCounterRef.current;
+        setWorkspace(null);
+
+        const commit = (value: WorkspaceKeys | null) => {
+            if (ensureCounterRef.current !== ensureId) return;
+            currentKeyRef.current = value
+                ? `${value.publicHex}#${value.privateHex}`
+                : null;
+            workspaceRef.current = value;
+            setWorkspace(value);
+        };
+
+        const [rawPub, rawPriv = ""] = routeKey.split("#");
+        const candidatePub = rawPub?.trim().toLowerCase() ?? "";
+        const candidatePriv = rawPriv.trim().toLowerCase();
+        const hexPattern = /^[0-9a-f]+$/i;
+
+        const useResolvedWorkspace = (value: WorkspaceKeys | null) => {
+            if (!value) {
+                commit(null);
+                return;
+            }
+            const canonicalPath = `/${value.publicHex}`;
+            const canonicalHash = `#${value.privateHex}`;
+            if (
+                window.location.pathname !== canonicalPath ||
+                window.location.hash !== canonicalHash
+            ) {
+                history.replaceState(null, "", `${canonicalPath}${canonicalHash}`);
+            }
+            commit(value);
+        };
+
+        try {
+            if (
+                candidatePub &&
+                candidatePriv &&
+                hexPattern.test(candidatePub) &&
+                hexPattern.test(candidatePriv)
+            ) {
+                const cryptoModule = await loadCryptoModule();
+                const imported = await cryptoModule.importKeyPairFromHex(
+                    candidatePub,
+                    candidatePriv,
+                );
+                if (imported) {
+                    const publicHex = await cryptoModule.exportRawPublicKeyHex(
+                        imported.publicKey,
+                    );
+                    const jwk = (await crypto.subtle.exportKey(
+                        "jwk",
+                        imported.privateKey,
+                    )) as JsonWebKey;
+                    const privateHex = cryptoModule.bytesToHex(
+                        cryptoModule.base64UrlToBytes(jwk.d ?? ""),
+                    );
+                    useResolvedWorkspace({ publicHex, privateHex });
+                    return;
+                }
+            }
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn("Workspace key validation failed:", error);
+        }
+
+        try {
+            const storage = await loadStorageModule();
+            const db = await storage.openDocDb();
+            try {
+                const all = await storage.listWorkspaces(db);
+                if (all.length > 0) {
+                    const latest = all[0];
+                    useResolvedWorkspace({
+                        publicHex: latest.id.toLowerCase(),
+                        privateHex: latest.privateHex.toLowerCase(),
+                    });
+                    return;
+                }
+            } finally {
+                db.close();
+            }
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn("Load last workspace failed:", error);
+        }
+
+        try {
+            const cryptoModule = await loadCryptoModule();
+            const generated = await cryptoModule.generatePairAndUrl();
+            useResolvedWorkspace({
+                publicHex: generated.publicHex,
+                privateHex: generated.privateHex,
+            });
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error("Failed to create workspace:", error);
+            commit(null);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return undefined;
+        const handleRouteChange = () => {
+            void ensureWorkspace();
+        };
+        window.addEventListener("hashchange", handleRouteChange);
+        window.addEventListener("popstate", handleRouteChange);
+        void ensureWorkspace();
+        return () => {
+            window.removeEventListener("hashchange", handleRouteChange);
+            window.removeEventListener("popstate", handleRouteChange);
+        };
+    }, [ensureWorkspace]);
+
+    if (!workspace) return null;
+
+    const key = `${workspace.publicHex}#${workspace.privateHex}`;
+    return <WorkspaceSession key={key} workspace={workspace} />;
 }
 
 type Todo = { $cid: string; text: string; status: TodoStatus };

@@ -7,7 +7,6 @@ import {
     buildAuthUrl,
     bytesToHex,
     exportRawPublicKeyHex,
-    generatePairAndUrl,
     importKeyPairFromHex,
     signSaltTokenHex,
 } from "./crypto";
@@ -39,8 +38,14 @@ export type PublicSyncSession = {
     cleanup: () => Promise<void> | void;
 };
 
+export type WorkspaceConnectionKeys = {
+    publicHex: string;
+    privateHex: string;
+};
+
 export async function setupPublicSync(
     doc: LoroDoc,
+    keys: WorkspaceConnectionKeys,
     handlers: PublicSyncHandlers,
 ): Promise<PublicSyncSession> {
     const adaptor = createLoroAdaptorFromDoc(doc);
@@ -50,53 +55,22 @@ export async function setupPublicSync(
     let client: LoroWebsocketClient | null = null;
 
     try {
-        const pathParts = window.location.pathname.split("/").filter(Boolean);
-        const maybePubHex =
-            pathParts.length >= 1 ? pathParts[pathParts.length - 1] : "";
-        const maybePrivHex = window.location.hash.startsWith("#")
-            ? window.location.hash.slice(1)
-            : "";
-
-        let privateKey: CryptoKey;
-        let publicKey: CryptoKey;
-        let publicHex: string;
-        let privateHex: string;
-        let share: string;
-
-        const imported =
-            maybePubHex && maybePrivHex
-                ? await importKeyPairFromHex(
-                      maybePubHex.toLowerCase(),
-                      maybePrivHex.toLowerCase(),
-                  )
-                : null;
-
-        if (imported) {
-            privateKey = imported.privateKey;
-            publicKey = imported.publicKey;
-            publicHex = await exportRawPublicKeyHex(publicKey);
-            const jwkPriv = (await crypto.subtle.exportKey(
-                "jwk",
-                privateKey,
-            )) as JsonWebKey;
-            const dBytes = base64UrlToBytes(jwkPriv.d ?? "");
-            privateHex = bytesToHex(dBytes);
-            share = `${window.location.origin}/${publicHex}#${privateHex}`;
-            if (
-                window.location.pathname !== `/${publicHex}` ||
-                window.location.hash !== `#${privateHex}`
-            ) {
-                history.replaceState(null, "", `/${publicHex}#${privateHex}`);
-            }
-        } else {
-            const generated = await generatePairAndUrl();
-            privateKey = generated.privateKey;
-            publicKey = generated.publicKey;
-            publicHex = generated.publicHex;
-            privateHex = generated.privateHex;
-            share = generated.share;
-            history.replaceState(null, "", `/${publicHex}#${privateHex}`);
+        const normalizedPub = keys.publicHex.trim().toLowerCase();
+        const normalizedPriv = keys.privateHex.trim().toLowerCase();
+        const imported = await importKeyPairFromHex(normalizedPub, normalizedPriv);
+        if (!imported) {
+            throw new Error("Invalid workspace keys");
         }
+        const privateKey = imported.privateKey;
+        const publicKey = imported.publicKey;
+        const publicHex = await exportRawPublicKeyHex(publicKey);
+        const jwkPriv = (await crypto.subtle.exportKey(
+            "jwk",
+            privateKey,
+        )) as JsonWebKey;
+        const dBytes = base64UrlToBytes(jwkPriv.d ?? "");
+        const privateHex = bytesToHex(dBytes);
+        const share = `${window.location.origin}/${publicHex}#${privateHex}`;
 
         handlers.setWorkspaceHex(publicHex);
         handlers.setShareUrl(share);

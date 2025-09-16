@@ -40,8 +40,6 @@ export function NetworkStatusIndicator({
                     : "connected";
             case "connecting":
                 return "connecting…";
-            case "reconnecting":
-                return "reconnecting…";
             default:
                 return "disconnected";
         }
@@ -67,7 +65,7 @@ export function NetworkStatusIndicator({
         switch (connectionStatus) {
             case "disconnected":
                 return "#c0392b";
-            case "reconnecting":
+            case "connecting":
                 return "var(--golden)";
             default:
                 return "var(--muted)";
@@ -161,4 +159,3 @@ export function NetworkStatusIndicator({
         </span>
     );
 }
-
