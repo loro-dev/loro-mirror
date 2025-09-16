@@ -15,9 +15,14 @@ import {
     todoSchema,
     type TodoStatus,
 } from "./state/doc";
-import { ROOM_ID, SYNC_BASE } from "./state/constants";
 import type { WorkspaceRecord } from "./state/storage";
+import type { ClientStatusValue } from "loro-websocket";
 import { useLongPressDrag } from "./useLongPressDrag";
+import { NetworkStatusIndicator } from "./NetworkStatusIndicator";
+import {
+    createPresenceScheduler,
+    type IdleWindow,
+} from "./state/presence";
 
 const HistoryView = React.lazy(() => import("./HistoryView"));
 
@@ -48,14 +53,6 @@ function loadCryptoModule(): Promise<CryptoModule> {
     }
     return cryptoModulePromise;
 }
-
-
-
-type IdleWindow = Window & {
-    requestIdleCallback?: (cb: IdleRequestCallback) => number;
-    cancelIdleCallback?: (handle: number) => void;
-};
-
 async function switchToWorkspace(id: string): Promise<void> {
     const { openDocDb, getWorkspace } = await loadStorageModule();
     const db = await openDocDb();
@@ -196,8 +193,6 @@ export function StreamlinePlumpRecycleBin2Remix(
 }
 
 export function App() {
-    const capitalizeFirst = (s: string): string =>
-        s.length ? s.charAt(0).toUpperCase() + s.slice(1) : s;
     const [routeEpoch, setRouteEpoch] = useState<number>(0);
     const doc = useMemo(() => createConfiguredDoc(), [routeEpoch]);
     (window as unknown as { doc?: unknown }).doc = doc;
@@ -216,6 +211,9 @@ export function App() {
     const [detached, setDetached] = useState<boolean>(doc.isDetached());
     const [showHistory, setShowHistory] = useState<boolean>(false);
     const [online, setOnline] = useState<boolean>(false);
+    const [connectionStatus, setConnectionStatus] =
+        useState<ClientStatusValue>("connecting");
+    const [latencyMs, setLatencyMs] = useState<number | null>(null);
     const [presenceCount, setPresenceCount] = useState<number>(1);
     const [workspaceHex, setWorkspaceHex] = useState<string>("");
     const [presencePeers, setPresencePeers] = useState<string[]>([]);
@@ -360,35 +358,60 @@ export function App() {
     }, []);
 
     // Presence tuning
-    const PRESENCE_TTL_MS = 45000; // expire stale peers after 45s
-    const HEARTBEAT_MS = 15000; // heartbeat every 15s to reduce chatter
-    const FRESH_WINDOW_MS = 35000; // show as online if beat < 35s ago
     const TOAST_DURATION_MS = 2600; // slightly longer toast display
+
+    const handleStatusToast = useCallback((message: string | null) => {
+        if (!message) return;
+        if (toastTimerRef.current) {
+            window.clearTimeout(toastTimerRef.current);
+        }
+        setToast(message);
+        toastTimerRef.current = window.setTimeout(() => {
+            setToast(null);
+        }, TOAST_DURATION_MS);
+    }, [setToast]);
 
     useEffect(() => {
         if (!readyForSync) return;
+        setConnectionStatus("connecting");
+        setLatencyMs(null);
+        setOnline(false);
         const idleWindow = window as IdleWindow;
         let mounted = true;
-        let cleanup: void | (() => void | Promise<void>);
+        let sessionCleanup: void | (() => void | Promise<void>);
         let idleHandle: number | undefined;
         let startTimeout: number | undefined;
+
+        const presenceScheduler = createPresenceScheduler({
+            idleWindow,
+            docPeerId: doc.peerIdStr,
+            setPresencePeers,
+            setPresenceCount,
+            isActive: () => mounted,
+        });
 
         const start = async () => {
             try {
                 const { setupPublicSync } = await loadPublicSyncModule();
                 if (!mounted) return;
-                const c = await setupPublicSync(doc, {
+                const session = await setupPublicSync(doc, {
                     setDetached,
                     setOnline,
                     setWorkspaceHex,
                     setShareUrl,
                     setWorkspaces,
+                    setConnectionStatus,
+                    setLatency: setLatencyMs,
                 });
                 if (!mounted) {
-                    if (c) void c();
+                    if (session?.cleanup) void session.cleanup();
                     return;
                 }
-                cleanup = c;
+                sessionCleanup = session.cleanup;
+                const client = session.client;
+                if (client) {
+                    presenceScheduler.schedule(client);
+                }
             } catch (error) {
                 // eslint-disable-next-line no-console
                 console.error("Failed to start public sync:", error);
@@ -410,6 +433,7 @@ export function App() {
 
         return () => {
             mounted = false;
+            presenceScheduler.dispose();
             if (
                 idleHandle !== undefined &&
                 typeof idleWindow.cancelIdleCallback === "function"
@@ -417,167 +441,11 @@ export function App() {
                 idleWindow.cancelIdleCallback(idleHandle);
             }
             if (startTimeout !== undefined) window.clearTimeout(startTimeout);
-            if (cleanup) void cleanup();
+            if (sessionCleanup) void sessionCleanup();
         };
         // doc is stable (memoized)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [doc, readyForSync, routeEpoch]);
-
-    // Ephemeral presence: join an EphemeralStore room and broadcast presence heartbeat
-    useEffect(() => {
-        if (!workspaceHex) return;
-        const idleWindow = window as IdleWindow;
-        let disposed = false;
-        let heartbeat: number | undefined;
-        let roomCleanup: (() => Promise<void> | void) | undefined;
-        let removeVisListener: (() => void) | undefined;
-        let idleHandle: number | undefined;
-        let startTimeout: number | undefined;
-
-        const parsePrivateHex = (): string | null => {
-            const hash = window.location.hash.trim();
-            if (!hash || hash.length < 2) return null;
-            const hex = hash.slice(1);
-            return /^[0-9a-fA-F]+$/.test(hex) ? hex.toLowerCase() : null;
-        };
-
-        const start = async () => {
-            try {
-                const [crdtModule, websocketModule, cryptoModule] =
-                    await Promise.all([
-                        import("loro-crdt"),
-                        import("loro-websocket"),
-                        loadCryptoModule(),
-                    ]);
-                if (disposed) return;
-                const { EphemeralStore } = crdtModule;
-                const { createLoroEphemeralAdaptorFromStore, LoroWebsocketClient } =
-                    websocketModule;
-                const {
-                    importKeyPairFromHex,
-                    signSaltTokenHex,
-                    buildAuthUrl,
-                } = cryptoModule;
-
-                const store = new EphemeralStore<Record<string, number>>(PRESENCE_TTL_MS);
-                const adaptor = createLoroEphemeralAdaptorFromStore(store);
-
-                const updateCount = () => {
-                    const entries = store.getAllStates() as Record<string, unknown>;
-                    const now = Date.now();
-                    const peers = Object.entries(entries)
-                        .filter(
-                            ([key, value]) =>
-                                key.startsWith("p:") &&
-                                typeof value === "number" &&
-                                now - (value as number) < FRESH_WINDOW_MS,
-                        )
-                        .map(([key]) => key.slice(2))
-                        .sort();
-                    setPresencePeers(peers);
-                    setPresenceCount(peers.length > 0 ? peers.length : 1);
-                };
-                const unsubscribe = store.subscribe(() => updateCount());
-                updateCount();
-
-                const myKey = `p:${doc.peerIdStr}`;
-                const sendBeat = () => store.set(myKey, Date.now());
-                sendBeat();
-                heartbeat = window.setInterval(sendBeat, HEARTBEAT_MS);
-
-                const localCleanup = async () => {
-                    try {
-                        unsubscribe();
-                    } catch {}
-                    try {
-                        store.delete(myKey as keyof Record<string, number>);
-                    } catch {}
-                    try {
-                        store.destroy();
-                    } catch {}
-                    try {
-                        adaptor.destroy();
-                    } catch {}
-                };
-
-                const privHex = parsePrivateHex();
-                if (!privHex) {
-                    await localCleanup();
-                    return;
-                }
-                const imported = await importKeyPairFromHex(workspaceHex, privHex);
-                if (!imported) {
-                    await localCleanup();
-                    return;
-                }
-                const token = await signSaltTokenHex(imported.privateKey);
-                const url = buildAuthUrl(SYNC_BASE, workspaceHex, token);
-                const client = new LoroWebsocketClient({ url });
-                try {
-                    await client.waitConnected();
-                } catch {
-                    await localCleanup();
-                    return;
-                }
-                const room = await client.join({
-                    roomId: ROOM_ID,
-                    crdtAdaptor: adaptor,
-                });
-                if (disposed) {
-                    try {
-                        await room.destroy();
-                    } catch {}
-                    await localCleanup();
-                    return;
-                }
-
-                roomCleanup = async () => {
-                    try {
-                        await room.destroy();
-                    } catch {
-                        /* noop */
-                    }
-                    await localCleanup();
-                };
-
-                const onVis = () => sendBeat();
-                document.addEventListener("visibilitychange", onVis);
-                removeVisListener = () =>
-                    document.removeEventListener("visibilitychange", onVis);
-            } catch (error) {
-                // eslint-disable-next-line no-console
-                console.warn("Presence setup failed:", error);
-            }
-        };
-
-        if (typeof idleWindow.requestIdleCallback === "function") {
-            idleHandle = idleWindow.requestIdleCallback(() => {
-                idleHandle = undefined;
-                void start();
-            });
-        } else {
-            startTimeout = window.setTimeout(() => {
-                startTimeout = undefined;
-                void start();
-            }, 400);
-        }
-
-        return () => {
-            disposed = true;
-            if (heartbeat) window.clearInterval(heartbeat);
-            if (roomCleanup) void roomCleanup();
-            if (removeVisListener) removeVisListener();
-            if (
-                idleHandle !== undefined &&
-                typeof idleWindow.cancelIdleCallback === "function"
-            ) {
-                idleWindow.cancelIdleCallback(idleHandle);
-            }
-            if (startTimeout !== undefined) window.clearTimeout(startTimeout);
-            setPresencePeers([]);
-            setPresenceCount(1);
-        };
-    }, [doc.peerIdStr, workspaceHex]);
 
     // Debounced persistence to IndexedDB keyed by workspace
     useEffect(() => {
@@ -1245,122 +1113,13 @@ export function App() {
                         </div>
                     )}
                 </div>
-                <span
-                    className="status-inline"
-                    title={online ? `${presenceCount} online` : "Offline"}
-                    aria-live="polite"
-                    aria-label={online ? `${presenceCount} online` : "Offline"}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            const msg = !online
-                                ? "disconnected"
-                                : presenceCount <= 1
-                                  ? "connected"
-                                  : `connected with ${presenceCount - 1} collaborators`;
-                            if (toastTimerRef.current)
-                                window.clearTimeout(toastTimerRef.current);
-                            setToast(capitalizeFirst(msg));
-                            toastTimerRef.current = window.setTimeout(() => {
-                                setToast(null);
-                            }, TOAST_DURATION_MS);
-                        }
-                    }}
-                    onClick={() => {
-                        const msg = !online
-                            ? "disconnected"
-                            : presenceCount <= 1
-                              ? "connected"
-                              : `connected with ${presenceCount - 1} collaborators`;
-                        if (toastTimerRef.current)
-                            window.clearTimeout(toastTimerRef.current);
-                        setToast(capitalizeFirst(msg));
-                        toastTimerRef.current = window.setTimeout(() => {
-                            setToast(null);
-                        }, TOAST_DURATION_MS);
-                    }}
-                    style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        cursor: "pointer",
-                        userSelect: "none",
-                    }}
-                >
-                    {/*<span>{online ? "Online" : "Offline"}</span>*/}
-                    {online ? (
-                        <span
-                            style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                marginLeft: 8,
-                            }}
-                        >
-                            {(() => {
-                                const DOT_COLORS = [
-                                    // Brand-centric palette: brand tints first, then adjacent accents
-                                    "var(--brand)",
-                                    "color-mix(in oklab, var(--brand) 80%, #ffffff)",
-                                    "color-mix(in oklab, var(--brand) 65%, #ffffff)",
-                                    "color-mix(in oklab, var(--brand) 50%, #ffffff)",
-                                    "var(--crimson)",
-                                    "var(--secondary)",
-                                    "var(--burnt)",
-                                    "var(--golden)",
-                                ];
-                                const peers = presencePeers;
-                                const dots = peers.slice(0, 8).map((_, i) => (
-                                    <span
-                                        key={i}
-                                        aria-hidden
-                                        style={{
-                                            marginLeft: i === 0 ? 0 : -4,
-                                            color: DOT_COLORS[
-                                                i % DOT_COLORS.length
-                                            ],
-                                        }}
-                                    >
-                                        ●
-                                    </span>
-                                ));
-                                // If no peers resolved (fallback), show a single green dot
-                                const safeDots =
-                                    dots.length > 0 ? (
-                                        dots
-                                    ) : (
-                                        <span
-                                            aria-hidden
-                                            style={{ color: "#29c329" }}
-                                        >
-                                            ●
-                                        </span>
-                                    );
-                                return (
-                                    <>
-                                        {safeDots}
-                                        {presenceCount !== 1 && (
-                                            <span
-                                                style={{
-                                                    marginLeft: 6,
-                                                    fontSize: "0.8rem",
-                                                    lineHeight: 1,
-                                                    color: "var(--muted)",
-                                                }}
-                                            >
-                                                {presenceCount}
-                                            </span>
-                                        )}
-                                    </>
-                                );
-                            })()}
-                        </span>
-                    ) : (
-                        <span style={{ color: "#c0392b", marginLeft: 8 }}>
-                            ○
-                        </span>
-                    )}
-                </span>
+                <NetworkStatusIndicator
+                    connectionStatus={connectionStatus}
+                    presenceCount={presenceCount}
+                    presencePeers={presencePeers}
+                    latencyMs={latencyMs}
+                    onRequestToast={handleStatusToast}
+                />
                 {/* Room ID inline display removed; shown via selector options */}
             </header>
 

@@ -1,6 +1,7 @@
 import type { LoroDoc } from "loro-crdt";
 import { createLoroAdaptorFromDoc } from "loro-adaptors";
-import { LoroWebsocketClient } from "loro-websocket";
+import { ClientStatus, LoroWebsocketClient } from "loro-websocket";
+import type { ClientStatusValue } from "loro-websocket";
 import {
     base64UrlToBytes,
     buildAuthUrl,
@@ -29,14 +30,24 @@ export type PublicSyncHandlers = {
     setShareUrl: (url: string) => void;
     setWorkspaces?: (list: WorkspaceRecord[]) => void;
     getWorkspaceTitle?: () => string;
+    setConnectionStatus?: (status: ClientStatusValue) => void;
+    setLatency?: (latency: number | null) => void;
+};
+
+export type PublicSyncSession = {
+    client: LoroWebsocketClient | null;
+    cleanup: () => Promise<void> | void;
 };
 
 export async function setupPublicSync(
     doc: LoroDoc,
     handlers: PublicSyncHandlers,
-): Promise<() => Promise<void> | void> {
+): Promise<PublicSyncSession> {
     const adaptor = createLoroAdaptorFromDoc(doc);
     let roomCleanup: (() => Promise<void> | void) | null = null;
+    let offStatus: (() => void) | null = null;
+    let offLatency: (() => void) | null = null;
+    let client: LoroWebsocketClient | null = null;
 
     try {
         const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -129,15 +140,43 @@ export async function setupPublicSync(
 
         const token = await signSaltTokenHex(privateKey);
         const url = buildAuthUrl(SYNC_BASE, publicHex, token);
-        const client = new LoroWebsocketClient({ url });
-        await client.waitConnected();
-        const room = await client.join({
+        const activeClient = new LoroWebsocketClient({ url });
+        client = activeClient;
+
+        const applyStatus = (status: ClientStatusValue) => {
+            handlers.setConnectionStatus?.(status);
+            handlers.setOnline(status === ClientStatus.Connected);
+            if (status === ClientStatus.Connected) {
+                const currentLatency = activeClient.getLatency();
+                if (currentLatency !== undefined) {
+                    handlers.setLatency?.(currentLatency);
+                }
+            } else {
+                handlers.setLatency?.(null);
+            }
+        };
+
+        applyStatus(activeClient.getStatus());
+        offStatus = activeClient.onStatusChange((status) => applyStatus(status));
+        if (handlers.setLatency) {
+            offLatency = activeClient.onLatency((ms) => {
+                handlers.setLatency?.(ms);
+            });
+        }
+
+        await activeClient.waitConnected();
+        const room = await activeClient.join({
             roomId: ROOM_ID,
             crdtAdaptor: adaptor,
         });
         await room.waitForReachingServerVersion();
         handlers.setDetached(doc.isDetached());
         handlers.setOnline(true);
+        try {
+            void activeClient.ping().catch(() => undefined);
+        } catch {
+            /* noop */
+        }
 
         roomCleanup = async () => {
             try {
@@ -149,12 +188,30 @@ export async function setupPublicSync(
     } catch (error) {
         // eslint-disable-next-line no-console
         console.error("Failed to connect to Loro public sync:", error);
+        offStatus?.();
+        offLatency?.();
+        handlers.setConnectionStatus?.(ClientStatus.Disconnected);
+        handlers.setLatency?.(null);
         handlers.setOnline(false);
     }
 
-    return () => {
+    const cleanup = () => {
         void roomCleanup?.();
+        offStatus?.();
+        offLatency?.();
         adaptor.destroy();
+        handlers.setConnectionStatus?.(ClientStatus.Disconnected);
+        handlers.setLatency?.(null);
         handlers.setOnline(false);
+        if (client) {
+            try {
+                client.destroy();
+            } catch {
+                /* noop */
+            }
+            client = null;
+        }
     };
+
+    return { client, cleanup };
 }
