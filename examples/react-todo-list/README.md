@@ -1,6 +1,6 @@
 ## React Todo List (Vite)
 
-Lightweight example showing how to use `loro-mirror` and `loro-mirror-react` in a React app with Vite.
+Local-first collaborative todo app demo built on top of `loro-mirror`/`loro-mirror-react`. It persists updates to IndexedDB first, lets teammates join by sharing the current URL, and never requires a login.
 
 ### Scripts
 
@@ -26,4 +26,3 @@ pnpm dev
 ```
 
 Note: The `predev` step builds workspace packages `loro-mirror` and `loro-mirror-react` to ensure their `dist` outputs exist for Vite to resolve.
-

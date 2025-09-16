@@ -3,10 +3,16 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            name="description"
+            content="Local-first collaborative todo app built on loro.dev. Tasks sync through shareable URLs without accounts, while edits persist instantly in IndexedDB."
+        />
         <meta name="theme-color" content="#e06040" />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
-        <title>Loro Todo Example</title>
+        <title>Loro Todo</title>
+        <link rel="preconnect" href="https://sync.loro.dev" crossorigin />
+        <link rel="dns-prefetch" href="https://sync.loro.dev" />
     </head>
     <body>
         <div id="root"></div>

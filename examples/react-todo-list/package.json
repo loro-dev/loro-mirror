@@ -8,7 +8,8 @@
         "predev": "pnpm -r --filter loro-mirror --filter loro-mirror-react build",
         "dev": "vite --force",
         "app:build": "vite build",
-        "preview": "vite preview --strictPort --port 5173"
+        "preview": "vite preview --strictPort --port 5173",
+        "typecheck": "tsc --noEmit"
     },
     "dependencies": {
         "loro-crdt": "^1.7.3",

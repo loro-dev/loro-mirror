@@ -109,7 +109,7 @@ body {
 }
 
 .app {
-    max-width: 720px;
+    max-width: 678px;
     margin: 0px auto;
     padding: 48px 24px 80px 36px; /* extra bottom padding to avoid fixed footer overlap */
     position: relative; /* ensure overlay stays behind content */
@@ -616,7 +616,7 @@ body {
     font-family: inherit; /* match app font family */
     font-size: 15px;
     line-height: 1.35;
-    padding: 6px 42px 6px 8px; /* leave space for floating delete button */
+    padding: 6px 1rem 6px 8px; /* leave space for floating delete button */
     border-radius: 8px;
     outline: none;
     transition:
@@ -640,7 +640,7 @@ body {
 /* Delete button shown on row hover */
 .delete-btn {
     position: absolute;
-    right: 8px;
+    right: 5px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 2;

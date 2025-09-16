@@ -1,4 +1,5 @@
 import React, {
+    Suspense,
     useCallback,
     useEffect,
     useMemo,
@@ -7,49 +8,71 @@ import React, {
     SVGProps,
 } from "react";
 import { useLoroStore } from "loro-mirror-react";
-import { HistoryView } from "./HistoryView";
 import {
     createConfiguredDoc,
     createUndoManager,
-    todoSchema,
     initialTodoState,
-    setupPublicSync,
-    // Auth + URL helpers reused for ephemeral presence
-    importKeyPairFromHex,
-    signSaltTokenHex,
-    buildAuthUrl,
-    SYNC_BASE,
-    ROOM_ID,
-    openDocDb,
-    putDocSnapshot,
-    getDocSnapshot,
-    upsertWorkspace,
-    getWorkspace,
-    listWorkspaces,
-    deleteWorkspace,
-    switchToWorkspace,
-    createNewWorkspace,
-    type WorkspaceRecord,
+    todoSchema,
     type TodoStatus,
-} from "./loro-state";
-import { EphemeralStore } from "loro-crdt";
-import {
-    LoroWebsocketClient,
-    createLoroEphemeralAdaptorFromStore,
-} from "loro-websocket";
+} from "./state/doc";
+import { ROOM_ID, SYNC_BASE } from "./state/constants";
+import type { WorkspaceRecord } from "./state/storage";
 import { useLongPressDrag } from "./useLongPressDrag";
 
-// --------------------
-// Public Sync constants
-// --------------------
-// Sync constants moved to loro-state.ts
+const HistoryView = React.lazy(() => import("./HistoryView"));
 
-// --------------------
-// Encoding helpers
-// --------------------
-// Crypto and encoding helpers moved to loro-state.ts
+type StorageModule = typeof import("./state/storage");
+type PublicSyncModule = typeof import("./state/publicSync");
+type CryptoModule = typeof import("./state/crypto");
 
-// IndexedDB persistence helpers moved to loro-state.ts
+let storageModulePromise: Promise<StorageModule> | null = null;
+function loadStorageModule(): Promise<StorageModule> {
+    if (!storageModulePromise) {
+        storageModulePromise = import("./state/storage");
+    }
+    return storageModulePromise;
+}
+
+let publicSyncModulePromise: Promise<PublicSyncModule> | null = null;
+function loadPublicSyncModule(): Promise<PublicSyncModule> {
+    if (!publicSyncModulePromise) {
+        publicSyncModulePromise = import("./state/publicSync");
+    }
+    return publicSyncModulePromise;
+}
+
+let cryptoModulePromise: Promise<CryptoModule> | null = null;
+function loadCryptoModule(): Promise<CryptoModule> {
+    if (!cryptoModulePromise) {
+        cryptoModulePromise = import("./state/crypto");
+    }
+    return cryptoModulePromise;
+}
+
+
+
+type IdleWindow = Window & {
+    requestIdleCallback?: (cb: IdleRequestCallback) => number;
+    cancelIdleCallback?: (handle: number) => void;
+};
+
+async function switchToWorkspace(id: string): Promise<void> {
+    const { openDocDb, getWorkspace } = await loadStorageModule();
+    const db = await openDocDb();
+    try {
+        const record = await getWorkspace(db, id);
+        if (!record) return;
+        window.location.assign(`/${record.id}#${record.privateHex}`);
+    } finally {
+        db.close();
+    }
+}
+
+async function createNewWorkspace(): Promise<void> {
+    const { generatePairAndUrl } = await loadCryptoModule();
+    const generated = await generatePairAndUrl();
+    window.location.assign(`/${generated.publicHex}#${generated.privateHex}`);
+}
 
 export function MaterialSymbolsKeyboardArrowDown(
     props: SVGProps<SVGSVGElement>,
@@ -172,10 +195,6 @@ export function StreamlinePlumpRecycleBin2Remix(
     );
 }
 
-// IDB helpers are imported from loro-state.ts
-
-// Schema/types are imported from loro-state.ts
-
 export function App() {
     const capitalizeFirst = (s: string): string =>
         s.length ? s.charAt(0).toUpperCase() + s.slice(1) : s;
@@ -184,7 +203,7 @@ export function App() {
     (window as unknown as { doc?: unknown }).doc = doc;
     const undo = useMemo(() => createUndoManager(doc), [doc]);
 
-    const { state, setState } = useLoroStore({
+    const { state, setState } = useLoroStore<typeof todoSchema>({
         doc,
         schema: todoSchema,
         initialState: initialTodoState,
@@ -277,26 +296,57 @@ export function App() {
     const FRESH_WINDOW_MS = 35000; // show as online if beat < 35s ago
     const TOAST_DURATION_MS = 2600; // slightly longer toast display
 
-    // Public Sync setup moved into loro-state.ts
     useEffect(() => {
+        const idleWindow = window as IdleWindow;
         let mounted = true;
         let cleanup: void | (() => void | Promise<void>);
-        (async () => {
-            const c = await setupPublicSync(doc, {
-                setDetached,
-                setOnline,
-                setWorkspaceHex,
-                setShareUrl,
-                setWorkspaces,
-            });
-            if (!mounted) {
-                if (c) void c();
-                return;
+        let idleHandle: number | undefined;
+        let startTimeout: number | undefined;
+
+        const start = async () => {
+            try {
+                const { setupPublicSync } = await loadPublicSyncModule();
+                if (!mounted) return;
+                const c = await setupPublicSync(doc, {
+                    setDetached,
+                    setOnline,
+                    setWorkspaceHex,
+                    setShareUrl,
+                    setWorkspaces,
+                });
+                if (!mounted) {
+                    if (c) void c();
+                    return;
+                }
+                cleanup = c;
+            } catch (error) {
+                // eslint-disable-next-line no-console
+                console.error("Failed to start public sync:", error);
+                if (mounted) setOnline(false);
             }
-            cleanup = c;
-        })();
+        };
+
+        if (typeof idleWindow.requestIdleCallback === "function") {
+            idleHandle = idleWindow.requestIdleCallback(() => {
+                idleHandle = undefined;
+                void start();
+            });
+        } else {
+            startTimeout = window.setTimeout(() => {
+                startTimeout = undefined;
+                void start();
+            }, 200);
+        }
+
         return () => {
             mounted = false;
+            if (
+                idleHandle !== undefined &&
+                typeof idleWindow.cancelIdleCallback === "function"
+            ) {
+                idleWindow.cancelIdleCallback(idleHandle);
+            }
+            if (startTimeout !== undefined) window.clearTimeout(startTimeout);
             if (cleanup) void cleanup();
         };
         // doc is stable (memoized)
@@ -306,57 +356,68 @@ export function App() {
     // Ephemeral presence: join an EphemeralStore room and broadcast presence heartbeat
     useEffect(() => {
         if (!workspaceHex) return;
-        let disposed = false; // guard for React StrictMode double-invoke
+        const idleWindow = window as IdleWindow;
+        let disposed = false;
         let heartbeat: number | undefined;
         let roomCleanup: (() => Promise<void> | void) | undefined;
         let removeVisListener: (() => void) | undefined;
+        let idleHandle: number | undefined;
+        let startTimeout: number | undefined;
 
-        // Helper to parse private key from location
         const parsePrivateHex = (): string | null => {
-            const h = window.location.hash.trim();
-            if (!h || h.length < 2) return null;
-            const hex = h.slice(1);
+            const hash = window.location.hash.trim();
+            if (!hash || hash.length < 2) return null;
+            const hex = hash.slice(1);
             return /^[0-9a-fA-F]+$/.test(hex) ? hex.toLowerCase() : null;
         };
 
         const start = async () => {
             try {
-                // Build ephemeral store and adaptor
-                const store = new EphemeralStore<Record<string, number>>(
-                    PRESENCE_TTL_MS,
-                );
+                const [crdtModule, websocketModule, cryptoModule] =
+                    await Promise.all([
+                        import("loro-crdt"),
+                        import("loro-websocket"),
+                        loadCryptoModule(),
+                    ]);
+                if (disposed) return;
+                const { EphemeralStore } = crdtModule;
+                const { createLoroEphemeralAdaptorFromStore, LoroWebsocketClient } =
+                    websocketModule;
+                const {
+                    importKeyPairFromHex,
+                    signSaltTokenHex,
+                    buildAuthUrl,
+                } = cryptoModule;
+
+                const store = new EphemeralStore<Record<string, number>>(PRESENCE_TTL_MS);
                 const adaptor = createLoroEphemeralAdaptorFromStore(store);
 
-                // Live count: keys starting with "p:" represent per-peer presence
                 const updateCount = () => {
-                    const all = store.getAllStates() as Record<string, unknown>;
+                    const entries = store.getAllStates() as Record<string, unknown>;
                     const now = Date.now();
-                    const peers = Object.entries(all)
+                    const peers = Object.entries(entries)
                         .filter(
-                            ([k, v]) =>
-                                k.startsWith("p:") &&
-                                typeof v === "number" &&
-                                now - (v as number) < FRESH_WINDOW_MS,
+                            ([key, value]) =>
+                                key.startsWith("p:") &&
+                                typeof value === "number" &&
+                                now - (value as number) < FRESH_WINDOW_MS,
                         )
-                        .map(([k]) => k.slice(2))
+                        .map(([key]) => key.slice(2))
                         .sort();
                     setPresencePeers(peers);
-                    const count = peers.length;
-                    setPresenceCount(count > 0 ? count : 1);
+                    setPresenceCount(peers.length > 0 ? peers.length : 1);
                 };
-                const unsub = store.subscribe(() => updateCount());
+                const unsubscribe = store.subscribe(() => updateCount());
                 updateCount();
 
-                // Heartbeat our presence (Last-Write-Wins per key)
                 const myKey = `p:${doc.peerIdStr}`;
                 const sendBeat = () => store.set(myKey, Date.now());
                 sendBeat();
                 heartbeat = window.setInterval(sendBeat, HEARTBEAT_MS);
 
-                // Define local cleanup early so we can call it if disposed flips while awaiting
                 const localCleanup = async () => {
                     try {
-                        unsub();
+                        unsubscribe();
                     } catch {}
                     try {
                         store.delete(myKey as keyof Record<string, number>);
@@ -369,13 +430,12 @@ export function App() {
                     } catch {}
                 };
 
-                // Connect to the public sync and join the same room
                 const privHex = parsePrivateHex();
-                if (!privHex) return;
-                const imported = await importKeyPairFromHex(
-                    workspaceHex,
-                    privHex,
-                );
+                if (!privHex) {
+                    await localCleanup();
+                    return;
+                }
+                const imported = await importKeyPairFromHex(workspaceHex, privHex);
                 if (!imported) {
                     await localCleanup();
                     return;
@@ -410,24 +470,40 @@ export function App() {
                     await localCleanup();
                 };
 
-                // Update on visibility changes too
                 const onVis = () => sendBeat();
                 document.addEventListener("visibilitychange", onVis);
                 removeVisListener = () =>
                     document.removeEventListener("visibilitychange", onVis);
-            } catch {
-                // Ignore presence errors; main doc sync still functions
+            } catch (error) {
+                // eslint-disable-next-line no-console
+                console.warn("Presence setup failed:", error);
             }
         };
 
-        void start();
+        if (typeof idleWindow.requestIdleCallback === "function") {
+            idleHandle = idleWindow.requestIdleCallback(() => {
+                idleHandle = undefined;
+                void start();
+            });
+        } else {
+            startTimeout = window.setTimeout(() => {
+                startTimeout = undefined;
+                void start();
+            }, 400);
+        }
 
         return () => {
             disposed = true;
             if (heartbeat) window.clearInterval(heartbeat);
             if (roomCleanup) void roomCleanup();
             if (removeVisListener) removeVisListener();
-            // Reset presence to a sane default
+            if (
+                idleHandle !== undefined &&
+                typeof idleWindow.cancelIdleCallback === "function"
+            ) {
+                idleWindow.cancelIdleCallback(idleHandle);
+            }
+            if (startTimeout !== undefined) window.clearTimeout(startTimeout);
             setPresencePeers([]);
             setPresenceCount(1);
         };
@@ -436,37 +512,83 @@ export function App() {
     // Debounced persistence to IndexedDB keyed by workspace
     useEffect(() => {
         if (!workspaceHex) return;
+        const idleWindow = window as IdleWindow;
         let disposed = false;
         let dbRef: IDBDatabase | null = null;
         let saveTimer: number | undefined;
-
-        const init = async () => {
-            try {
-                dbRef = await openDocDb();
-            } catch (e) {
-                // eslint-disable-next-line no-console
-                console.warn("IndexedDB open failed:", e);
-            }
-        };
-        void init();
+        let storage: StorageModule | null = null;
+        let pendingSave = false;
+        let ensureDbPromise: Promise<void> | null = null;
+        let ensureScheduled = false;
+        let idleHandle: number | undefined;
+        let ensureTimeout: number | undefined;
 
         const scheduleSave = () => {
-            if (!dbRef) return; // wait until DB opens
+            if (!dbRef || !storage) return;
             if (saveTimer) window.clearTimeout(saveTimer);
             saveTimer = window.setTimeout(async () => {
-                if (disposed || !dbRef) return;
+                if (disposed || !dbRef || !storage) return;
                 try {
                     const bytes = doc.export({ mode: "snapshot" as const });
-                    await putDocSnapshot(dbRef, workspaceHex, bytes);
-                } catch (e) {
+                    await storage.putDocSnapshot(dbRef, workspaceHex, bytes);
+                    pendingSave = false;
+                } catch (error) {
                     // eslint-disable-next-line no-console
-                    console.warn("IndexedDB save failed:", e);
+                    console.warn("IndexedDB save failed:", error);
                 }
             }, 400);
         };
 
+        const ensureDb = async () => {
+            if (dbRef) return;
+            try {
+                const module = await loadStorageModule();
+                storage = module;
+                dbRef = await module.openDocDb();
+            } catch (error) {
+                // eslint-disable-next-line no-console
+                console.warn("IndexedDB open failed:", error);
+            } finally {
+                ensureScheduled = false;
+                if (!dbRef) {
+                    ensureDbPromise = null;
+                }
+                if (!disposed && pendingSave && dbRef && storage) {
+                    scheduleSave();
+                }
+            }
+        };
+
+        const scheduleEnsureDb = () => {
+            if (dbRef || ensureDbPromise || ensureScheduled) return;
+            ensureScheduled = true;
+            if (typeof idleWindow.requestIdleCallback === "function") {
+                idleHandle = idleWindow.requestIdleCallback(() => {
+                    idleHandle = undefined;
+                    ensureDbPromise = ensureDb();
+                });
+            } else {
+                ensureTimeout = window.setTimeout(() => {
+                    ensureTimeout = undefined;
+                    ensureDbPromise = ensureDb();
+                }, 350);
+            }
+        };
+
+        const markSaveNeeded = () => {
+            pendingSave = true;
+            if (dbRef && storage) {
+                scheduleSave();
+            } else {
+                scheduleEnsureDb();
+            }
+        };
+
+        scheduleEnsureDb();
+
         const unsub = doc.subscribe(() => {
-            scheduleSave();
+            if (disposed) return;
+            markSaveNeeded();
         });
 
         return () => {
@@ -474,51 +596,82 @@ export function App() {
             unsub();
             if (saveTimer) window.clearTimeout(saveTimer);
             if (dbRef) dbRef.close();
+            if (
+                idleHandle !== undefined &&
+                typeof idleWindow.cancelIdleCallback === "function"
+            ) {
+                idleWindow.cancelIdleCallback(idleHandle);
+            }
+            if (ensureTimeout !== undefined) window.clearTimeout(ensureTimeout);
         };
     }, [doc, workspaceHex]);
 
-    // Load workspace list initially
+    // Load workspace list initially after the first paint
     useEffect(() => {
         let alive = true;
-        (async () => {
+        const idleWindow = window as IdleWindow;
+        let idleHandle: number | undefined;
+        let startTimeout: number | undefined;
+
+        const run = async () => {
             try {
-                const db = await openDocDb();
-                const all = await listWorkspaces(db);
+                const storage = await loadStorageModule();
+                const db = await storage.openDocDb();
+                const all = await storage.listWorkspaces(db);
                 if (alive) setWorkspaces(all);
                 db.close();
-            } catch (e) {
+            } catch (error) {
                 // eslint-disable-next-line no-console
-                console.warn("IndexedDB list workspaces failed:", e);
+                console.warn("IndexedDB list workspaces failed:", error);
             }
-        })();
+        };
+
+        if (typeof idleWindow.requestIdleCallback === "function") {
+            idleHandle = idleWindow.requestIdleCallback(() => {
+                idleHandle = undefined;
+                void run();
+            });
+        } else {
+            startTimeout = window.setTimeout(() => {
+                startTimeout = undefined;
+                void run();
+            }, 320);
+        }
+
         return () => {
             alive = false;
+            if (
+                idleHandle !== undefined &&
+                typeof idleWindow.cancelIdleCallback === "function"
+            ) {
+                idleWindow.cancelIdleCallback(idleHandle);
+            }
+            if (startTimeout !== undefined) window.clearTimeout(startTimeout);
         };
     }, []);
-
-    // Workspace navigation helpers imported from loro-state.ts
 
     const removeCurrentWorkspace = useCallback(async () => {
         if (!workspaceHex) return;
         try {
-            // We are deleting the current workspace; skip forced snapshot
             skipSnapshotOnUnloadRef.current = true;
-            const db = await openDocDb();
-            await deleteWorkspace(db, workspaceHex);
-            const all = await listWorkspaces(db);
-            setWorkspaces(all);
-            db.close();
-            // If we removed current, move to another or create new
-            const next = all.find((w) => w.id !== workspaceHex) ?? null;
-            if (next) {
-                window.location.assign(`/${next.id}#${next.privateHex}`);
-            } else {
-                await createNewWorkspace();
+            const storage = await loadStorageModule();
+            const db = await storage.openDocDb();
+            try {
+                await storage.deleteWorkspace(db, workspaceHex);
+                const all = await storage.listWorkspaces(db);
+                setWorkspaces(all);
+                const next = all.find((w) => w.id !== workspaceHex) ?? null;
+                if (next) {
+                    window.location.assign(`/${next.id}#${next.privateHex}`);
+                } else {
+                    await createNewWorkspace();
+                }
+            } finally {
+                db.close();
             }
-        } catch (e) {
+        } catch (error) {
             // eslint-disable-next-line no-console
-            console.warn("Delete workspace failed:", e);
-            // Reset skip flag if deletion fails
+            console.warn("Delete workspace failed:", error);
             skipSnapshotOnUnloadRef.current = false;
         }
     }, [workspaceHex]);
@@ -527,13 +680,17 @@ export function App() {
     const persistSnapshotNow = useCallback(async (): Promise<void> => {
         if (!workspaceHex) return;
         try {
-            const db = await openDocDb();
-            const bytes = doc.export({ mode: "snapshot" as const });
-            await putDocSnapshot(db, workspaceHex, bytes);
-            db.close();
-        } catch (e) {
+            const storage = await loadStorageModule();
+            const db = await storage.openDocDb();
+            try {
+                const bytes = doc.export({ mode: "snapshot" as const });
+                await storage.putDocSnapshot(db, workspaceHex, bytes);
+            } finally {
+                db.close();
+            }
+        } catch (error) {
             // eslint-disable-next-line no-console
-            console.warn("Forced snapshot save failed:", e);
+            console.warn("Forced snapshot save failed:", error);
         }
     }, [doc, workspaceHex]);
 
@@ -546,7 +703,7 @@ export function App() {
 
     // Keep local title in sync with CRDT state
     useEffect(() => {
-        const name = (state as any).workspace?.name as string | undefined;
+        const name = state.workspace?.name;
         if (typeof name === "string" && name !== workspaceTitle) {
             setWorkspaceTitle(name);
         }
@@ -559,22 +716,25 @@ export function App() {
         let timer: number | undefined;
         timer = window.setTimeout(async () => {
             try {
-                const db = await openDocDb();
-                const existing = await getWorkspace(db, workspaceHex);
-                if (existing) {
-                    const rec: WorkspaceRecord = {
-                        ...existing,
-                        name: workspaceTitle,
-                        // keep lastUsedAt unchanged on name update
-                    };
-                    await upsertWorkspace(db, rec);
-                    const all = await listWorkspaces(db);
-                    setWorkspaces(all);
+                const storage = await loadStorageModule();
+                const db = await storage.openDocDb();
+                try {
+                    const existing = await storage.getWorkspace(db, workspaceHex);
+                    if (existing) {
+                        const rec: WorkspaceRecord = {
+                            ...existing,
+                            name: workspaceTitle,
+                        };
+                        await storage.upsertWorkspace(db, rec);
+                        const all = await storage.listWorkspaces(db);
+                        setWorkspaces(all);
+                    }
+                } finally {
                     db.close();
                 }
-            } catch (e) {
+            } catch (error) {
                 // eslint-disable-next-line no-console
-                console.warn("Persist workspace name failed:", e);
+                console.warn("Persist workspace name failed:", error);
             }
         }, 300);
         return () => {
@@ -1251,7 +1411,11 @@ export function App() {
                     )}
                 </button>
             </div>
-            {showHistory && <HistoryView doc={doc} />}
+            {showHistory && (
+                <Suspense fallback={null}>
+                    <HistoryView doc={doc} />
+                </Suspense>
+            )}
 
             <ul
                 className="todo-list"
