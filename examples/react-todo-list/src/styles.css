@@ -111,7 +111,7 @@ body {
 .app {
     max-width: 720px;
     margin: 0px auto;
-    padding: 48px 24px 80px 24px; /* extra bottom padding to avoid fixed footer overlap */
+    padding: 48px 24px 80px 36px; /* extra bottom padding to avoid fixed footer overlap */
     position: relative; /* ensure overlay stays behind content */
     z-index: 1;
 }
@@ -144,7 +144,6 @@ body {
     grid-template-columns: minmax(0, 1fr) auto; /* input grows, Add stays right */
     gap: 12px;
     margin-bottom: 14px;
-    backdrop-filter: blur(6px);
 }
 
 .todo-input {
@@ -341,6 +340,10 @@ body {
     font-weight: 800;
     letter-spacing: 0.2px;
 }
+.workspace-title-input,
+.workspace-title-measure {
+    transition: font-size 0.2s ease;
+}
 .workspace-title-input::placeholder {
     color: color-mix(in oklab, var(--brand) 40%, var(--muted));
 }
@@ -361,6 +364,11 @@ body {
     width: 28px;
     height: 28px;
     border-radius: 6px;
+    background: transparent;
+}
+.title-dropdown:hover,
+.title-dropdown:focus-visible {
+    background: transparent;
 }
 .workspace-selector-pop {
     position: absolute;
@@ -459,9 +467,33 @@ body {
     display: flex; /* children vertically center, even with multi-line */
     gap: 8px;
     align-items: center;
-    padding: 6px 10px;
+    padding: 6px 12px 6px 12px;
     transition: transform 240ms ease;
     will-change: transform;
+}
+
+.todo-item.selected {
+    border-color: color-mix(in oklab, var(--brand) 55%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand) 45%, transparent);
+}
+
+.todo-item.selected .todo-text {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    caret-color: var(--text);
+}
+
+.todo-item.dragging {
+    box-shadow: 0 16px 32px rgba(17, 18, 19, 0.18);
+    cursor: grabbing;
+}
+
+.todo-item:not(.selected) .todo-text {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    caret-color: transparent;
 }
 
 /* Insertion preview line */
@@ -501,12 +533,22 @@ body {
     cursor: grab;
     -webkit-user-select: none;
     user-select: none;
+    touch-action: none;
 }
 .drag-handle:active {
     cursor: grabbing;
 }
 .todo-item:hover .drag-handle {
     opacity: 1;
+}
+
+@media (hover: none) {
+    .drag-handle {
+        display: none;
+    }
+    .todo-item {
+        padding-left: 18px;
+    }
 }
 
 /* Deprecated drag-over visual removed in favor of insert line */
@@ -521,17 +563,15 @@ body {
     flex: 0 0 auto;
     min-width: 12px;
     min-height: 12px;
-    /* Ensure brand-colored border shows consistently */
-    -webkit-appearance: none;
-    appearance: none;
     background: transparent;
     border: 2px solid var(--brand);
     border-radius: 4px;
-    display: inline-grid;
-    place-content: center;
-    accent-color: var(
-        --brand
-    ); /* fallback for browsers honoring accent-color */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: border-color 120ms ease;
 }
 .todo-checkbox::after {
     content: "";
@@ -544,16 +584,24 @@ body {
     background: var(--brand);
     border-radius: 2px;
 }
-.todo-checkbox:checked::after {
+.todo-checkbox.checked::after {
     transform: scale(1);
 }
 .todo-item.done .todo-checkbox {
-    /* Gray accent for completed items; keep brand border */
-    accent-color: var(--disabled-text);
     border-color: var(--brand);
 }
-.todo-item.done .todo-checkbox:checked::after {
+.todo-item.done .todo-checkbox.checked::after {
     background: var(--disabled-text);
+}
+.todo-checkbox:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand) 36%, transparent);
+}
+
+.todo-checkbox.disabled {
+    opacity: 0.6;
+    cursor: default;
+    pointer-events: none;
 }
 
 .todo-text {
@@ -563,6 +611,8 @@ body {
     background: transparent;
     border: 1px solid transparent;
     color: var(--text);
+    caret-color: var(--text);
+    -webkit-touch-callout: default;
     font-family: inherit; /* match app font family */
     font-size: 15px;
     line-height: 1.35;
@@ -610,6 +660,8 @@ body {
         color 120ms ease,
         transform 80ms ease,
         background 120ms ease;
+    -webkit-user-select: none;
+    user-select: none;
 }
 .delete-btn:hover {
     color: var(--text);
@@ -793,4 +845,26 @@ body {
     border-radius: 50%;
     background: var(--brand);
     border: 2px solid #ffffff;
+}
+
+@media (max-width: 480px) {
+    .workspace-title-input,
+    .workspace-title-measure {
+        font-size: 1.5rem;
+    }
+
+    .app {
+        padding: 28px 16px 72px 16px;
+    }
+
+    .drag-handle {
+        left: -28px;
+    }
+
+    .title-dropdown {
+        width: 24px;
+        height: 24px;
+        font-size: 18px;
+        margin-left: -2px;
+    }
 }

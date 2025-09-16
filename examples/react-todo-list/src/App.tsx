@@ -37,6 +37,7 @@ import {
     LoroWebsocketClient,
     createLoroEphemeralAdaptorFromStore,
 } from "loro-websocket";
+import { useLongPressDrag } from "./useLongPressDrag";
 
 // --------------------
 // Public Sync constants
@@ -213,6 +214,7 @@ export function App() {
     const wsMenuRef = useRef<HTMLDivElement | null>(null);
     // Flag to skip snapshot on navigations that intentionally delete the workspace
     const skipSnapshotOnUnloadRef = useRef<boolean>(false);
+    const [selectedTextCid, setSelectedTextCid] = useState<string | null>(null);
     const hasDone = useMemo(
         () => state.todos.some((t) => t.status === "done"),
         [state.todos],
@@ -222,7 +224,6 @@ export function App() {
     const [itemHeights, setItemHeights] = useState<Record<string, number>>({});
     const ITEM_GAP = 10; // vertical gap between items (px)
     const DEFAULT_HEIGHT = 48; // fallback before first measurement
-
     const handleRowHeight = useCallback((cid: string, h: number) => {
         setItemHeights((prev) => {
             if (prev[cid] === h) return prev;
@@ -241,6 +242,12 @@ export function App() {
         const height = Math.max(0, y - (state.todos.length > 0 ? ITEM_GAP : 0));
         return { pos, height } as const;
     }, [state.todos, itemHeights]);
+
+    useEffect(() => {
+        if (!selectedTextCid) return;
+        if (state.todos.some((t) => t.$cid === selectedTextCid)) return;
+        setSelectedTextCid(null);
+    }, [selectedTextCid, state.todos]);
 
     // Ensure mobile viewport is not scalable (disable pinch-zoom)
     useEffect(() => {
@@ -727,7 +734,7 @@ export function App() {
         setDragCid(cid);
     }, []);
 
-    const handleDragEnd = useCallback(() => {
+    const handleDragEndBase = useCallback(() => {
         setDragCid(null);
         setInsertIndex(null);
     }, []);
@@ -788,6 +795,54 @@ export function App() {
         },
         [commitDrop],
     );
+
+    const shouldHandleLongPress = useCallback(
+        (cid: string, e: React.PointerEvent<HTMLLIElement>) => {
+            if (detached) return false;
+            const target = e.target as HTMLElement | null;
+            if (!target) return false;
+            if (target.closest(".delete-btn")) return false;
+            if (e.pointerType === "mouse") {
+                return !!target.closest(".drag-handle");
+            }
+            const textarea = target.closest("textarea.todo-text");
+            if (textarea) {
+                return selectedTextCid !== cid;
+            }
+            if (target.closest("input, select, button, a")) {
+                return false;
+            }
+            return true;
+        },
+        [detached, selectedTextCid],
+    );
+
+    const handleTextSelect = useCallback((cid: string) => {
+        setSelectedTextCid(cid);
+    }, []);
+
+    const handleTextDeselect = useCallback((cid: string) => {
+        setSelectedTextCid((prev) => (prev === cid ? null : prev));
+    }, []);
+
+    const {
+        manualDrag,
+        handlePointerDown: handleManualPointerDown,
+        handlePointerMove: handleManualPointerMove,
+        handlePointerUp: handleManualPointerUp,
+        handlePointerCancel: handleManualPointerCancel,
+    } = useLongPressDrag({
+        listRef,
+        positions,
+        itemHeights,
+        defaultHeight: DEFAULT_HEIGHT,
+        detached,
+        onDragStart: handleDragStart,
+        onDragEnd: handleDragEndBase,
+        onUpdateInsertIndex: updateInsertIndexFromPointer,
+        onCommitDrop: commitDrop,
+        shouldHandlePointerDown: shouldHandleLongPress,
+    });
 
     // Global dragover/drop to handle dropping outside the list bounds
     useEffect(() => {
@@ -1203,7 +1258,10 @@ export function App() {
                 ref={listRef}
                 onDragOver={handleListDragOver}
                 onDrop={handleListDrop}
-                style={{ height: positions.height }}
+                style={{
+                    height: positions.height,
+                    touchAction: manualDrag ? "none" : undefined,
+                }}
             >
                 {(() => {
                     const stableTodos = [...state.todos].sort((a, b) =>
@@ -1221,6 +1279,68 @@ export function App() {
                             insertIndex != null &&
                             insertIndex === state.todos.length &&
                             realIndex === state.todos.length - 1;
+                        const baseY = positions.pos[t.$cid] ?? 0;
+                        let translateY = baseY;
+                        let transition = "transform 240ms ease";
+                        let zIndex = 1;
+                        const activeDragCid = manualDrag?.cid ?? dragCid;
+                        const isManualActive = manualDrag?.cid === t.$cid;
+                        const activeDragIndex =
+                            activeDragCid != null
+                                ? (indexByCid[activeDragCid] ?? -1)
+                                : -1;
+                        const activeDragHeight =
+                            activeDragCid != null
+                                ? (manualDrag?.height ??
+                                  itemHeights[activeDragCid] ??
+                                  DEFAULT_HEIGHT)
+                                : DEFAULT_HEIGHT;
+                        if (isManualActive && manualDrag) {
+                            const rawY =
+                                manualDrag.clientY -
+                                manualDrag.listTop -
+                                manualDrag.offsetY;
+                            const minY = -manualDrag.height * 0.6;
+                            const maxY = Math.max(
+                                positions.height - manualDrag.height * 0.4,
+                                minY,
+                            );
+                            const clampedY = Math.min(
+                                Math.max(rawY, minY),
+                                maxY,
+                            );
+                            translateY = clampedY;
+                            transition = "transform 0ms linear";
+                            zIndex = 5;
+                        } else if (
+                            activeDragCid === t.$cid &&
+                            dragCid === t.$cid
+                        ) {
+                            transition = "transform 0ms linear";
+                            zIndex = 5;
+                        }
+                        if (
+                            activeDragCid &&
+                            activeDragIndex !== -1 &&
+                            insertIndex != null &&
+                            t.$cid !== activeDragCid
+                        ) {
+                            if (insertIndex > activeDragIndex) {
+                                if (
+                                    realIndex > activeDragIndex &&
+                                    realIndex <= insertIndex - 1
+                                ) {
+                                    translateY -= activeDragHeight + ITEM_GAP;
+                                }
+                            } else if (insertIndex <= activeDragIndex) {
+                                if (
+                                    realIndex >= insertIndex &&
+                                    realIndex < activeDragIndex
+                                ) {
+                                    translateY += activeDragHeight + ITEM_GAP;
+                                }
+                            }
+                        }
                         return (
                             <TodoItemRow
                                 key={t.$cid}
@@ -1231,17 +1351,29 @@ export function App() {
                                 dragging={dragCid === t.$cid}
                                 insertTop={!!isInsertTop}
                                 insertBottom={!!isInsertBottom}
-                                onDragStart={handleDragStart}
-                                onDragEnd={handleDragEnd}
+                                onManualPointerDown={handleManualPointerDown}
+                                onManualPointerMove={handleManualPointerMove}
+                                onManualPointerUp={handleManualPointerUp}
+                                onManualPointerCancel={
+                                    handleManualPointerCancel
+                                }
+                                textSelected={selectedTextCid === t.$cid}
+                                onTextSelect={handleTextSelect}
+                                onTextDeselect={handleTextDeselect}
                                 detached={detached}
                                 onHeightChange={handleRowHeight}
                                 style={{
                                     position: "absolute",
                                     left: 0,
                                     right: 0,
-                                    transform: `translateY(${positions.pos[t.$cid] ?? 0}px)`,
-                                    transition: "transform 240ms ease",
+                                    transform: `translateY(${translateY}px)`,
+                                    transition,
                                     willChange: "transform",
+                                    zIndex,
+                                    touchAction:
+                                        manualDrag?.cid === t.$cid
+                                            ? "none"
+                                            : undefined,
                                 }}
                             />
                         );
@@ -1283,8 +1415,13 @@ function TodoItemRow({
     dragging,
     insertTop,
     insertBottom,
-    onDragStart,
-    onDragEnd,
+    onManualPointerDown,
+    onManualPointerMove,
+    onManualPointerUp,
+    onManualPointerCancel,
+    textSelected = false,
+    onTextSelect,
+    onTextDeselect,
     detached,
     onHeightChange,
     style,
@@ -1296,8 +1433,25 @@ function TodoItemRow({
     dragging: boolean;
     insertTop: boolean;
     insertBottom: boolean;
-    onDragStart: (cid: string) => void;
-    onDragEnd: () => void;
+    onManualPointerDown?: (
+        cid: string,
+        e: React.PointerEvent<HTMLLIElement>,
+    ) => void;
+    onManualPointerMove?: (
+        cid: string,
+        e: React.PointerEvent<HTMLLIElement>,
+    ) => void;
+    onManualPointerUp?: (
+        cid: string,
+        e: React.PointerEvent<HTMLLIElement>,
+    ) => void;
+    onManualPointerCancel?: (
+        cid: string,
+        e: React.PointerEvent<HTMLLIElement>,
+    ) => void;
+    textSelected?: boolean;
+    onTextSelect?: (cid: string) => void;
+    onTextDeselect?: (cid: string) => void;
     detached: boolean;
     onHeightChange?: (cid: string, height: number) => void;
     style?: React.CSSProperties;
@@ -1306,6 +1460,7 @@ function TodoItemRow({
     const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
     const rowRef = React.useRef<HTMLLIElement | null>(null);
     const isComposingRef = React.useRef<boolean>(false);
+    const touchSkipChangeRef = React.useRef<boolean>(false);
     const [localText, setLocalText] = React.useState<string>(todo.text);
     const sanitizeSingleLine = React.useCallback((s: string): string => {
         // Replace line breaks with spaces; strip stray CR
@@ -1314,6 +1469,9 @@ function TodoItemRow({
 
     // Restore caret/selection after state-driven rerender
     React.useLayoutEffect(() => {
+        if (localText.includes("\n")) {
+            setLocalText(sanitizeSingleLine(localText));
+        }
         if (selection.current && inputRef.current) {
             const { start, end } = selection.current;
             try {
@@ -1359,53 +1517,105 @@ function TodoItemRow({
     }, [localText, isDone]);
     return (
         <li
-            className={`todo-item card${isDone ? " done" : ""}${dragging ? " dragging" : ""}${insertTop ? " insert-top" : ""}${insertBottom ? " insert-bottom" : ""}`}
+            className={`todo-item card${isDone ? " done" : ""}${dragging ? " dragging" : ""}${insertTop ? " insert-top" : ""}${insertBottom ? " insert-bottom" : ""}${textSelected ? " selected" : ""}`}
             ref={rowRef}
             data-cid={todo.$cid}
             style={style}
+            onPointerDown={(e) => {
+                if (
+                    (e.target as HTMLElement | null)?.closest(".todo-checkbox")
+                ) {
+                    return;
+                }
+                onManualPointerDown?.(todo.$cid, e);
+            }}
+            onPointerMove={(e) => {
+                if (
+                    (e.target as HTMLElement | null)?.closest(".todo-checkbox")
+                ) {
+                    return;
+                }
+                onManualPointerMove?.(todo.$cid, e);
+            }}
+            onPointerUp={(e) => {
+                if (
+                    (e.target as HTMLElement | null)?.closest(".todo-checkbox")
+                ) {
+                    return;
+                }
+                onManualPointerUp?.(todo.$cid, e);
+            }}
+            onPointerCancel={(e) => {
+                if (
+                    (e.target as HTMLElement | null)?.closest(".todo-checkbox")
+                ) {
+                    return;
+                }
+                onManualPointerCancel?.(todo.$cid, e);
+            }}
         >
             <button
                 className="drag-handle"
-                draggable={!detached}
-                onDragStart={(e) => {
-                    // Hint move semantics and ensure we have some drag data
-                    try {
-                        e.dataTransfer?.setData("text/plain", todo.$cid);
-                        if (e.dataTransfer)
-                            e.dataTransfer.effectAllowed = "move";
-                    } catch {}
-                    onDragStart(todo.$cid);
-                }}
-                onDragEnd={() => onDragEnd()}
+                draggable={false}
                 aria-label="Drag to reorder"
                 title="Drag to reorder"
             >
                 ☰
             </button>
-            <input
-                type="checkbox"
-                className="todo-checkbox"
-                checked={isDone}
-                onChange={(e) =>
-                    onDoneChange(todo.$cid, e.currentTarget.checked)
-                }
+            <div
+                aria-checked={isDone}
                 aria-label={isDone ? "Mark as todo" : "Mark as done"}
-                disabled={detached}
+                tabIndex={detached ? -1 : 0}
+                className={`todo-checkbox${isDone ? " checked" : ""}${detached ? " disabled" : ""}`}
+                onPointerUp={(e) => {
+                    if (detached) return;
+                    if (e.pointerType === "touch") {
+                        touchSkipChangeRef.current = true;
+                        onDoneChange(todo.$cid, !isDone);
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                }}
+                onPointerCancel={(e) => {
+                    if (e.pointerType === "touch") {
+                        touchSkipChangeRef.current = false;
+                    }
+                }}
+                onClick={(e) => {
+                    if (detached) return;
+                    if (touchSkipChangeRef.current) {
+                        touchSkipChangeRef.current = false;
+                        return;
+                    }
+                    onDoneChange(todo.$cid, !isDone);
+                }}
             />
             <textarea
                 ref={inputRef}
                 className="todo-text"
                 value={localText}
                 rows={1}
+                onPointerDown={(e) => {
+                    if (textSelected || detached) return;
+                    if (e.pointerType === "touch" || e.pointerType === "pen") {
+                        // Prevent iOS long-press text selection when not selected yet
+                        if (e.cancelable) e.preventDefault();
+                        inputRef.current?.blur();
+                    }
+                }}
                 onFocus={(e) => {
                     const el = e.currentTarget;
                     el.style.height = "auto";
                     el.style.height = `${el.scrollHeight}px`;
+                    onTextSelect?.(todo.$cid);
                 }}
                 onInput={(e) => {
                     const el = e.currentTarget;
                     el.style.height = "auto";
                     el.style.height = `${el.scrollHeight}px`;
+                }}
+                onBlur={() => {
+                    onTextDeselect?.(todo.$cid);
                 }}
                 onKeyDown={(e) => {
                     if (!isComposingRef.current && e.key === "Enter") {
