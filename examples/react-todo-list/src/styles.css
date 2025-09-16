@@ -110,9 +110,9 @@ body {
 
 .app {
     max-width: 678px;
-    margin: 0px auto;
-    padding: 48px 24px 80px 36px; /* extra bottom padding to avoid fixed footer overlap */
-    position: relative; /* ensure overlay stays behind content */
+    margin: 0 auto;
+    padding: 48px 24px 0px 36px;
+    position: relative;
     z-index: 1;
 }
 
@@ -473,6 +473,7 @@ body {
 }
 
 .todo-list {
+    min-height: calc(100vh - 290px);
     list-style: none;
     padding: 0;
     margin: 0;
@@ -765,21 +766,20 @@ body {
 
 /* Footer */
 .app-footer {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--bg);
-    padding: 10px 16px;
+    background: color-mix(in srgb, var(--bg) 50%, transparent);
+    padding: 12px 0px 16px;
     border-top: 1px solid
         color-mix(in oklab, var(--btn-border) 60%, var(--card));
     color: var(--muted);
     font-size: 12px;
-    z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
+    margin-top: 32px;
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+    box-sizing: border-box;
 }
 .app-footer a {
     color: var(--muted);
@@ -804,7 +804,7 @@ body {
 .toast {
     position: fixed;
     left: 50%;
-    bottom: 72px; /* sits above fixed footer */
+    bottom: 32px;
     transform: translateX(-50%);
     z-index: 20; /* above footer (z:10) */
     background: var(--card);
@@ -871,7 +871,7 @@ body {
     }
 
     .app {
-        padding: 28px 16px 72px 16px;
+        padding: 28px 16px 0px 16px;
     }
 
     .drag-handle {
@@ -883,5 +883,9 @@ body {
         height: 24px;
         font-size: 18px;
         margin-left: -2px;
+    }
+
+    .todo-list {
+        min-height: calc(100vh - 260px);
     }
 }
