@@ -4,20 +4,17 @@
         "packages/core": {
             "release-type": "node",
             "component": "loro-mirror",
-            "changelog-path": "packages/core/CHANGELOG.md",
-            "release-as": "0.1.0"
+            "changelog-path": "packages/core/CHANGELOG.md"
         },
         "packages/react": {
             "release-type": "node",
             "component": "loro-mirror-react",
-            "changelog-path": "packages/react/CHANGELOG.md",
-            "release-as": "0.1.0"
+            "changelog-path": "packages/react/CHANGELOG.md"
         },
         "packages/jotai": {
             "release-type": "node",
             "component": "loro-mirror-jotai",
-            "changelog-path": "packages/jotai/CHANGELOG.md",
-            "release-as": "0.1.0"
+            "changelog-path": "packages/jotai/CHANGELOG.md"
         }
     }
 }
