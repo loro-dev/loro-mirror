@@ -43,11 +43,9 @@
     ],
     "author": "Loro Team",
     "license": "MIT",
-    "dependencies": {
-        "loro-mirror": "workspace:*"
-    },
     "peerDependencies": {
         "loro-crdt": "^1.7.1",
+        "loro-mirror": "workspace:*",
         "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
     },
     "devDependencies": {
