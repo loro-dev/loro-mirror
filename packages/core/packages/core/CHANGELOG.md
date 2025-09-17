@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v0.1.0...loro-mirror-v0.1.1) (2025-09-17)
+
+
+### Bug Fixes
+
+* can be unassigned during diff, so allow null return for idSelector ([2bfdaf2](https://github.com/loro-dev/loro-mirror/commit/2bfdaf2e7d6ee2b71e1c296760aa66a155c7fb11))
+
 ## [0.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v0.1.0...loro-mirror-v0.1.0) (2025-09-12)
 
 
