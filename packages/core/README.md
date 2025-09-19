@@ -2,10 +2,10 @@
 
 ## Quick Start
 
-Define a schema and wire a store to a `LoroDoc`.
+Define a schema and instantiate a `Mirror` with a `LoroDoc`.
 
 ```ts
-import { createStore, schema } from "loro-mirror";
+import { Mirror, schema } from "loro-mirror";
 import { LoroDoc } from "loro-crdt";
 
 const doc = new LoroDoc();
@@ -27,7 +27,7 @@ const appSchema = schema({
     notes: schema.LoroText(),
 });
 
-const store = createStore({ doc, schema: appSchema });
+const store = new Mirror({ doc, schema: appSchema });
 
 // Read state
 const state = store.getState();
@@ -52,8 +52,6 @@ const unsubscribe = store.subscribe((next, { direction }) => {
     // direction: "FROM_LORO" | "TO_LORO"
 });
 ```
-
-Tip: If you need direct access, `store.getMirror()` returns the underlying `Mirror`.
 
 ## Installation
 
@@ -92,15 +90,6 @@ Trees are advanced usage; see Advanced: Trees at the end.
 
 Types: `SyncDirection`, `UpdateMetadata`, `SetStateOptions`.
 
-### Store
-
-- `createStore({ doc, schema, initialState?, validateUpdates?=true, throwOnValidationError?=true, debug?=false })`
-    - Returns: `{ getState, setState, subscribe, getMirror, getLoro }`
-
-### Reducer Helper
-
-- `createReducer(handlers) -> (store) => dispatch(type, payload)`
-    - Handlers get an Immer draft; call `dispatch("addTodo", { text })` etc.
 
 ### Schema Builder
 
@@ -143,9 +132,9 @@ Trees are for hierarchical data where each node has a `data` map. The state shap
 ```ts
 const node = schema.LoroMap({ name: schema.String({ required: true }) });
 const s = schema({ tree: schema.LoroTree(node) });
-const store = createStore({ doc: new LoroDoc(), schema: s });
+const mirror = new Mirror({ doc: new LoroDoc(), schema: s });
 
-await store.setState((st) => {
+await mirror.setState((st) => {
     st.tree.push({ data: { name: "root" }, children: [] });
 });
 ```

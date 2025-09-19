@@ -5,8 +5,7 @@
 
 // Re-export all public APIs
 export * from "./schema";
-export * from "./core";
-export * from "./constants";
+export { Mirror, toNormalizedJson } from "./core";
 
 // Default export
 import * as schema from "./schema";

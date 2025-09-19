@@ -35,7 +35,7 @@ pnpm add loro-mirror loro-crdt
 
 ```typescript
 import { LoroDoc } from "loro-crdt";
-import { schema, createStore } from "loro-mirror";
+import { Mirror, schema } from "loro-mirror";
 
 // Define your schema
 const todoSchema = schema({
@@ -51,8 +51,8 @@ const todoSchema = schema({
 
 // Create a Loro document
 const doc = new LoroDoc();
-// Create a store
-const store = createStore({
+// Create a mirror
+const mirror = new Mirror({
     doc,
     schema: todoSchema,
     initialState: { todos: [] },
@@ -60,7 +60,7 @@ const store = createStore({
 
 // Update the state (immutable update)
 // Note: setState is async; await it in non-React code
-await store.setState((s) => ({
+await mirror.setState((s) => ({
     ...s,
     todos: [
         ...s.todos,
@@ -72,7 +72,7 @@ await store.setState((s) => ({
 }));
 
 // Or: draft-style updates (mutate a draft)
-await store.setState((state) => {
+await mirror.setState((state) => {
     state.todos.push({
         text: "Learn Loro Mirror",
         completed: false,
@@ -82,7 +82,7 @@ await store.setState((state) => {
 });
 
 // Subscribe to state changes
-store.subscribe((state) => {
+mirror.subscribe((state) => {
     console.log("State updated:", state);
 });
 ```
