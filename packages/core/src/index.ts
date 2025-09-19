@@ -5,7 +5,16 @@
 
 // Re-export all public APIs
 export * from "./schema";
-export { Mirror, toNormalizedJson } from "./core";
+export {
+    Mirror,
+    toNormalizedJson,
+    type MirrorOptions,
+    type SetStateOptions,
+    type UpdateMetadata,
+    type SubscriberCallback,
+    type InferContainerOptions,
+    SyncDirection,
+} from "./core";
 
 // Default export
 import * as schema from "./schema";
