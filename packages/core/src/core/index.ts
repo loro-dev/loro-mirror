@@ -2,6 +2,11 @@
  * Core mirroring functionality for syncing application state with Loro CRDT
  */
 
-export * from "./mirror";
-export * from "./state";
-export * from "./utils";
+export { Mirror, SyncDirection, toNormalizedJson } from "./mirror";
+export type {
+    InferContainerOptions,
+    MirrorOptions,
+    SetStateOptions,
+    SubscriberCallback,
+    UpdateMetadata,
+} from "./mirror";

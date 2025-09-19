@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { LoroDoc } from "loro-crdt";
-import { createStore, schema, validateSchema } from "../src";
+import { Mirror, schema, validateSchema } from "../src";
 
 describe("README Quick Start examples", () => {
     it("creates a store, updates immutably and via draft, and injects cid", async () => {
@@ -14,7 +14,7 @@ describe("README Quick Start examples", () => {
         });
 
         const doc = new LoroDoc();
-        const store = createStore({
+        const store = new Mirror({
             doc,
             schema: todoSchema,
             initialState: { todos: [] },
@@ -23,7 +23,10 @@ describe("README Quick Start examples", () => {
         // immutable update
         await store.setState((s) => ({
             ...s,
-            todos: s.todos.concat({ text: "Learn Loro Mirror", completed: false }),
+            todos: s.todos.concat({
+                text: "Learn Loro Mirror",
+                completed: false,
+            }),
         }));
 
         let state = store.getState();
@@ -43,7 +46,7 @@ describe("README Quick Start examples", () => {
 
         // subscribe should receive updates
         let calls = 0;
-        const unsubscribe = store.getMirror().subscribe(() => {
+        const unsubscribe = store.subscribe(() => {
             calls++;
         });
         await store.setState((draft) => {
@@ -95,7 +98,7 @@ describe("README Quick Start examples", () => {
         });
 
         const doc = new LoroDoc();
-        const store = createStore({
+        const store = new Mirror({
             doc,
             schema: s,
             initialState: { user: { name: "A", cache: { hits: 0 } } },

@@ -5,7 +5,7 @@
  Contents
  
  - Installation & Imports
- - Core: Mirror and Store
+- Core: Mirror
  - Schema Builder
  - Validation & Defaults
  - Utilities (Advanced)
@@ -15,11 +15,11 @@
  ## Installation & Imports
  
  - Install: `npm install loro-mirror loro-crdt`
- - Import styles:
-   - Named imports (recommended): `import { Mirror, createStore, schema } from "loro-mirror"`
+- Import styles:
+  - Named imports (recommended): `import { Mirror, schema } from "loro-mirror"`
    - Default (convenience bundle of `schema` + `core`): `import loroMirror from "loro-mirror"`
  
- ## Core: Mirror and Store
+## Core: Mirror
  
  ### Mirror
  
@@ -31,8 +31,8 @@
      - `validateUpdates?: boolean` (default `true`) — validate on `setState`
      - `throwOnValidationError?: boolean` (default `false`) — throw on schema validation errors
      - `debug?: boolean` — verbose logging to console for diagnostics
-     - `checkStateConsistency?: boolean` (default `false`) — deep checks in-memory state equals normalized `doc` JSON after `setState`
-     - `inferOptions?: { defaultLoroText?: boolean; defaultMovableList?: boolean }` — inference hints when no schema covers a field
+   - `checkStateConsistency?: boolean` (default `false`) — deep checks in-memory state equals normalized `doc` JSON after `setState`
+   - `inferOptions?: { defaultLoroText?: boolean; defaultMovableList?: boolean }` — inference hints when no schema covers a field
  
  - Methods
    - `getState(): InferType<S>` — returns the current mirror state (immutable snapshot)
@@ -87,56 +87,6 @@
  unsub();
  ```
  
- ### Store
- 
- Convenience wrapper around `Mirror` with a minimal Redux‑like surface.
- 
- - `createStore(options): Store<S>`
-   - `options: CreateStoreOptions<S>`
-     - `doc: LoroDoc`
-     - `schema: S`
-    - `initialState?: Partial<InferInputType<S>>`
-     - `validateUpdates?: boolean`
-     - `throwOnValidationError?: boolean` (default `true`)
-     - `debug?: boolean`
-     - `checkStateConsistency?: boolean`
-   - Returns `Store<S>` with:
-     - `getState(): InferType<S>`
-     - `setState(updater): Promise<void>` — same updater shapes as Mirror; await in non-React code
-     - `subscribe(cb): () => void` (same metadata as Mirror)
-     - `getMirror(): Mirror<S>`
-     - `getLoro(): LoroDoc`
- 
- - `createReducer(handlers) -> (store) => dispatch(type, payload)`
-   - Define an object of handlers that mutate an Immer draft. The returned `dispatch` wires those actions to `store.setState`.
- 
- Example
- 
- ```ts
- import { createStore, createReducer, schema } from "loro-mirror";
- import { LoroDoc } from "loro-crdt";
- 
- const s = schema({
-   todos: schema.LoroList(schema.LoroMap({ id: schema.String(), text: schema.String(), done: schema.Boolean({ defaultValue: false }) }), (t) => t.id),
- });
- 
- const store = createStore({ doc: new LoroDoc(), schema: s });
- 
- const actions = {
-   add(state, { id, text }: { id: string; text: string }) {
-     state.todos.push({ id, text });
-   },
-   toggle(state, id: string) {
-     const item = state.todos.find((t) => t.id === id);
-     if (item) item.done = !item.done;
-   },
- };
- 
- const dispatch = createReducer(actions)(store);
- 
- dispatch("add", { id: "a", text: "Task" });
- dispatch("toggle", "a");
- ```
  
  ## Schema Builder
  
@@ -278,4 +228,4 @@
  
  ---
  
- Questions or gaps? If you need deeper internals (diff pipelines, event application), explore the source under `src/core/` — but for most apps, `Mirror`, the schema builders, and `createStore` are all you need.
+Questions or gaps? If you need deeper internals (diff pipelines, event application), explore the source under `src/core/` — but for most apps, `Mirror` and the schema builders are all you need.

@@ -10,8 +10,7 @@ import React, {
     useRef,
     useState,
 } from "react";
-import type { InferType, InferInputType, SchemaType, Store } from "loro-mirror";
-import { createStore } from "loro-mirror";
+import { InferType, InferInputType, SchemaType, Mirror } from "loro-mirror";
 import type { LoroDoc } from "loro-crdt";
 // (No external state helper needed; Mirror handles Immer internally)
 
@@ -82,13 +81,13 @@ export function useLoroStore<S extends SchemaType>(
     options: UseLoroStoreOptions<S>,
 ) {
     // Create a stable reference to the store
-    const storeRef = useRef<Store<S> | null>(null);
+    const storeRef = useRef<Mirror<S> | null>(null);
 
     // Initialize the store and get initial state
-    const getStore = useCallback((): Store<S> => {
+    const getStore = useCallback((): Mirror<S> => {
         let store = storeRef.current;
         if (!store) {
-            store = createStore(options);
+            store = new Mirror(options);
             storeRef.current = store;
         }
         return store;
@@ -154,7 +153,7 @@ export function useLoroStore<S extends SchemaType>(
  * ```
  */
 export function useLoroValue<S extends SchemaType, R>(
-    store: Store<S>,
+    store: Mirror<S>,
     selector: (state: InferType<S>) => R,
 ): R {
     // Get the initial value
@@ -207,7 +206,7 @@ export function useLoroValue<S extends SchemaType, R>(
  * ```
  */
 export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
-    store: Store<S>,
+    store: Mirror<S>,
     updater:
         | ((
               state: InferType<S>,
@@ -270,7 +269,7 @@ export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
  */
 export function createLoroContext<S extends SchemaType>(schema: S) {
     // Create a React context
-    const LoroContext = createContext<Store<S> | null>(null);
+    const LoroContext = createContext<Mirror<S> | null>(null);
 
     // Create a provider component
     function LoroProvider({
