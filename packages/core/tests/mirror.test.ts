@@ -887,4 +887,90 @@ describe("Mirror - State Consistency", () => {
         expect(doc.frontiers().length).toBe(0);
         expect(doc.toJSON()).toStrictEqual(mirror.getState());
     });
+
+    it("getContainerIds returns all registered container IDs for complex nested structures", async () => {
+        const doc = new LoroDoc();
+        
+        const complexSchema = schema({
+            profile: schema.LoroMap({
+                name: schema.String(),
+                settings: schema.LoroMap({
+                    theme: schema.String(),
+                    preferences: schema.LoroMap({
+                        notifications: schema.Boolean(),
+                    }),
+                }),
+            }),
+            todos: schema.LoroList(
+                schema.LoroMap({
+                    id: schema.String(),
+                    text: schema.String(),
+                    completed: schema.Boolean(),
+                }),
+            ),
+            tree: schema.LoroTree(
+                schema.LoroMap({
+                    title: schema.String(),
+                    metadata: schema.LoroMap({
+                        priority: schema.Number(),
+                    }),
+                }),
+            ),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: complexSchema,
+        });
+
+        await mirror.setState({
+            profile: {
+                name: "John",
+                settings: {
+                    theme: "dark",
+                    preferences: {
+                        notifications: true,
+                    },
+                },
+            },
+            todos: [
+                { id: "1", text: "Task 1", completed: false },
+                { id: "2", text: "Task 2", completed: true },
+            ],
+            tree: [
+                {
+                    id: "root",
+                    data: {
+                        title: "Root Node",
+                        metadata: {
+                            priority: 1,
+                        },
+                    },
+                    children: [
+                        {
+                            id: "child1",
+                            data: {
+                                title: "Child 1",
+                                metadata: {
+                                    priority: 2,
+                                },
+                            },
+                            children: [],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        await waitForSync();
+
+        const containerIds = mirror.getContainerIds();
+
+        expect(containerIds.length).toBe(11);
+
+        const uniqueIds = new Set(containerIds);
+        expect(uniqueIds.size).toBe(containerIds.length);
+
+        mirror.dispose();
+    });
 });
