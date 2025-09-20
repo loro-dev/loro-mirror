@@ -1974,6 +1974,11 @@ export class Mirror<S extends SchemaType> {
 
         return undefined;
     }
+
+    /* Get all container IDs registered with the mirror */
+    getContainerIds(): ContainerID[] {
+        return Array.from(this.containerRegistry.keys());
+    }
 }
 
 /**
