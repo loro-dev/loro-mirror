@@ -33,8 +33,7 @@ const todoSchema = schema.LoroMap(
     {
         text: schema.String(),
         status: schema.String<TodoStatus>()
-    },
-    { withCid: true },
+    }
 )
 // Define your schema
 const todoDocSchema = schema({
