@@ -1,6 +1,7 @@
 # Loro Mirror for Jotai
 
-Jotai integration for Loro Mirror, providing atomic state management with Loro CRDT synchronization.
+Jotai integration for Loro Mirror, providing atomic state management with Loro
+CRDT synchronization.
 
 ## Installation
 
@@ -17,7 +18,8 @@ yarn add loro-mirror-jotai jotai loro-crdt
 
 ## Usage
 
-Create a `loroMirrorAtom` to represent your shared state. It syncs automatically with the provided Loro document.
+Create a `loroMirrorAtom` to represent your shared state. It syncs automatically
+with the provided Loro document.
 
 ```tsx
 import { useAtom } from 'jotai';
@@ -27,49 +29,59 @@ import { loroMirrorAtom } from 'loro-mirror-jotai';
 
 type TodoStatus = "todo" | "inProgress" | "done";
 
-// 1. Define your schema
-const todoSchema = schema({
-  todos: schema.LoroList(
-    schema.LoroMap({
-      text: schema.String(),
-      status: schema.String<TodoStatus>()
-    }),
-    (t) => t.$cid, // stable id from Loro container id
-  ),
+const todoSchema = schema.LoroMap(
+    {
+        text: schema.String(),
+        status: schema.String<TodoStatus>()
+    },
+    { withCid: true },
+)
+// Define your schema
+const todoDocSchema = schema({
+    todos: schema.LoroList(
+        todoSchema,
+        (t) => t.$cid, // stable id from Loro container id
+    )
 });
 
-// 2. Create a Loro document instance
+// Auto generated type from schema
+type Todo = InferType<typeof todoSchema>;
+
+// Create a Loro document instance
 const doc = new LoroDoc();
 
-// 3. Create the Jotai atom with Loro Mirror config
+// Maybe subscribe the doc for persisting
+let sub = doc.subscribe(......)
+
+// Create the Jotai atom with Loro Mirror config
 // Optionally pass onError to handle async failures
-const todoAtom = loroMirrorAtom({
-  doc,
-  schema: todoSchema,
-  initialState: { todos: [] },
-  // onError: (err) => console.error('update failed', err),
+const todoDocAtom = loroMirrorAtom({
+    doc,
+    schema: todoDocSchema,
+    initialState: { todos: [] as Todo[] },
+    // onError: (err) => console.error('update failed', err),
 });
 
-// 4. Use it in your React component
-function TodoApp() {
-  const [state, setState] = useAtom(todoAtom);
+// Selector atom
+const todosAtom = atom(get => get(todoDocAtom).todos, (_get, set, todos: Todo[]) => {
+    set(todoDocAtom, { todos })
+})
 
-  const addTodo = async () => {
-    // Setter returns a Promise; await to catch validation errors or ensure ordering
-    await setState((prevState) => ({
-      todos: [
-        ...prevState.todos,
-        {
-          text: 'New Todo',
-          status: "todo",
-        },
-      ],
-    }));
-  };
+// Action atom
+const addTodoAtom = atom(null, (get, set, todo: Todo) => {
+    set(todosAtom, [...get(todosAtom), todo])
+})
+
+// Use it in your React component
+function TodoApp() {
+  const todos = useAtomValue(todosAtom);
+  const addTodo = useSetAtom(addTodoAtom);
 
   return (
     <div>
-      <button onClick={addTodo}>Add Todo</button>
+      <button onClick={()=>{
+        addTodo({text: "New todo", status: "todo"})
+      }}>Add Todo</button>
       <ul>
         {state.todos.map((todo) => (
           <li key={todo.$cid /* stable key from Loro container id */}>
@@ -84,13 +96,17 @@ function TodoApp() {
 
 ### Async behavior
 
-- The setter returned by `useAtom(loroMirrorAtom(...))` returns a Promise. Await it when you need deterministic ordering or to handle validation/consistency errors.
+- The setter returned by `useAtom(loroMirrorAtom(...))` returns a Promise. Await
+  it when you need deterministic ordering or to handle validation/consistency
+  errors.
 - You can also pass `onError` in the atom config to catch rejections centrally.
 
 ### About `$cid`
 
-- `$cid` is always present on `LoroMap` state and equals the underlying Loro container id.
-- Use `$cid` as a stable list selector and React key: `schema.LoroList(item, x => x.$cid)` and `<li key={todo.$cid}>`.
+- `$cid` is always present on `LoroMap` state and equals the underlying Loro
+  container id.
+- Use `$cid` as a stable list selector and React key:
+  `schema.LoroList(item, x => x.$cid)` and `<li key={todo.$cid}>`.
 
 ## License
 
