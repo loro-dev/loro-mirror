@@ -5,11 +5,12 @@
  * Each piece of state is represented as an atom, enabling fine-grained reactivity and composition.
  */
 
-import { atom, WritableAtom } from "jotai";
+import { atom } from 'jotai';
 
 // Import types only to avoid module resolution issues
 import type { LoroDoc } from "loro-crdt";
-import { SchemaType, InferType, InferInputType, Mirror } from "loro-mirror";
+import { createStore, SyncDirection } from "loro-mirror";
+import type { SchemaType, InferType, InferInputType } from "loro-mirror";
 
 /**
  * Configuration for creating a Loro Mirror atom
@@ -85,51 +86,35 @@ export interface LoroMirrorAtomConfig<S extends SchemaType> {
  */
 export function loroMirrorAtom<S extends SchemaType>(
     config: LoroMirrorAtomConfig<S>,
-): WritableAtom<
-    InferType<S>,
-    [InferInputType<S> | ((prev: InferType<S>) => InferInputType<S>)],
-    Promise<void>
-> {
+) {
     const store = new Mirror(config);
-    const stateAtom = atom<InferType<S>>(store.getState() as InferType<S>);
-    const subAtom = atom<null, [InferType<S>], void>(
+    const stateAtom = atom(store.getState() as InferType<S>);
+    const subAtom = atom(
         null,
-        (_get, set, update) => {
+        (_get, set, update: InferType<S>) => {
             set(stateAtom, update);
         },
     );
 
     subAtom.onMount = (set) => {
-        const sub = store.subscribe((state) => {
-            set(state);
+        const sub = store.subscribe((state, { direction }) => {
+            if (direction === SyncDirection.FROM_LORO) {
+                set(state);
+            }
         });
         return () => {
             sub?.();
         };
     };
 
-    const base = atom<
-        InferType<S>,
-        [InferInputType<S> | ((prev: InferType<S>) => InferInputType<S>)],
-        Promise<void>
-    >(
+    const base = atom(
         (get) => {
             get(subAtom);
             return get(stateAtom);
         },
-        async (get, set, update) => {
-            const currentState = get(stateAtom) as InferType<S>;
+        async (_get, set, update: Partial<InferInputType<S>>) => {
             try {
-                if (typeof update === "function") {
-                    const nextInput = (
-                        update as (prev: InferType<S>) => InferInputType<S>
-                    )(currentState);
-                    await store.setState(
-                        nextInput as Partial<InferInputType<S>>,
-                    );
-                } else {
-                    await store.setState(update as Partial<InferInputType<S>>);
-                }
+                await store.setState(update);
                 // Reflect latest state from Mirror after any stamping like $cid
                 set(stateAtom, store.getState() as InferType<S>);
             } catch (err) {

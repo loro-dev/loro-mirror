@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 import { LoroDoc } from "loro-crdt";
 import { schema } from "loro-mirror";
 import { loroMirrorAtom } from "../src";
@@ -27,15 +27,15 @@ describe("Jotai README example", () => {
         });
 
         const { result } = renderHook(() => useAtom(atom));
-
+        const prevState = result.current[0];
         // push an item
         await act(async () => {
-            await result.current[1]((prev) => ({
+            await result.current[1]({
                 todos: [
-                    ...prev.todos,
+                    ...prevState.todos,
                     { text: "New Todo", status: "todo" as TodoStatus },
                 ],
-            }));
+            });
         });
 
         const state = result.current[0];
