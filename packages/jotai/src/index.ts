@@ -9,7 +9,7 @@ import { atom } from 'jotai';
 
 // Import types only to avoid module resolution issues
 import type { LoroDoc } from "loro-crdt";
-import { createStore, SyncDirection } from "loro-mirror";
+import { SyncDirection, Mirror } from "loro-mirror";
 import type { SchemaType, InferType, InferInputType } from "loro-mirror";
 
 /**
