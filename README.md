@@ -358,6 +358,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`validateUpdates`**: boolean (default `true`) – validate new state against schema.
     - **`throwOnValidationError`**: boolean (default `false`) – throw on invalid updates.
     - **`debug`**: boolean (default `false`) – log diffs and applied changes.
+    - **`checkStateConsistency`**: boolean (default `false`) – after each `setState`, assert the in-memory state equals the normalized `LoroDoc` snapshot.
     - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` – influence container-type inference when inserting containers from plain values.
 
 - `getState(): State`: Returns the current in-memory state view.
@@ -368,11 +369,14 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when produced locally, `BIDIRECTIONAL` for manual/initial syncs.
     - **`tags`**: `string[] | undefined` – tags provided via `setState`.
 - `dispose()`: Unsubscribe internal listeners and clear subscribers.
+- `checkStateConsistency()`: Manually trigger the consistency assertion described above.
+- `getContainerIds()`: Returns the set of registered Loro container IDs (advanced debugging aid).
 
 #### Notes
 
 - **Lists and IDs**: If your list schema provides an `idSelector`, list updates use minimal add/remove/update/move operations; otherwise index-based diffs are applied.
 - **Container inference**: When schema is missing/ambiguous for a field, the mirror infers container types from values. `inferOptions.defaultLoroText` makes strings become `LoroText`; `inferOptions.defaultMovableList` makes arrays become `LoroMovableList`.
+- **Consistency checks**: Enabling `checkStateConsistency` (or calling the method directly) is useful while developing or writing tests; it throws if Mirror state diverges from the normalized document snapshot.
 
 ### Types
 

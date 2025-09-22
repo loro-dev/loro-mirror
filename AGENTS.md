@@ -38,3 +38,14 @@
 
 - Peer deps: Keep `loro-crdt` versions aligned with peer requirements.
 - Node/Tooling: Use Node 18+ and pnpm. Do not commit `dist/`; builds are produced by TypeScript (tsc).
+
+## Public API (loro-mirror)
+
+- `Mirror(options: MirrorOptions<S>)`
+    - `doc` (required), `schema?`, `initialState?`, `validateUpdates?`, `throwOnValidationError?`, `debug?`, `checkStateConsistency?`, `inferOptions?`.
+    - Methods: `getState()`, `setState(updater, options?)`, `subscribe(cb)`, `dispose()`, `checkStateConsistency()`, `getContainerIds()`.
+    - `SetStateOptions` supports `{ tags?: string | string[] }`; subscriber metadata includes `{ direction: SyncDirection; tags?: string[] }`.
+- `schema(definition, options?)` plus builders: `.String()`, `.Number()`, `.Boolean()`, `.Ignore()`, `.LoroMap()`, `.LoroMapRecord()`, `.LoroList()`, `.LoroMovableList()`, `.LoroText()`, `.LoroTree()`.
+- Runtime helpers from the schema module: `validateSchema`, `getDefaultValue`, `createValueFromSchema`, and type guards such as `isContainerSchema`, `isLoroMapSchema`, `isLoroListSchema`, `isLoroMovableListSchema`, `isLoroTextSchema`, `isLoroTreeSchema`, `isRootSchemaType`, `isListLikeSchema`.
+- Types re-exported at the root: `MirrorOptions`, `SetStateOptions`, `UpdateMetadata`, `InferType`, `InferInputType`, `InferContainerOptions`, `SchemaType`, `ContainerSchemaType`, `RootSchemaType`, `LoroMapSchema`, `LoroListSchema`, `LoroMovableListSchema`, `LoroTextSchemaType`, `LoroTreeSchema`, `SchemaOptions`, `ChangeKinds`, `MapChangeKinds`, `ListChangeKinds`, `MovableListChangeKinds`, `TreeChangeKinds`, `TextChangeKinds`, `SubscriberCallback`, `SyncDirection`.
+- Utilities: `toNormalizedJson(doc)` for tree normalization. `$cid` is a reserved property injected into mirrored map values but there is no exported constant.

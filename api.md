@@ -1,67 +1,69 @@
- # Loro Mirror — API Reference
- 
- This is the complete API reference for the `loro-mirror` package. It covers the public classes, functions, types, and utilities exported from the package entry and includes practical tips for effective usage.
- 
- Contents
- 
- - Installation & Imports
+# Loro Mirror — API Reference
+
+This is the complete API reference for the `loro-mirror` package. It covers the public classes, functions, types, and utilities exported from the package entry and includes practical tips for effective usage.
+
+Contents
+
+- Installation & Imports
 - Core: Mirror
- - Schema Builder
- - Validation & Defaults
- - Utilities (Advanced)
- - Types & Constants
- - Tips & Recipes
- 
- ## Installation & Imports
- 
- - Install: `npm install loro-mirror loro-crdt`
+- Schema Builder
+- Validation & Defaults
+- Utilities (Advanced)
+- Types & Constants
+- Tips & Recipes
+
+## Installation & Imports
+
+- Install: `npm install loro-mirror loro-crdt`
 - Import styles:
   - Named imports (recommended): `import { Mirror, schema } from "loro-mirror"`
-   - Default (convenience bundle of `schema` + `core`): `import loroMirror from "loro-mirror"`
- 
+  - Default (convenience bundle of `schema` + `core`): `import loroMirror from "loro-mirror"`
+
 ## Core: Mirror
- 
- ### Mirror
- 
- - Constructor: `new Mirror(options)`
-   - `options: MirrorOptions<S>`
-     - `doc: LoroDoc` — the Loro document to sync with
-     - `schema?: S` — root schema (enables validation, typed defaults)
+
+### Mirror
+
+- Constructor: `new Mirror(options)`
+  - `options: MirrorOptions<S>`
+    - `doc: LoroDoc` — the Loro document to sync with
+    - `schema?: S` — root schema (enables validation, typed defaults)
     - `initialState?: Partial<InferInputType<S>>` — shallow overlay onto doc snapshot and schema defaults (does not write to Loro)
-     - `validateUpdates?: boolean` (default `true`) — validate on `setState`
-     - `throwOnValidationError?: boolean` (default `false`) — throw on schema validation errors
-     - `debug?: boolean` — verbose logging to console for diagnostics
-   - `checkStateConsistency?: boolean` (default `false`) — deep checks in-memory state equals normalized `doc` JSON after `setState`
-   - `inferOptions?: { defaultLoroText?: boolean; defaultMovableList?: boolean }` — inference hints when no schema covers a field
- 
- - Methods
-   - `getState(): InferType<S>` — returns the current mirror state (immutable snapshot)
+    - `validateUpdates?: boolean` (default `true`) — validate on `setState`
+    - `throwOnValidationError?: boolean` (default `false`) — throw on schema validation errors
+    - `debug?: boolean` (default `false`) — verbose logging to console for diagnostics
+    - `checkStateConsistency?: boolean` (default `false`) — verify after each `setState` that in-memory state matches the normalized `LoroDoc`
+    - `inferOptions?: { defaultLoroText?: boolean; defaultMovableList?: boolean }` — inference hints when no schema covers a field
+
+- Methods
+  - `getState(): InferType<S>` — returns the current mirror state (immutable snapshot)
   - `setState(updater, options?): void`
     - Synchronous; the state, validation, and subscriber notifications all finish before `setState` returns.
-     - `updater` supports both styles:
-       - Mutate a draft: `(draft: InferType<S>) => void`
-       - Return a new object: `(prev: Readonly<InferInputType<S>>) => InferInputType<S>`
-       - Shallow partial: `Partial<InferInputType<S>>`
-     - `options?: { tags?: string | string[] }` — tags surface in subscriber metadata
-   - `subscribe((state, metadata) => void): () => void`
-     - `metadata: { direction: SyncDirection; tags?: string[] }`
-     - Returns an unsubscribe function
-   - `dispose(): void` — removes all internal subscriptions and listeners
-   - `checkStateConsistency(): void` — throws if `state` diverges from normalized `doc` JSON (use with `checkStateConsistency: true`)
+    - `updater` supports both styles:
+      - Mutate a draft: `(draft: InferType<S>) => void`
+      - Return a new object: `(prev: Readonly<InferInputType<S>>) => InferInputType<S>`
+      - Shallow partial: `Partial<InferInputType<S>>`
+    - `options?: { tags?: string | string[] }` — tags surface in subscriber metadata
+  - `subscribe((state, metadata) => void): () => void`
+    - `metadata: { direction: SyncDirection; tags?: string[] }`
+    - Returns an unsubscribe function
+  - `dispose(): void` — removes all internal subscriptions and listeners
+  - `checkStateConsistency(): void` — manually triggers the consistency assertion described above
+  - `getContainerIds(): ContainerID[]` — advanced helper that lists registered Loro container IDs for debugging
+
+- Behavior & Notes
+  - Sync directions:
+    - `FROM_LORO` — changes applied from the Loro document
+    - `TO_LORO` — changes produced by `setState`
+    - `BIDIRECTIONAL` — manual/initial sync context
+  - Mirror ignores events with origin `"to-loro"` to prevent feedback loops.
+  - Initial state precedence: defaults (from schema) → `doc` snapshot (normalized) → hinted shapes from `initialState` (no writes to Loro).
+  - Trees: mirror state uses `{ id: string; data: object; children: Node[] }`. Loro tree `meta` is normalized to `data`.
+  - `$cid` on maps: Mirror injects a read-only `$cid` field into every LoroMap shape in state. It equals the Loro container ID, is not written back to Loro, and is ignored by diffs.
+  - Inference: with no schema, Mirror can infer containers from values; configure via `inferOptions`.
  
- - Behavior & Notes
-   - Sync directions:
-     - `FROM_LORO` — changes applied from the Loro document
-     - `TO_LORO` — changes produced by `setState`
-   - Mirror ignores events with origin `"to-loro"` to prevent feedback loops.
-   - Initial state precedence: defaults (from schema) → `doc` snapshot (normalized) → hinted shapes from `initialState` (no writes to Loro).
-   - Trees: mirror state uses `{ id: string; data: object; children: Node[] }`. Loro tree `meta` is normalized to `data`.
-   - `$cid` on maps: Mirror injects a read‑only `$cid` field into every LoroMap shape in state. It equals the Loro container ID, is not written back to Loro, and is ignored by diffs.
-   - Inference: with no schema, Mirror can infer containers from values; configure via `inferOptions`.
- 
- - Example
- 
- ```ts
+#### Example
+
+```ts
  import { Mirror, schema } from "loro-mirror";
  import { LoroDoc } from "loro-crdt";
  
@@ -96,11 +98,11 @@
    - `definition: { [key: string]: ContainerSchemaType }`
    - `options?: SchemaOptions`
  
- - Primitives
-   - `schema.String<T = string>(options?)`
-   - `schema.Number(options?)`
-   - `schema.Boolean(options?)`
-   - `schema.Ignore<T = unknown>(options?)` — present in state, ignored for Loro diffs/validation
+- Primitives
+  - `schema.String<T = string>(options?)`
+  - `schema.Number(options?)`
+  - `schema.Boolean(options?)`
+  - `schema.Ignore(options?)` — present in state, ignored for Loro diffs/validation
  
  - Containers
    - `schema.LoroMap(definition)`
@@ -156,54 +158,17 @@
  - `createValueFromSchema(schema, value): InferType<S>`
    - Casts/wraps a value into the shape expected by a schema (primitives pass through).
  
- ## Utilities (Advanced)
- 
- The following helpers are exported for advanced use, tooling, or tests. Most apps do not need them directly.
- 
- - Equality & JSON
-   - `deepEqual(a, b): boolean` — deep structural equality
-   - `toNormalizedJson(doc: LoroDoc): unknown` — `doc.toJSON()` with tree `meta` normalized to `data`
- 
- - Path helpers
-   - `getPathValue(obj, path: string[]): unknown` — read nested path
-   - `setPathValue(obj, path: string[], value): void` — write nested path (mutates the object)
- 
- - Container detection & IDs
-   - `valueIsContainer(v): { cid: string; value: unknown }` — check values from `doc.getDeepValueWithID()`
-   - `valueIsContainerOfType(v, suffix: string): boolean` — e.g. `":Text"`, `":Map"`, `":List"`, `":MovableList"`
-   - `containerIdToContainerType(id): ContainerType | undefined`
-   - `getRootContainerByType(doc, key, type): Container`
-   - `isTreeID(id: unknown): boolean` — test if a string looks like a Loro `TreeID` (e.g. `"0@1"`)
- 
- - Inference helpers
-   - `schemaToContainerType(schema): ContainerType | undefined`
-   - `tryInferContainerType(value, inferOptions?): ContainerType | undefined`
-   - `inferContainerTypeFromValue(value, inferOptions?): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined`
-   - `isValueOfContainerType(type, value): boolean`
- 
- - Guards & shapes
-   - `isObject(v): v is Record<string, unknown>`
-   - `isObjectLike(v): v is Record<string, unknown>`
-   - `isArrayLike(v): v is unknown[]`
-   - `isStringLike(v): v is string`
-   - `isStateAndSchemaOfType(values, stateGuard, schemaGuard)` — generic narrow helper
-  - Schema guards
-    - `isContainerSchema(schema?): schema is ContainerSchemaType`
-    - `isRootSchemaType(schema): schema is RootSchemaType`
-    - `isLoroMapSchema(schema): schema is LoroMapSchema`
-    - `isLoroListSchema(schema): schema is LoroListSchema`
-    - `isListLikeSchema(schema): schema is LoroListSchema | LoroMovableListSchema`
-    - `isLoroMovableListSchema(schema): schema is LoroMovableListSchema`
-    - `isLoroTextSchema(schema): schema is LoroTextSchemaType`
-    - `isLoroTreeSchema(schema): schema is LoroTreeSchema`
- 
- - Change helpers (primarily internal)
-   - `insertChildToMap(containerId, key, value): Change` — produce a map change (container‑aware)
-   - `tryUpdateToContainer(change, enable, schema?): Change` — upgrade an insert/set to a container operation based on schema/value
- 
- ## Types & Constants
- 
- - `SyncDirection` — enum: `FROM_LORO`, `TO_LORO`, `BIDIRECTIONAL`
+## Utilities (Advanced)
+
+Most applications will not need the low-level helpers below, but they are part of the published surface for tooling and testing.
+
+- `toNormalizedJson(doc: LoroDoc): unknown` — returns `doc.toJSON()` with tree `meta` data normalized into `data` so it matches Mirror state.
+- Schema guards exported from `schema/validators`:
+  - `isContainerSchema`, `isRootSchemaType`, `isLoroMapSchema`, `isLoroListSchema`, `isListLikeSchema`, `isLoroMovableListSchema`, `isLoroTextSchema`, `isLoroTreeSchema`
+
+## Types & Constants
+
+- `SyncDirection` — enum: `FROM_LORO`, `TO_LORO`, `BIDIRECTIONAL`
  - `MirrorOptions<S>` — constructor options for `Mirror`
  - `SetStateOptions` — `{ tags?: string | string[] }`
  - `UpdateMetadata` — `{ direction: SyncDirection; tags?: string[] }`
@@ -213,7 +178,6 @@
  - `SubscriberCallback<T>` — `(state: T, metadata: UpdateMetadata) => void`
  - Change types (advanced): `ChangeKinds`, `Change`, `MapChangeKinds`, `ListChangeKinds`, `MovableListChangeKinds`, `TreeChangeKinds`, `TextChangeKinds`
  - Schema types: `SchemaType`, `ContainerSchemaType`, `RootSchemaType`, `LoroMapSchema`, `LoroListSchema`, `LoroMovableListSchema`, `LoroTextSchemaType`, `LoroTreeSchema`, `SchemaOptions`, …
-- `CID_KEY` — the literal string `"$cid"` used by mirrored maps
  
  ## Tips & Recipes
  
