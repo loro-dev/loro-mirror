@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v0.2.0...loro-mirror-react-v1.0.0) (2025-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* make events synchronous by using loro-crdt@1.8.0 ([#39](https://github.com/loro-dev/loro-mirror/issues/39))
+
+### Features
+
+* make events synchronous by using loro-crdt@1.8.0 ([#39](https://github.com/loro-dev/loro-mirror/issues/39)) ([27aa95b](https://github.com/loro-dev/loro-mirror/commit/27aa95ba135e56ee3e3f56fb7f1a18cf448938f7))
+
 ## [0.2.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v0.1.1...loro-mirror-react-v0.2.0) (2025-09-17)
 
 
