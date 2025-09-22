@@ -36,8 +36,8 @@
  
  - Methods
    - `getState(): InferType<S>` — returns the current mirror state (immutable snapshot)
-   - `setState(updater, options?): Promise<void>`
-     - Promise-returning; await in non-React code for ordering/errors.
+  - `setState(updater, options?): void`
+    - Synchronous; the state, validation, and subscriber notifications all finish before `setState` returns.
      - `updater` supports both styles:
        - Mutate a draft: `(draft: InferType<S>) => void`
        - Return a new object: `(prev: Readonly<InferInputType<S>>) => InferInputType<S>`
@@ -75,7 +75,7 @@
  
  const mirror = new Mirror({ doc: new LoroDoc(), schema: appSchema });
  
- await mirror.setState((s) => {
+ mirror.setState((s) => {
      s.settings.title = "Docs";
      s.todos.push({ id: "1", text: "Ship" });
  });
@@ -219,7 +219,7 @@
  
  - Lists: always provide an `idSelector` if items have stable IDs — enables minimal add/update/move/delete instead of positional churn. Prefer `LoroMovableList` when reorder operations are common.
 - `$cid` for IDs: Every `LoroMap` includes a stable `$cid` you can use as a React `key` or as a `LoroList` item selector: `(item) => item.$cid`.
- - `setState` styles: choose your favorite — draft mutation or returning a new object. Both are supported and return a Promise. Await in non-React code when you need ordering or to catch validation errors.
+- `setState` styles: choose your favorite — draft mutation or returning a new object. Both run synchronously, so follow-up logic can safely read the updated state immediately.
  - Tagging updates: pass `{ tags: ["analytics", "user"] }` to `setState` and inspect `metadata.tags` in subscribers.
  - Trees: you can create/move/delete nodes in state (Mirror emits precise `tree-create/move/delete`). Node `data` is a normal Loro map — nested containers (text, list, map) update incrementally.
  - Initial state: providing `initialState` hints shapes and defaults in memory, but does not write into the LoroDoc until a real change occurs.

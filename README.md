@@ -59,8 +59,7 @@ const mirror = new Mirror({
 });
 
 // Update the state (immutable update)
-// Note: setState is async; await it in non-React code
-await mirror.setState((s) => ({
+mirror.setState((s) => ({
     ...s,
     todos: [
         ...s.todos,
@@ -72,7 +71,7 @@ await mirror.setState((s) => ({
 }));
 
 // Or: draft-style updates (mutate a draft)
-await mirror.setState((state) => {
+mirror.setState((state) => {
     state.todos.push({
         text: "Learn Loro Mirror",
         completed: false,
@@ -362,7 +361,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` – influence container-type inference when inserting containers from plain values.
 
 - `getState(): State`: Returns the current in-memory state view.
-- `setState(updater, options?)`: Update state and sync to Loro. Returns a Promise.
+- `setState(updater, options?)`: Update state and sync to Loro. Runs synchronously.
     - **`updater`**: either a partial object to shallow-merge or a function that may mutate a draft (Immer-style) or return a new state object.
     - **`options`**: `{ tags?: string | string[] }` – arbitrary tags attached to this update; delivered to subscribers in metadata.
 - `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
@@ -412,8 +411,8 @@ const unsubscribe = mirror.subscribe((state, { direction, tags }) => {
     }
 });
 
-// Update with draft mutation + tags (await for deterministic ordering)
-await mirror.setState(
+// Update with draft mutation + tags
+mirror.setState(
     (s) => {
         s.todos.push({
             text: "Write docs",

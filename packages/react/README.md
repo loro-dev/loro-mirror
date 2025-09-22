@@ -46,9 +46,9 @@ function TodoApp() {
         initialState: { todos: [], filter: "all" },
     });
 
-    // Add a new todo (Promise-returning; await when you need ordering/errors)
-    const addTodo = async (text: string) => {
-        await setState((s) => ({
+    // Add a new todo (synchronous; the update is applied before return)
+    const addTodo = (text: string) => {
+        setState((s) => ({
             ...s,
             todos: [...s.todos, { text, completed: false }],
         }));
@@ -154,10 +154,10 @@ const { state, setState, store } = useLoroStore({
   debug,
 });
 
-Notes on async updates:
+Notes on updates:
 
-- `setState` from `useLoroStore` and the setter from `useLoroState` return a Promise. You can `await` them to ensure deterministic ordering or catch validation errors.
-- `useLoroCallback` and `useLoroAction` return Promise-returning functions. Callers may optionally `await` them. Example: `await addTodo('New')`.
+- `setState` from `useLoroStore` and the setter from `useLoroState` run synchronously; subsequent code can read the updated state immediately.
+- `useLoroCallback` and `useLoroAction` return synchronous functions that call `setState` under the hood.
 ```
 
 ### `useLoroValue`
