@@ -21,7 +21,7 @@ describe("README Quick Start examples", () => {
         });
 
         // immutable update
-        await store.setState((s) => ({
+        store.setState((s) => ({
             ...s,
             todos: s.todos.concat({
                 text: "Learn Loro Mirror",
@@ -36,7 +36,7 @@ describe("README Quick Start examples", () => {
         expect(typeof state.todos[0].$cid).toBe("string");
 
         // draft-style update
-        await store.setState((draft) => {
+        store.setState((draft) => {
             draft.todos.push({ text: "Second", completed: false });
         });
 
@@ -49,7 +49,7 @@ describe("README Quick Start examples", () => {
         const unsubscribe = store.subscribe(() => {
             calls++;
         });
-        await store.setState((draft) => {
+        store.setState((draft) => {
             draft.todos[0].completed = true;
         });
         expect(calls).toBeGreaterThan(0);
@@ -105,12 +105,12 @@ describe("README Quick Start examples", () => {
         });
 
         // Update a synced field to materialize the container in Loro
-        await store.setState((draft) => {
+        store.setState((draft) => {
             draft.user.name = "A1";
         });
 
         // Update ignore field; it should not appear in doc JSON
-        await store.setState((draft: any) => {
+        store.setState((draft: any) => {
             draft.user.cache = { hits: (draft.user.cache?.hits ?? 0) + 1 };
         });
 

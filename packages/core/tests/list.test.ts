@@ -90,14 +90,14 @@ describe("setState for LoroList", () => {
         const m = new Mirror({ doc, schema: withIdSchema });
         {
             const s = { items: [{ id: "123" }] };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toMatchObject({ items: [{ id: "123" }] });
         }
         {
             const s2 = {
                 items: [{ id: "0" }, { id: "1" }, { id: "2" }, { id: "123" }],
             };
-            await m.setState(s2 as any);
+            m.setState(s2 as any);
             expect(doc.toJSON()).toMatchObject({
                 items: s2.items.map((x) => ({ id: x.id })),
             });
@@ -106,7 +106,7 @@ describe("setState for LoroList", () => {
             const s3 = {
                 items: [{ id: "1" }, { id: "0" }, { id: "123" }, { id: "2" }],
             };
-            await m.setState(s3 as any);
+            m.setState(s3 as any);
             expect(doc.toJSON()).toMatchObject({
                 items: s3.items.map((x) => ({ id: x.id })),
             });
@@ -115,7 +115,7 @@ describe("setState for LoroList", () => {
             const s4 = {
                 items: [{ id: "1" }],
             };
-            await m.setState(s4 as any);
+            m.setState(s4 as any);
             expect(doc.toJSON()).toMatchObject({
                 items: s4.items.map((x) => ({ id: x.id })),
             });
@@ -130,7 +130,7 @@ describe("setState for LoroList", () => {
         const m = new Mirror({ doc, schema: s });
         {
             const s = { items: [123] };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toStrictEqual(s);
         }
         let counter = doc.frontiers()[0].counter;
@@ -140,7 +140,7 @@ describe("setState for LoroList", () => {
             const s = {
                 items: [0, 1, 123],
             };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toStrictEqual(s);
         }
         counter = doc.frontiers()[0].counter;
@@ -150,7 +150,7 @@ describe("setState for LoroList", () => {
             const s = {
                 items: [0, 1, 123, 5],
             };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toStrictEqual(s);
         }
         counter = doc.frontiers()[0].counter;
@@ -160,7 +160,7 @@ describe("setState for LoroList", () => {
             const s = {
                 items: [0, 1, 2, 123, 5],
             };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toStrictEqual(s);
         }
         counter = doc.frontiers()[0].counter;
@@ -170,7 +170,7 @@ describe("setState for LoroList", () => {
             const s = {
                 items: [2, 123, 5],
             };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toStrictEqual(s);
         }
         counter = doc.frontiers()[0].counter;
@@ -180,7 +180,7 @@ describe("setState for LoroList", () => {
             const s = {
                 items: [2, 5],
             };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toStrictEqual(s);
         }
         counter = doc.frontiers()[0].counter;
@@ -190,7 +190,7 @@ describe("setState for LoroList", () => {
             const s = {
                 items: [2],
             };
-            await m.setState(s as any);
+            m.setState(s as any);
             expect(doc.toJSON()).toStrictEqual(s);
         }
         counter = doc.frontiers()[0].counter;

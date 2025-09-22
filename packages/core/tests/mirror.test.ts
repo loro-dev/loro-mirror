@@ -143,7 +143,7 @@ describe("Mirror - State Consistency", () => {
         await waitForSync();
 
         // Update app state through mirror
-        await mirror.setState({
+        mirror.setState({
             user: {
                 name: "John",
                 email: "john@example.com",
@@ -306,7 +306,7 @@ describe("Mirror - State Consistency", () => {
         // Make rapid changes
         for (let i = 1; i <= 5; i++) {
             // Update using appropriate format - using type assertion for test purposes
-            await mirror.setState({
+            mirror.setState({
                 meta: {
                     counter: i,
                 },
@@ -370,7 +370,7 @@ describe("Mirror - State Consistency", () => {
         expect(updatedValue).toBe("updated in loro");
 
         // Use the same format that was already in use
-        await mirror.setState({
+        mirror.setState({
             meta: {
                 value: "updated in app",
             },
@@ -418,7 +418,7 @@ describe("Mirror - State Consistency", () => {
         expect(loroUpdatedState.note).toBe("Updated note text from Loro");
 
         // Use appropriate format based on the current value
-        await mirror.setState({
+        mirror.setState({
             note: "Updated note text from app",
         });
 
@@ -580,7 +580,7 @@ describe("Mirror - State Consistency", () => {
 
         await waitForSync();
 
-        await mirror.setState({
+        mirror.setState({
             users: {
                 profile: {
                     name: "John",
@@ -679,7 +679,7 @@ describe("Mirror - State Consistency", () => {
 
         await waitForSync();
 
-        await mirror.setState({
+        mirror.setState({
             root: {
                 name: "Root",
                 children: [
@@ -832,7 +832,7 @@ describe("Mirror - State Consistency", () => {
             },
         });
 
-        await mirror.setState(someState);
+        mirror.setState(someState);
         await waitForSync();
 
         const state = doc.getDeepValueWithID();
@@ -923,7 +923,7 @@ describe("Mirror - State Consistency", () => {
             schema: complexSchema,
         });
 
-        await mirror.setState({
+        mirror.setState({
             profile: {
                 name: "John",
                 settings: {

@@ -120,7 +120,7 @@ export function useLoroStore<S extends SchemaType>(
     };
     const setState: SetStateFn = useCallback(
         (updater: unknown) => {
-            return getStore().setState(updater as never);
+            getStore().setState(updater as never);
         },
         [getStore],
     ) as unknown as SetStateFn;
@@ -225,7 +225,7 @@ export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
                     s,
                     ...args,
                 );
-            return store.setState(adapter as never);
+            store.setState(adapter as never);
         },
         [store, updater, ...deps],
     );
@@ -330,7 +330,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
         };
         const updateState: UpdateStateFn = useCallback(
             (updater: unknown) => {
-                return store.setState(updater as never);
+                store.setState(updater as never);
             },
             [store],
         ) as unknown as UpdateStateFn;

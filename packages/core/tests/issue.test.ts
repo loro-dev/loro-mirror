@@ -16,7 +16,7 @@ it("Applying remote event then calling setState immediately may cause an event a
 
     docB.getText("t").push(" ABC!");
     docA.import(docB.export({ mode: "update" }));
-    await m.setState({ t: "" });
+    m.setState({ t: "" });
     await Promise.resolve();
     expect(m.getState()).toStrictEqual(docA.toJSON());
 });
@@ -49,7 +49,7 @@ it("Reproduces 'Item ID cannot be null' when adding a new todo item using $cid-b
     // Calling setState should succeed and stamp $cid during apply,
     // but currently diffMovableList reads idSelector before $cid is assigned
     // and throws "Item ID cannot be null".
-    await m.setState({
+    m.setState({
         // Add a new item without $cid; $cid will only be stamped during apply
         todos: [{ text: "Buy milk", status: "todo" }],
     });

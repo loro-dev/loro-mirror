@@ -179,7 +179,7 @@ describe("Core State Management", () => {
             store.getState() as TestState;
 
             // Update state with proper format handling
-            await store.setState((state) => ({
+            store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "Updated Name", count: 5 },
             }));
@@ -206,7 +206,7 @@ describe("Core State Management", () => {
             store.getState() as TestState;
 
             // Update state with a function, handling both object and primitive formats
-            await store.setState((state: TestState) => {
+            store.setState((state: TestState) => {
                 const newState = { ...state, meta: { ...state.meta } };
 
                 // Handle count increment
@@ -243,7 +243,7 @@ describe("Core State Management", () => {
             // Get the current state to check format
             store.getState() as TestState;
             // Update state using proper format
-            await store.setState((state) => ({
+            store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "New Name" },
             }));
@@ -264,7 +264,7 @@ describe("Core State Management", () => {
             unsubscribe();
 
             // Update after unsubscribe using proper format
-            await store.setState((state) => ({
+            store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "Another Name" },
             }));
@@ -307,7 +307,7 @@ describe("Core State Management", () => {
             expect(updatedState.meta.count).toBe(42);
 
             // Now update the state through the store
-            await store.setState((state) => ({
+            store.setState((state) => ({
                 ...state,
                 meta: { ...state.meta, name: "Test Name", count: 42 },
             }));

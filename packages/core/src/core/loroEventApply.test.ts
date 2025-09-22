@@ -42,13 +42,13 @@ describe("applyEventBatchToState (inline)", () => {
 
         const l = doc.getList("l");
         l.insert(0, "x");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         l.insert(1, "y");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         l.delete(0, 1);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -64,10 +64,10 @@ describe("applyEventBatchToState (inline)", () => {
 
         const t = doc.getText("t");
         t.update("Hello");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         t.update("Hello World");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -85,10 +85,10 @@ describe("applyEventBatchToState (inline)", () => {
         const inner = new LoroText();
         inner.update("Hi");
         m.setContainer("inner", inner);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         inner.update("Hello");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -105,13 +105,13 @@ describe("applyEventBatchToState (inline)", () => {
         const m = doc.getMap("m");
         // Setting null should persist as a normal value
         m.set("a", null);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         // Setting a value then deleting it removes the key
         m.set("a", 42);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
         m.delete("a");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -128,13 +128,13 @@ describe("applyEventBatchToState (inline)", () => {
         const list = doc.getList("list");
         const text = list.insertContainer(0, new LoroText());
         text.update("Item 0");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         list.insert(1, "plain");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         text.update("Item 0 updated");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -152,10 +152,10 @@ describe("applyEventBatchToState (inline)", () => {
         ml.push("a");
         ml.push("b");
         ml.push("c");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         ml.move(0, 2); // [b, c, a]
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -173,10 +173,10 @@ describe("applyEventBatchToState (inline)", () => {
         const list = rootMap.setContainer("list", new LoroList());
         const innerMap = list.insertContainer(0, new LoroMap());
         innerMap.set("k", 1);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         innerMap.set("k", 2);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -216,10 +216,10 @@ describe("applyEventBatchToState (inline)", () => {
 
         const c = doc.getCounter("count");
         c.increment(5);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         c.decrement(2);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -239,11 +239,11 @@ describe("applyEventBatchToState (inline)", () => {
         const l = doc.getList("l");
         l.push(1);
         l.push(2);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         m.clear();
         l.clear();
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -261,14 +261,14 @@ describe("applyEventBatchToState (inline)", () => {
         ml.push("x");
         ml.push("y");
         ml.push("z");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         // Replace middle with a container and delete last in one commit
         const t = new LoroText();
         t.update("middle");
         ml.setContainer(1, t);
         ml.delete(2, 1);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -288,11 +288,11 @@ describe("applyEventBatchToState (inline)", () => {
         const cnt2 = lst.insertContainer(0, new LoroCounter());
         cnt.increment(3);
         cnt2.increment(7);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         cnt.decrement(1);
         cnt2.decrement(2);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -311,11 +311,11 @@ describe("applyEventBatchToState (inline)", () => {
         const t1 = l.insertContainer(1, new LoroText());
         t0.update("A");
         t1.update("B");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         t0.update("AA");
         t1.update("BB");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -332,19 +332,19 @@ describe("applyEventBatchToState (inline)", () => {
         const t = doc.getText("t");
         t.insert(0, "Hello");
         t.splice(5, 0, " World");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         t.delete(0, 1); // remove 'H'
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         t.applyDelta([{ retain: 0 }, { insert: "Start: " }]);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         // Mark/unmark shouldn't change string content
         doc.configTextStyle({ bold: { expand: "after" } });
         t.mark({ start: 0, end: 3 }, "bold", true);
         t.unmark({ start: 0, end: 3 }, "bold");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -386,7 +386,7 @@ describe("applyEventBatchToState (inline)", () => {
 
         const m = doc.getMap("m");
         m.set("k", 1);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         // Setting the same value should not emit changes; state should remain in sync
         m.set("k", 1);
@@ -410,7 +410,7 @@ describe("applyEventBatchToState (inline)", () => {
         m.setContainer("k", txt);
         // Replace with primitive before commit
         m.set("k", "B");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -427,7 +427,7 @@ describe("applyEventBatchToState (inline)", () => {
         const txt = new LoroText();
         txt.update("C");
         m.setContainer("k", txt);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -444,7 +444,7 @@ describe("applyEventBatchToState (inline)", () => {
         t.update("x");
         l.insertContainer(0, t);
         l.delete(0, 1);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });

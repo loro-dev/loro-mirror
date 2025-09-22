@@ -52,7 +52,7 @@ describe("Mirror List Update Optimization", () => {
         ];
 
         // Set initial state
-        await mirror.setState({ todos: initialTodos });
+        mirror.setState({ todos: initialTodos });
         await waitForSync();
 
         // Verify the initial state
@@ -62,7 +62,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().todos[2].id).toBe("3");
 
         // Scenario 1: Update a property of a specific todo without changing order
-        await mirror.setState({
+        mirror.setState({
             todos: [
                 { id: "1", text: "Task 1", completed: false },
                 { id: "2", text: "Task 2 Updated", completed: true }, // Only this item changed
@@ -82,7 +82,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().todos[2].id).toBe("3");
 
         // Scenario 2: Reordering items
-        await mirror.setState({
+        mirror.setState({
             todos: [
                 { id: "3", text: "Task 3", completed: false },
                 { id: "1", text: "Task 1", completed: false },
@@ -102,7 +102,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().todos[2].completed).toBe(true);
 
         // Scenario 3: Adding a new item
-        await mirror.setState({
+        mirror.setState({
             todos: [
                 { id: "3", text: "Task 3", completed: false },
                 { id: "1", text: "Task 1", completed: false },
@@ -123,7 +123,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().todos[3].text).toBe("Task 4");
 
         // Scenario 4: Removing an item
-        await mirror.setState({
+        mirror.setState({
             todos: [
                 { id: "3", text: "Task 3", completed: false },
                 { id: "1", text: "Task 1", completed: false },
@@ -191,7 +191,7 @@ describe("Mirror List Update Optimization", () => {
         ];
 
         // Set initial state
-        await mirror.setState({ items: initialItems });
+        mirror.setState({ items: initialItems });
         doc.commit();
 
         await waitForSync();
@@ -203,7 +203,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().items[2].value).toBe("Item 3");
 
         // Scenario 1: Update a property of a specific item
-        await mirror.setState({
+        mirror.setState({
             items: [
                 { value: "Item 1" },
                 { value: "Item 2 Updated" }, // This item changed
@@ -221,7 +221,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().items[2].value).toBe("Item 3");
 
         // Scenario 2: Reordering items
-        await mirror.setState({
+        mirror.setState({
             items: [
                 { value: "Item 3" },
                 { value: "Item 1" },
@@ -298,7 +298,7 @@ describe("Mirror List Update Optimization", () => {
         };
 
         // Set initial state
-        await mirror.setState(initialState);
+        mirror.setState(initialState);
         doc.commit();
 
         await waitForSync();
@@ -311,7 +311,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().categories[0].items[0].quantity).toBe(1);
 
         // Scenario: Update a property of a nested item
-        await mirror.setState({
+        mirror.setState({
             categories: [
                 {
                     id: "cat1",
@@ -340,7 +340,7 @@ describe("Mirror List Update Optimization", () => {
         expect(mirror.getState().categories[0].items[1].quantity).toBe(2);
 
         // Scenario: Add a new nested item
-        await mirror.setState({
+        mirror.setState({
             categories: [
                 {
                     id: "cat1",
@@ -444,9 +444,9 @@ describe("Mirror List Update Optimization", () => {
         }));
 
         // Set initial state for both
-        await mirrorWithId.setState({ items });
-        await mirrorWithoutId.setState({ items });
-        await mirrorMovable.setState({ items });
+        mirrorWithId.setState({ items });
+        mirrorWithoutId.setState({ items });
+        mirrorMovable.setState({ items });
         docWithId.commit();
         docWithoutId.commit();
         docMovable.commit();
@@ -462,9 +462,9 @@ describe("Mirror List Update Optimization", () => {
         const reversedItems = [...items].reverse();
 
         // Update both mirrors
-        await mirrorWithId.setState({ items: reversedItems });
-        await mirrorWithoutId.setState({ items: reversedItems });
-        await mirrorMovable.setState({ items: reversedItems });
+        mirrorWithId.setState({ items: reversedItems });
+        mirrorWithoutId.setState({ items: reversedItems });
+        mirrorMovable.setState({ items: reversedItems });
         docWithId.commit();
         docWithoutId.commit();
 
@@ -506,13 +506,13 @@ describe("Mirror List Update Optimization", () => {
             initialState: { session: { items: [] } },
             checkStateConsistency: true,
         });
-        await m.setState((s: any) => {
+        m.setState((s: any) => {
             s.session = {
                 ...s.session,
                 items: [{ data: "he", timestamp: "123" }],
             };
         });
-        await m.setState((s: any) => {
+        m.setState((s: any) => {
             s.session = {
                 ...s.session,
                 items: [

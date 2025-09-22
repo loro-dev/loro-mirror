@@ -44,7 +44,7 @@ it("syncs initial state from LoroDoc correctly", async () => {
     ]);
 
     let f = doc.frontiers();
-    await mirror.setState((state) => {
+    mirror.setState((state) => {
         return {
             todos: state.todos.map((todo) => ({
                 ...todo,
@@ -89,7 +89,7 @@ it("works without schema", async () => {
     ]);
 
     let f = doc.frontiers();
-    await mirror.setState((state) => {
+    mirror.setState((state) => {
         return {
             todos: (state as { todos: { id: string; text: string; completed: boolean }[] }).todos.map(
                 (todo) => ({
@@ -115,7 +115,7 @@ it("syncing from state => LoroDoc", async () => {
     const doc = new LoroDoc();
     doc.setPeerId(1);
     const mirror = new Mirror({ doc });
-    await mirror.setState({
+    mirror.setState({
         todos: [
             { id: "1", text: "Buy milk", completed: false },
             { id: "2", text: "Write tests", completed: true },
@@ -130,7 +130,7 @@ it("syncing from state => LoroDoc", async () => {
         { id: "2", text: "Write tests", completed: true },
     ]);
     const f = doc.frontiers();
-    await mirror.setState((state) => {
+    mirror.setState((state) => {
         return {
             todos: (state as { todos: { id: string; text: string; completed: boolean }[] }).todos.map(
                 (todo) => ({

@@ -437,7 +437,7 @@ export class Mirror<S extends SchemaType> {
         const newState = produce<InferType<S>>((draft) => {
             Object.assign(
                 draft as unknown as Record<string, unknown>,
-                (currentDocState ?? {}) as Record<string, unknown>,
+                currentDocState,
             );
         })(this.state);
 

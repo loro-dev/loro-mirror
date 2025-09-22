@@ -183,7 +183,7 @@ describe("LoroTree integration", () => {
 
             // 1) Create an initial random tree
             const initial = buildInitial(rng, 12);
-            await m.setState({ tree: initial } as any);
+            m.setState({ tree: initial } as any);
 
             // 2) Apply a sequence of random moves by producing next state trees
             const steps = 60;
@@ -223,7 +223,7 @@ describe("LoroTree integration", () => {
                     targetIndex,
                 );
                 // If the move is a no-op (same parent + index), skip sometimes to avoid churn
-                await m.setState({ tree: nextTree } as any);
+                m.setState({ tree: nextTree } as any);
                 docB.import(
                     doc.export({ mode: "update", from: docB.version() }),
                 );
@@ -250,7 +250,7 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-        await m.setState({
+        m.setState({
             tree: [
                 { id: "", data: { title: "A" }, children: [] },
                 { id: "", data: { title: "B" }, children: [] },
@@ -738,7 +738,7 @@ describe("LoroTree integration", () => {
         const directions: string[] = [];
         m.subscribe((_st, meta) => directions.push(meta.direction));
 
-        await m.setState({
+        m.setState({
             tree: [{ id: "", data: { title: "X" }, children: [] }],
         } as any);
         await tick();
@@ -760,7 +760,7 @@ describe("LoroTree integration", () => {
             ),
         });
         const m = new Mirror({ doc, schema: s });
-        await m.setState({
+        m.setState({
             tree: [
                 {
                     data: { title: "A", done: false },
@@ -788,7 +788,7 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-        await m.setState({
+        m.setState({
             tree: [
                 { id: "", data: { title: "A" }, children: [] },
                 { id: "", data: { title: "B" }, children: [] },
@@ -798,7 +798,7 @@ describe("LoroTree integration", () => {
         await tick();
 
         // Reorder to C, A, B
-        await m.setState({
+        m.setState({
             tree: [
                 { id: "", data: { title: "C" }, children: [] },
                 { id: "", data: { title: "A" }, children: [] },
@@ -820,7 +820,7 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-        await m.setState({
+        m.setState({
             tree: [
                 {
                     id: "",
@@ -833,7 +833,7 @@ describe("LoroTree integration", () => {
         await tick();
 
         // Move A under B in state
-        await m.setState({
+        m.setState({
             tree: [
                 {
                     id: "",
@@ -871,7 +871,7 @@ describe("LoroTree integration", () => {
         const m = new Mirror({ doc, schema: s });
 
         // Create nested tree: A(A1,A2), B
-        await m.setState({
+        m.setState({
             tree: [
                 {
                     id: "",
@@ -887,7 +887,7 @@ describe("LoroTree integration", () => {
         await tick();
 
         // Now delete subtree A by setting only B as root
-        await m.setState({
+        m.setState({
             tree: [{ id: "", data: { title: "B" }, children: [] }],
         } as any);
         await tick();
@@ -920,12 +920,12 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-        await m.setState({
+        m.setState({
             tree: [{ id: "", data: { title: "A", desc: "one" }, children: [] }],
         } as any);
         await tick();
         // Update data fields in state
-        await m.setState({
+        m.setState({
             tree: [
                 { id: "", data: { title: "A2", desc: "two" }, children: [] },
             ],
@@ -956,7 +956,7 @@ describe("LoroTree integration", () => {
         const m = new Mirror({ doc, schema: s });
 
         // Provide explicit ids in state
-        await m.setState({
+        m.setState({
             tree: [
                 { id: "my-id", data: { title: "A" }, children: [] },
                 { id: "my-id-2", data: { title: "B" }, children: [] },
@@ -1020,7 +1020,7 @@ describe("LoroTree integration", () => {
         const m = new Mirror({ doc, schema: s });
 
         // Initial state: three root nodes A, B, C under root.tree
-        await m.setState({
+        m.setState({
             root: {
                 tree: [
                     { id: "", data: { title: "A" }, children: [] },
@@ -1053,7 +1053,7 @@ describe("LoroTree integration", () => {
         });
 
         // New state: reorder to C, A, B (by ids) – expect only moves, not full delete+create
-        await m.setState({
+        m.setState({
             root: {
                 tree: [C, A, B],
             },
@@ -1086,7 +1086,7 @@ describe("LoroTree integration", () => {
         const m = new Mirror({ doc, schema: s });
 
         // Create a single node with a LoroText under data.desc via setState
-        await m.setState({
+        m.setState({
             root: {
                 tree: [
                     {
