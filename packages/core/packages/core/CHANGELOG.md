@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v0.1.1...loro-mirror-v1.0.0) (2025-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* make events synchronous by using loro-crdt@1.8.0 ([#39](https://github.com/loro-dev/loro-mirror/issues/39))
+
+### Features
+
+* **core:** `getContainerIds` method ([#37](https://github.com/loro-dev/loro-mirror/issues/37)) ([81fa104](https://github.com/loro-dev/loro-mirror/commit/81fa104252d8870e0a1f30996cb54b40c0890498))
+* make events synchronous by using loro-crdt@1.8.0 ([#39](https://github.com/loro-dev/loro-mirror/issues/39)) ([27aa95b](https://github.com/loro-dev/loro-mirror/commit/27aa95ba135e56ee3e3f56fb7f1a18cf448938f7))
+
 ## [0.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v0.1.0...loro-mirror-v0.1.1) (2025-09-17)
 
 
