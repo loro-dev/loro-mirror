@@ -1737,7 +1737,6 @@ export class Mirror<S extends SchemaType> {
                   ) as InferType<S>);
 
         // Validate state if needed
-        // TODO: We don't need to validate the state that are already reviewed
         if (this.options.validateUpdates) {
             const validation =
                 this.schema && validateSchema(this.schema, newState);
