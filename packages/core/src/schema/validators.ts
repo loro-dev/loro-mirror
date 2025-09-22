@@ -15,6 +15,28 @@ import {
 } from "./types";
 import { isObject } from "../core/utils";
 
+const schemaValidationCache = new WeakMap<object, WeakSet<object>>();
+
+function isCacheableValue(value: unknown): value is object {
+    return typeof value === "object" && value !== null;
+}
+
+function isSchemaValidated(schema: SchemaType, value: unknown): boolean {
+    if (!isCacheableValue(value)) return false;
+    const cache = schemaValidationCache.get(value);
+    return cache?.has(schema) ?? false;
+}
+
+function markSchemaValidated(schema: SchemaType, value: unknown): void {
+    if (!isCacheableValue(value)) return;
+    let cache = schemaValidationCache.get(value);
+    if (!cache) {
+        cache = new WeakSet<object>();
+        schemaValidationCache.set(value, cache);
+    }
+    cache.add(schema);
+}
+
 /**
  * Type guard for LoroMapSchema
  */
@@ -103,6 +125,10 @@ export function validateSchema<S extends SchemaType>(
         return { valid: true };
     }
 
+    if (isSchemaValidated(schema, value)) {
+        return { valid: true };
+    }
+
     // Validate based on schema type
     switch ((schema as BaseSchemaType).type) {
         case "string":
@@ -166,14 +192,16 @@ export function validateSchema<S extends SchemaType>(
         case "loro-list":
             if (!Array.isArray(value)) {
                 errors.push("Value must be an array");
-            } else if (isLoroListSchema(schema)) {
-                // Validate each item in the list
+            } else if (
+                isLoroListSchema(schema) || isLoroMovableListSchema(schema)
+            ) {
+                const itemSchema = schema.itemSchema;
                 value.forEach((item, index) => {
-                    const result = validateSchema(schema.itemSchema, item);
+                    const result = validateSchema(itemSchema, item);
                     if (!result.valid && result.errors) {
                         // Prepend array index to each error
                         const prefixedErrors = result.errors.map((err) =>
-                            `Item ${index}: ${err}`
+                            `Item ${index}: ${err}`,
                         );
                         errors.push(...prefixedErrors);
                     }
@@ -297,7 +325,12 @@ export function validateSchema<S extends SchemaType>(
         }
     }
 
-    return errors.length > 0 ? { valid: false, errors } : { valid: true };
+    if (errors.length === 0) {
+        markSchemaValidated(schema, value);
+        return { valid: true };
+    }
+
+    return { valid: false, errors };
 }
 
 /**
