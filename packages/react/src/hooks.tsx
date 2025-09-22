@@ -114,13 +114,12 @@ export function useLoroStore<S extends SchemaType>(
     type SetStateFn = {
         (
             updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
-        ): Promise<void>;
-        (updater: (state: InferType<S>) => void): Promise<void>;
-        (updater: Partial<InferInputType<S>>): Promise<void>;
+        ): void;
+        (updater: (state: InferType<S>) => void): void;
+        (updater: Partial<InferInputType<S>>): void;
     };
     const setState: SetStateFn = useCallback(
         (updater: unknown) => {
-            // Return the underlying promise so callers can await/catch
             return getStore().setState(updater as never);
         },
         [getStore],
@@ -217,7 +216,7 @@ export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
               ...args: Args
           ) => InferInputType<S>),
     deps: React.DependencyList = [],
-): (...args: Args) => Promise<void> {
+): (...args: Args) => void {
     return useCallback(
         (...args: Args) => {
             // Delegate to store.setState using an unknown-typed adapter to avoid `any`
@@ -325,9 +324,9 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
                 updater: (
                     state: Readonly<InferInputType<S>>,
                 ) => InferInputType<S>,
-            ): Promise<void>;
-            (updater: (state: InferType<S>) => void): Promise<void>;
-            (updater: Partial<InferInputType<S>>): Promise<void>;
+            ): void;
+            (updater: (state: InferType<S>) => void): void;
+            (updater: Partial<InferInputType<S>>): void;
         };
         const updateState: UpdateStateFn = useCallback(
             (updater: unknown) => {
@@ -349,7 +348,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
     function useLoroAction<Args extends unknown[]>(
         updater: (state: InferType<S>, ...args: Args) => void,
         deps: React.DependencyList = [],
-    ): (...args: Args) => Promise<void> {
+    ): (...args: Args) => void {
         const store = useLoroContext();
         return useLoroCallback(store, updater, deps);
     }

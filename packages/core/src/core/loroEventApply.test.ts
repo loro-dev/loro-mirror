@@ -3,18 +3,13 @@ import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroText, LoroList, LoroMap, LoroCounter } from "loro-crdt";
 import { applyEventBatchToState } from "./loroEventApply";
 
-const commitAndAssert = async (
-    doc: LoroDoc,
-    getState: () => unknown,
-) => {
+const commitAndAssert = (doc: LoroDoc, getState: () => unknown) => {
     doc.commit();
-    // allow microtask queue to flush if needed
-    await Promise.resolve();
     expect(getState()).toEqual(doc.toJSON());
 };
 
 describe("applyEventBatchToState (inline)", () => {
-    it("syncs map primitives", async () => {
+    it("syncs map primitives", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
         const unsub = doc.subscribe((b) => {
@@ -25,13 +20,13 @@ describe("applyEventBatchToState (inline)", () => {
 
         const m = doc.getMap("m");
         m.set("a", 1);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         m.set("b", 2);
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         m.delete("a");
-        await commitAndAssert(doc, () => state);
+        commitAndAssert(doc, () => state);
 
         unsub();
     });
@@ -600,7 +595,9 @@ describe("applyEventBatchToState (inline)", () => {
         };
 
         const textOp = () => {
-            const t = chance(0.5) ? texts[rand(texts.length)] : nestedTexts[rand(nestedTexts.length)] || texts[0];
+            const t = chance(0.5)
+                ? texts[rand(texts.length)]
+                : nestedTexts[rand(nestedTexts.length)] || texts[0];
             if (t.isDeleted()) {
                 return;
             }
@@ -715,7 +712,7 @@ function normalize(i: Record<string, unknown>): Record<string, unknown> {
             }
         } else if (typeof v === "number") {
             if (v === 0) {
-                delete s[k]
+                delete s[k];
             }
         } else if (typeof v === "string") {
             if (v === "") {

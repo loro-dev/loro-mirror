@@ -5,7 +5,7 @@
  * Each piece of state is represented as an atom, enabling fine-grained reactivity and composition.
  */
 
-import { atom } from 'jotai';
+import { atom } from "jotai";
 
 // Import types only to avoid module resolution issues
 import type { LoroDoc } from "loro-crdt";
@@ -48,11 +48,6 @@ export interface LoroMirrorAtomConfig<S extends SchemaType> {
      * @default false
      */
     debug?: boolean;
-
-    /**
-     * Optional async error handler for setState rejections
-     */
-    onError?: (error: unknown) => void;
 }
 
 /**
@@ -89,12 +84,9 @@ export function loroMirrorAtom<S extends SchemaType>(
 ) {
     const store = new Mirror(config);
     const stateAtom = atom(store.getState() as InferType<S>);
-    const subAtom = atom(
-        null,
-        (_get, set, update: InferType<S>) => {
-            set(stateAtom, update);
-        },
-    );
+    const subAtom = atom(null, (_get, set, update: InferType<S>) => {
+        set(stateAtom, update);
+    });
 
     subAtom.onMount = (set) => {
         const sub = store.subscribe((state, { direction }) => {
@@ -112,16 +104,10 @@ export function loroMirrorAtom<S extends SchemaType>(
             get(subAtom);
             return get(stateAtom);
         },
-        async (_get, set, update: Partial<InferInputType<S>>) => {
-            try {
-                await store.setState(update);
-                // Reflect latest state from Mirror after any stamping like $cid
-                set(stateAtom, store.getState() as InferType<S>);
-            } catch (err) {
-                // Surface error to consumer, then rethrow to allow awaiting callers to handle it
-                config.onError?.(err);
-                throw err;
-            }
+        (_get, set, update: Partial<InferInputType<S>>) => {
+            store.setState(update);
+            // Reflect latest state from Mirror after any stamping like $cid
+            set(stateAtom, store.getState() as InferType<S>);
         },
     );
     return base;

@@ -1689,8 +1689,6 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update state and propagate changes to Loro.
      *
-     * NOTE: You should await this method
-     *
      * - If `updater` is an object, it will shallow-merge into the current state.
      * - If `updater` is a function, it may EITHER:
      *   - mutate a draft (Immer-style), OR
@@ -1698,36 +1696,34 @@ export class Mirror<S extends SchemaType> {
      *
      * This supports both immutable and mutative update styles without surprises.
      */
-    async setState(
+    setState(
         updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
         options?: SetStateOptions,
-    ): Promise<void>;
-    async setState(
+    ): void;
+    setState(
         updater: (state: InferType<S>) => void,
         options?: SetStateOptions,
-    ): Promise<void>;
-    async setState(
+    ): void;
+    setState(
         updater: Partial<InferInputType<S>>,
         options?: SetStateOptions,
-    ): Promise<void>;
-    async setState(
+    ): void;
+    setState(
         updater:
             | ((state: InferType<S>) => InferType<S> | InferInputType<S> | void)
             | ((state: Readonly<InferInputType<S>>) => InferInputType<S>)
             | Partial<InferInputType<S>>,
         options?: SetStateOptions,
-    ): Promise<void> {
+    ): void {
         if (this.syncing) return; // Prevent recursive updates
-        // Wait for the existing Loro event to be handled
-        await Promise.resolve();
         // Calculate new state; support mutative or return-based updater via Immer
         const newState =
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
                       const res = (
-                          updater as (state: InferType<S>) =>
-                              | InferType<S>
-                              | void
+                          updater as (
+                              state: InferType<S>,
+                          ) => InferType<S> | void
                       )(draft as InferType<S>);
                       if (res && res !== (draft as unknown)) {
                           // Return a replacement so Immer finalizes it
@@ -1741,7 +1737,7 @@ export class Mirror<S extends SchemaType> {
                   ) as InferType<S>);
 
         // Validate state if needed
-        // TODO: REVIEW We don't need to validate the state that are already reviewed
+        // TODO: We don't need to validate the state that are already reviewed
         if (this.options.validateUpdates) {
             const validation =
                 this.schema && validateSchema(this.schema, newState);

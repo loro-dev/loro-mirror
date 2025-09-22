@@ -266,17 +266,17 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(after).toBe(before);
     });
 
-    it("TO_LORO + consistency check: changing $cid throws divergence error", async () => {
+    it("TO_LORO + consistency check: changing $cid throws divergence error", () => {
         const doc = new LoroDoc();
         const s = schema({ m: schema.LoroMap({ label: schema.String() }) });
         const m = new Mirror({ doc, schema: s, checkStateConsistency: true });
 
-        await expect(
+        expect(() => {
             m.setState((draft: any) => {
                 draft.m.label = "ok";
                 draft.m[CID_KEY] = "tamper"; // should be ignored to Loro and trigger consistency error
-            }),
-        ).rejects.toThrow();
+            });
+        }).toThrow();
     });
 
     it("list items: $cid values exist and are unique per item", async () => {

@@ -974,27 +974,27 @@ describe("LoroTree integration", () => {
         // sanity: ensure format looks like `${number}@${peer}`
         expect(nodeIds.every((id: string) => /@/.test(id))).toBe(true);
     });
-    it("TO_LORO: invalid tree value (non-array) throws validation error", async () => {
+    it("TO_LORO: invalid tree value (non-array) throws validation error", () => {
         const doc = new LoroDoc();
         const s = schema({
             tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
         });
         const m = new Mirror({ doc, schema: s });
 
-        await expect(
+        expect(() => {
             m.setState({
                 tree: { id: "", data: { title: "X" } },
-            } as any),
-        ).rejects.toThrow();
+            } as any);
+        }).toThrow();
     });
-    it("TO_LORO: invalid node shape (children not array) throws", async () => {
+    it("TO_LORO: invalid node shape (children not array) throws", () => {
         const doc = new LoroDoc();
         const s = schema({
             tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
         });
         const m = new Mirror({ doc, schema: s });
 
-        await expect(
+        expect(() => {
             m.setState({
                 tree: [
                     {
@@ -1003,8 +1003,8 @@ describe("LoroTree integration", () => {
                         children: "oops",
                     },
                 ],
-            } as any),
-        ).rejects.toThrow();
+            } as any);
+        }).toThrow();
     });
 
     // Nested tree container inside a map

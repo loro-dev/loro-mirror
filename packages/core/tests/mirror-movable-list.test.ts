@@ -13,7 +13,7 @@ const waitForSync = async () => {
 };
 
 describe("MovableList", () => {
-    async function initTestMirror() {
+    function initTestMirror() {
         const doc = new LoroDoc();
         doc.setPeerId(1);
         const schema_ = schema({
@@ -31,7 +31,7 @@ describe("MovableList", () => {
             schema: schema_,
         });
 
-        await mirror.setState({
+        mirror.setState({
             list: [
                 {
                     id: "1",
@@ -39,8 +39,6 @@ describe("MovableList", () => {
                 },
             ],
         });
-
-        await waitForSync();
 
         return { mirror, doc };
     }
@@ -536,16 +534,16 @@ describe("MovableList", () => {
         } as any);
     });
 
-    it("movable list throws on duplicate ids in new state", async () => {
-        const { mirror } = await initTestMirror();
-        await expect(
+    it("movable list throws on duplicate ids in new state", () => {
+        const { mirror } = initTestMirror();
+        expect(() => {
             mirror.setState({
                 list: [
                     { id: "X", text: "1" },
                     { id: "X", text: "2" },
                 ],
-            }),
-        ).rejects.toThrow();
+            });
+        }).toThrow();
     });
 
     it("movable list fuzz: large shuffles preserve container ids and text", async () => {

@@ -39,7 +39,7 @@ const todoSchema = schema.LoroMap(
 const todoDocSchema = schema({
     todos: schema.LoroList(
         todoSchema,
-        (t) => t.$cid, // stable id from Loro container id
+        (t) => t.$cid, // stable LoroMap id from Loro container id
     )
 });
 
@@ -53,12 +53,10 @@ const doc = new LoroDoc();
 let sub = doc.subscribe(......)
 
 // Create the Jotai atom with Loro Mirror config
-// Optionally pass onError to handle async failures
 const todoDocAtom = loroMirrorAtom({
     doc,
     schema: todoDocSchema,
     initialState: { todos: [] as Todo[] },
-    // onError: (err) => console.error('update failed', err),
 });
 
 // Selector atom
@@ -92,13 +90,6 @@ function TodoApp() {
   );
 }
 ```
-
-### Async behavior
-
-- The setter returned by `useAtom(loroMirrorAtom(...))` returns a Promise. Await
-  it when you need deterministic ordering or to handle validation/consistency
-  errors.
-- You can also pass `onError` in the atom config to catch rejections centrally.
 
 ### About `$cid`
 
