@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.0...loro-mirror-v1.0.1) (2025-09-22)
+
+
+### Performance Improvements
+
+* make validator faster by caching checked immer obj ([#40](https://github.com/loro-dev/loro-mirror/issues/40)) ([88b2382](https://github.com/loro-dev/loro-mirror/commit/88b2382321457afe31f645996428a5dd83c337c5))
+
 ## [1.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v0.1.1...loro-mirror-v1.0.0) (2025-09-22)
 
 
