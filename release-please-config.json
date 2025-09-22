@@ -1,5 +1,16 @@
 {
     "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+    "plugins": [
+        {
+            "type": "linked-versions",
+            "groupName": "loro-mirror-suite",
+            "components": [
+                "loro-mirror",
+                "loro-mirror-react",
+                "loro-mirror-jotai"
+            ]
+        }
+    ],
     "packages": {
         "packages/core": {
             "release-type": "node",
