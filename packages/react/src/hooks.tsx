@@ -217,7 +217,7 @@ export function useLoroCallback<S extends SchemaType, Args extends unknown[]>(
               ...args: Args
           ) => InferInputType<S>),
     deps: React.DependencyList = [],
-): (...args: Args) => Promise<void> {
+): (...args: Args) => void {
     return useCallback(
         (...args: Args) => {
             // Delegate to store.setState using an unknown-typed adapter to avoid `any`
@@ -349,7 +349,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
     function useLoroAction<Args extends unknown[]>(
         updater: (state: InferType<S>, ...args: Args) => void,
         deps: React.DependencyList = [],
-    ): (...args: Args) => Promise<void> {
+    ): (...args: Args) => void {
         const store = useLoroContext();
         return useLoroCallback(store, updater, deps);
     }

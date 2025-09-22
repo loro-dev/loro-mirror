@@ -24,7 +24,6 @@
         "build": "tsc -p .",
         "test": "vitest run",
         "test:watch": "vitest",
-        "lint": "eslint src --ext .ts,.tsx",
         "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
     },
     "keywords": [
@@ -44,7 +43,7 @@
     "author": "Loro Team",
     "license": "MIT",
     "peerDependencies": {
-        "loro-crdt": "^1.7.1",
+        "loro-crdt": "^1.8.0",
         "loro-mirror": "workspace:*",
         "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
     },

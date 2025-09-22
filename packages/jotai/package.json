@@ -23,7 +23,6 @@
         "build": "tsc -p .",
         "test": "vitest run",
         "test:watch": "vitest",
-        "lint": "eslint src --ext .ts,.tsx",
         "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
     },
     "keywords": [
@@ -42,7 +41,7 @@
     "peerDependencies": {
         "loro-mirror": "workspace:*",
         "jotai": "^2.0.0",
-        "loro-crdt": "^1.7.1"
+        "loro-crdt": "^1.8.0"
     },
     "devDependencies": {
         "@testing-library/jest-dom": "^6.1.5",
