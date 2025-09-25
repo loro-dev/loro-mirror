@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.1...loro-mirror-v1.0.2) (2025-09-25)
+
+
+### Bug Fixes
+
+* **core:** restore  injection for map record entries ([9050513](https://github.com/loro-dev/loro-mirror/commit/9050513685bdd971839663cc79fa9075940d0dbf))
+
 ## [1.0.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.0...loro-mirror-v1.0.1) (2025-09-22)
 
 

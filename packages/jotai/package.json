@@ -1,6 +1,6 @@
 {
     "name": "loro-mirror-jotai",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Jotai atoms for Loro Mirror: CRDT-backed atomic state with typed schema and bidirectional sync.",
     "type": "module",
     "main": "dist/index.js",
