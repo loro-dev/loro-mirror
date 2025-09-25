@@ -1,5 +1,5 @@
 import { it, expect } from "vitest";
-import { LoroDoc } from "loro-crdt";
+import { LoroDoc, LoroMap } from "loro-crdt";
 import { Mirror, schema } from "../src/";
 
 it("Applying remote event then calling setState immediately may cause an event apply order issue", async () => {
@@ -53,4 +53,36 @@ it("Reproduces 'Item ID cannot be null' when adding a new todo item using $cid-b
         // Add a new item without $cid; $cid will only be stamped during apply
         todos: [{ text: "Buy milk", status: "todo" }],
     });
+});
+
+it("doc with map record containers misses $cid in initial getState (repro)", () => {
+    const doc = new LoroDoc();
+    const root = doc.getMap("root");
+    const todo = new LoroMap();
+    todo.set("text", "Buy eggs");
+    root.setContainer("todo-1", todo);
+    const list = doc.getList("list");
+    list.pushContainer(new LoroMap());
+    doc.commit();
+
+    const todoSchema = schema({
+        root: schema.LoroMapRecord(
+            schema.LoroMap({
+                text: schema.String(),
+            }),
+        ),
+        list: schema.LoroList(schema.LoroMap({})),
+    });
+
+    const m = new Mirror({
+        doc,
+        schema: todoSchema,
+    });
+
+    const state = m.getState() as any;
+    expect(state.root).toBeDefined();
+    expect(state.root["todo-1"]).toBeDefined();
+    // Bug: $cid is currently missing even though the container exists in the doc
+    expect(typeof state.root["todo-1"].$cid).toBe("string");
+    expect(typeof state.list[0].$cid).toBe("string");
 });

@@ -16,6 +16,7 @@ import {
     isRootSchemaType,
     LoroListSchema,
     LoroMapSchema,
+    LoroMapSchemaWithCatchall,
     LoroMovableListSchema,
     LoroTextSchemaType,
     LoroTreeSchema,
@@ -93,6 +94,33 @@ type CommonListItemInfo = {
 };
 
 type IdSelector<T> = (item: T) => string | undefined;
+
+function getMapChildSchema(
+    schema:
+        | LoroMapSchema<Record<string, SchemaType>>
+        | LoroMapSchemaWithCatchall<Record<string, SchemaType>, SchemaType>
+        | RootSchemaType<Record<string, ContainerSchemaType>>
+        | undefined,
+    key: string,
+): SchemaType | ContainerSchemaType | undefined {
+    if (!schema) return undefined;
+    if (schema.type === "schema") {
+        return schema.definition[key];
+    }
+    if (schema.type === "loro-map") {
+        if (Object.prototype.hasOwnProperty.call(schema.definition, key)) {
+            return schema.definition[key];
+        }
+        const withCatchall = schema as LoroMapSchemaWithCatchall<
+            Record<string, SchemaType>,
+            SchemaType
+        > & { catchallType?: SchemaType };
+        if (withCatchall.catchallType) {
+            return withCatchall.catchallType;
+        }
+    }
+    return undefined;
+}
 
 /**
  * Diffs a container between two states
@@ -980,9 +1008,17 @@ export function diffMap<S extends ObjectLike>(
             continue;
         }
         // Skip ignored fields defined in schema
-        const childSchemaForDelete = (
-            schema as LoroMapSchema<Record<string, SchemaType>> | undefined
-        )?.definition?.[key];
+        const childSchemaForDelete = getMapChildSchema(
+            schema as
+                | LoroMapSchema<Record<string, SchemaType>>
+                | LoroMapSchemaWithCatchall<
+                      Record<string, SchemaType>,
+                      SchemaType
+                  >
+                | RootSchemaType<Record<string, ContainerSchemaType>>
+                | undefined,
+            key,
+        );
         if (childSchemaForDelete && childSchemaForDelete.type === "ignore") {
             continue;
         }
@@ -1006,9 +1042,17 @@ export function diffMap<S extends ObjectLike>(
         const newItem = newStateObj[key];
 
         // Figure out if the modified new value is a container
-        const childSchema = (
-            schema as LoroMapSchema<Record<string, SchemaType>> | undefined
-        )?.definition?.[key];
+        const childSchema = getMapChildSchema(
+            schema as
+                | LoroMapSchema<Record<string, SchemaType>>
+                | LoroMapSchemaWithCatchall<
+                      Record<string, SchemaType>,
+                      SchemaType
+                  >
+                | RootSchemaType<Record<string, ContainerSchemaType>>
+                | undefined,
+            key,
+        );
 
         // Skip ignored fields defined in schema
         if (childSchema && childSchema.type === "ignore") {
