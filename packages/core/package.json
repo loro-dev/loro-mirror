@@ -1,6 +1,6 @@
 {
     "name": "loro-mirror",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "Type-safe state management synchronized with Loro CRDT via a declarative schema and bidirectional mirroring.",
     "type": "module",
     "main": "dist/index.js",

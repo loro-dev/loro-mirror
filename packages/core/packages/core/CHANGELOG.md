@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.2...loro-mirror-v1.0.3) (2025-09-28)
+
+
+### Bug Fixes
+
+* ensure  is assigned ([bc30a92](https://github.com/loro-dev/loro-mirror/commit/bc30a9200fbabc6377f15d063ddbbd4ebb1ca189))
+
 ## [1.0.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.1...loro-mirror-v1.0.2) (2025-09-25)
 
 
