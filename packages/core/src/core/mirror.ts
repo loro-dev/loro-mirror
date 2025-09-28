@@ -817,12 +817,10 @@ export class Mirror<S extends SchemaType> {
             this.registerContainerWithRegistry(container.id, fieldSchema);
 
             // Inject $cid for root maps into pending state immediately
-            if (fieldSchema && isLoroMapSchema(fieldSchema) && pendingState) {
+            if (pendingState && container.kind() === "Map") {
                 const rootObj = pendingState as Record<string, unknown>;
                 const child = rootObj[keyStr];
-                if (isObject(child)) {
-                    child[CID_KEY] = container.id;
-                }
+                this.stampCid(child, container.id);
             }
 
             // Apply direct changes to the container
@@ -870,13 +868,7 @@ export class Mirror<S extends SchemaType> {
                             value,
                         );
                         // Stamp $cid into the pendingState value for child maps
-                        if (
-                            schema &&
-                            isLoroMapSchema(schema) &&
-                            isObject(value)
-                        ) {
-                            value[CID_KEY] = inserted.id;
-                        }
+                        this.stampCid(value, inserted.id);
                     } else if (kind === "delete") {
                         map.delete(key as string);
                     } else {
@@ -974,13 +966,7 @@ export class Mirror<S extends SchemaType> {
                         this.registerContainer(newContainer.id, schema);
                         this.initializeContainer(newContainer, schema, value);
                         // Stamp $cid into pending state when replacing with a map container
-                        if (
-                            schema &&
-                            isLoroMapSchema(schema) &&
-                            isObject(value)
-                        ) {
-                            value[CID_KEY] = newContainer.id;
-                        }
+                        this.stampCid(value, newContainer.id);
                     } else {
                         throw new Error();
                     }
@@ -1407,8 +1393,8 @@ export class Mirror<S extends SchemaType> {
 
         this.initializeContainer(insertedContainer, schema, value);
         // Stamp $cid for child maps directly on the provided value (pending state)
-        if (schema && isLoroMapSchema(schema) && isObject(value)) {
-            value[CID_KEY] = insertedContainer.id;
+        if (insertedContainer.kind() === "Map") {
+            this.stampCid(value, insertedContainer.id);
         }
         return insertedContainer;
     }
@@ -1549,8 +1535,8 @@ export class Mirror<S extends SchemaType> {
 
         this.initializeContainer(insertedContainer, schema, value);
         // Stamp $cid for list item maps directly on the provided value (pending state)
-        if (schema && isLoroMapSchema(schema) && isObject(value)) {
-            value[CID_KEY] = insertedContainer.id;
+        if (insertedContainer.kind() === "Map") {
+            this.stampCid(value, insertedContainer.id);
         }
         return insertedContainer;
     }
@@ -1806,15 +1792,12 @@ export class Mirror<S extends SchemaType> {
         if (kind === "Map") {
             const m = c as LoroMap;
             const obj: JSONObject = {};
+            obj[CID_KEY] = String(c.id);
             for (const k of m.keys()) {
                 const v = m.get(k);
                 obj[k] = isContainer(v)
                     ? this.containerToStateJson(v)
                     : (v as JSONValue);
-            }
-            const schema = this.getContainerSchema(c.id);
-            if (schema && isLoroMapSchema(schema)) {
-                obj[CID_KEY] = c.id;
             }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
@@ -1945,6 +1928,11 @@ export class Mirror<S extends SchemaType> {
         });
     }
 
+    private stampCid(target: unknown, cid: ContainerID) {
+        if (!isObject(target)) return;
+        (target as Record<string, unknown>)[CID_KEY] = cid;
+    }
+
     private getSchemaForMapKey(
         schema:
             | LoroMapSchema<Record<string, SchemaType>>
@@ -2033,6 +2021,12 @@ export function toNormalizedJson(doc: LoroDoc) {
     return doc.toJsonWithReplacer((_k, v) => {
         if (isContainer(v) && v.kind() === "Tree") {
             return normalizeTreeNodes(v.toJSON()) as unknown as typeof v;
+        }
+
+        if (isContainer(v) && v.kind() === "Map") {
+            const obj = (v as LoroMap).getShallowValue();
+            obj[CID_KEY] = v.id;
+            return obj;
         }
 
         return v;

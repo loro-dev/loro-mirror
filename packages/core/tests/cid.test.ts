@@ -484,4 +484,29 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         ]);
         expect(typeof st.tree[0].data[CID_KEY]).toBe("string");
     });
+
+    it("$cid is assigned to LoroMap inside LoroList even with schema", async () => {
+        const doc = new LoroDoc();
+        doc.getList("list").pushContainer(new LoroMap());
+        const m = new Mirror({
+            doc,
+            schema: schema({
+                list: schema.LoroList(
+                    schema.LoroMap({ title: schema.String() }),
+                ),
+            }),
+        });
+        console.log(m.getState());
+        const id = (m.getState() as any)["list"][0].$cid;
+        expect(typeof id === "string").toBeTruthy();
+    });
+
+    it("$cid is assigned to LoroMap inside LoroList even without schema", async () => {
+        const doc = new LoroDoc();
+        doc.getList("list").pushContainer(new LoroMap());
+        const m = new Mirror({ doc });
+        console.log(m.getState());
+        const id = (m.getState() as any)["list"][0].$cid;
+        expect(typeof id === "string").toBeTruthy();
+    });
 });

@@ -38,7 +38,7 @@ describe("setState consistency with null fields in LoroMap", () => {
         });
 
         // Sanity: mirror picks up the null from doc (ignoring $cid, which is app-only)
-        expect(stripCid(mirror.getState())).toEqual(toNormalizedJson(doc));
+        expect(mirror.getState()).toEqual(toNormalizedJson(doc));
         console.log(JSON.stringify(doc.toJSON(), null, 2));
 
         // Update another field (unrelated) to force a diff run
@@ -50,7 +50,7 @@ describe("setState consistency with null fields in LoroMap", () => {
         }).not.toThrow();
 
         // State remains in sync with doc (ignoring $cid)
-        expect(stripCid(mirror.getState())).toEqual(toNormalizedJson(doc));
+        expect(mirror.getState()).toEqual(toNormalizedJson(doc));
         // And the original null is preserved
         expect((mirror.getState() as any).m.nested).toBeNull();
     });
@@ -83,7 +83,7 @@ describe("setState consistency with null fields in LoroMap", () => {
         expect(() => {
             mirror.setState((s) => s);
         }).not.toThrow();
-        expect(stripCid(mirror.getState())).toEqual(toNormalizedJson(doc));
+        expect(mirror.getState()).toEqual(toNormalizedJson(doc));
         expect((mirror.getState() as any).root.list[0].child).toBeNull();
     });
 });
