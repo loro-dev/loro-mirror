@@ -4,7 +4,7 @@ import {
     isContainer,
     LoroDoc,
     LoroMap,
-    TreeID
+    TreeID,
 } from "loro-crdt";
 import {
     ContainerSchemaType,
@@ -21,7 +21,7 @@ import {
     LoroTextSchemaType,
     LoroTreeSchema,
     RootSchemaType,
-    SchemaType
+    SchemaType,
 } from "../schema";
 import { ChangeKinds, InferContainerOptions, type Change } from "./mirror";
 import { CID_KEY } from "../constants";
@@ -41,7 +41,7 @@ import {
     isStringLike,
     isArrayLike,
     isTreeID,
-    defineCidProperty
+    defineCidProperty,
 } from "./utils";
 
 /**
@@ -325,8 +325,8 @@ export function diffText(
             container: containerId,
             key: "",
             value: newState,
-            kind: "insert"
-        }
+            kind: "insert",
+        },
     ];
 }
 
@@ -399,7 +399,7 @@ export function diffTree(
         changes.push({
             container: containerId,
             kind: "tree-delete",
-            target: info.id as TreeID
+            target: info.id as TreeID,
         });
     }
 
@@ -449,7 +449,7 @@ export function diffTree(
                         for (const c of notifySet) {
                             c.parent = id;
                         }
-                    }
+                    },
                 };
                 changes.push(c);
                 notifyWhenParentCreated?.push(c);
@@ -483,7 +483,7 @@ export function diffTree(
                 kind: "tree-move",
                 target: id as TreeID,
                 parent: newInfo.parent as TreeID | undefined,
-                index: newInfo.index
+                index: newInfo.index,
             });
         }
 
@@ -578,7 +578,7 @@ export function diffMovableList<S extends ArrayLike>(
                 oldIndex: oldEntry.index,
                 newIndex,
                 oldItem: oldEntry.item,
-                newItem: item
+                newItem: item,
             });
         }
     }
@@ -591,7 +591,7 @@ export function diffMovableList<S extends ArrayLike>(
                 container: containerId,
                 key: index,
                 value: undefined,
-                kind: "delete" as const
+                kind: "delete" as const,
             });
         }
     }
@@ -622,7 +622,7 @@ export function diffMovableList<S extends ArrayLike>(
                 value: undefined,
                 kind: "move",
                 fromIndex: from,
-                toIndex: target
+                toIndex: target,
             });
 
             const [moved] = order.splice(from, 1);
@@ -643,7 +643,7 @@ export function diffMovableList<S extends ArrayLike>(
                         container: containerId,
                         key: newIndex,
                         value: item,
-                        kind: "insert"
+                        kind: "insert",
                     },
                     true,
                     schema?.itemSchema
@@ -675,7 +675,7 @@ export function diffMovableList<S extends ArrayLike>(
                         container: containerId,
                         key: info.newIndex,
                         value: info.newItem,
-                        kind: "set"
+                        kind: "set",
                     },
                     true,
                     schema?.itemSchema
@@ -744,7 +744,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                 container: containerId,
                 key: index + offset,
                 value: undefined,
-                kind: "delete"
+                kind: "delete",
             });
             offset--;
             index++;
@@ -779,7 +779,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     container: containerId,
                     key: index + offset,
                     value: undefined,
-                    kind: "delete"
+                    kind: "delete",
                 });
                 changes.push(
                     tryUpdateToContainer(
@@ -787,7 +787,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                             container: containerId,
                             key: index + offset,
                             value: newItem,
-                            kind: "insert"
+                            kind: "insert",
                         },
                         useContainer,
                         schema?.itemSchema
@@ -808,7 +808,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                         container: containerId,
                         key: index + offset,
                         value: newItem,
-                        kind: "insert"
+                        kind: "insert",
                     },
                     useContainer,
                     schema?.itemSchema
@@ -825,7 +825,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
             container: containerId,
             key: index + offset,
             value: undefined,
-            kind: "delete"
+            kind: "delete",
         });
         offset--;
         index++;
@@ -839,7 +839,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     container: containerId,
                     key: index + offset,
                     value: newItem,
-                    kind: "insert"
+                    kind: "insert",
                 },
                 useContainer,
                 schema?.itemSchema
@@ -928,7 +928,7 @@ export function diffList<S extends ArrayLike>(
                 container: containerId,
                 key: i,
                 value: undefined,
-                kind: "delete"
+                kind: "delete",
             });
             changes.push(
                 tryUpdateToContainer(
@@ -936,7 +936,7 @@ export function diffList<S extends ArrayLike>(
                         container: containerId,
                         key: i,
                         value: newState[i],
-                        kind: "insert"
+                        kind: "insert",
                     },
                     true,
                     schema?.itemSchema
@@ -952,7 +952,7 @@ export function diffList<S extends ArrayLike>(
             container: containerId,
             key: start + overlap,
             value: undefined,
-            kind: "delete"
+            kind: "delete",
         });
     }
 
@@ -965,7 +965,7 @@ export function diffList<S extends ArrayLike>(
                     container: containerId,
                     key: insertIndex,
                     value: newState[insertIndex],
-                    kind: "insert"
+                    kind: "insert",
                 },
                 true,
                 schema?.itemSchema
@@ -1027,7 +1027,7 @@ export function diffMap<S extends ObjectLike>(
                 container: containerId,
                 key,
                 value: undefined,
-                kind: "delete"
+                kind: "delete",
             });
         }
     }
@@ -1091,7 +1091,7 @@ export function diffMap<S extends ObjectLike>(
                     key,
                     value: newItem,
                     kind: "insert-container",
-                    childContainerType: containerType
+                    childContainerType: containerType,
                 });
                 // Inserted a new value
             } else {
@@ -1099,7 +1099,7 @@ export function diffMap<S extends ObjectLike>(
                     container: containerId,
                     key,
                     value: newItem,
-                    kind: "insert"
+                    kind: "insert",
                 });
             }
             continue;

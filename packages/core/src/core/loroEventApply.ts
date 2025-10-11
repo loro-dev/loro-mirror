@@ -6,7 +6,7 @@ import {
     LoroCounter,
     LoroEvent,
     LoroEventBatch,
-    TreeID
+    TreeID,
 } from "loro-crdt";
 import { defineCidProperty, isTreeID } from "./utils";
 
@@ -480,7 +480,7 @@ function applyTreeDiff(
             const node: Node = {
                 id: d.target as string,
                 data: {},
-                children: []
+                children: [],
             };
             if (treeId && nodeDataWithCid?.(treeId)) {
                 const cid = getNodeDataCid?.(treeId, d.target);

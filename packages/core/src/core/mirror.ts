@@ -15,7 +15,7 @@ import {
     LoroMovableList,
     LoroText,
     LoroTree,
-    TreeID
+    TreeID,
 } from "loro-crdt";
 
 import { applyEventBatchToState } from "./loroEventApply";
@@ -35,7 +35,7 @@ import {
     LoroMapSchemaWithCatchall,
     RootSchemaType,
     SchemaType,
-    validateSchema
+    validateSchema,
 } from "../schema";
 import {
     deepEqual,
@@ -45,7 +45,7 @@ import {
     schemaToContainerType,
     tryInferContainerType,
     getRootContainerByType,
-    defineCidProperty
+    defineCidProperty,
 } from "./utils";
 import { diffContainer, diffTree } from "./diff";
 import { CID_KEY } from "../constants";
@@ -78,7 +78,7 @@ export enum SyncDirection {
     /**
      * Initial sync or manual sync operations
      */
-    BIDIRECTIONAL = "BIDIRECTIONAL"
+    BIDIRECTIONAL = "BIDIRECTIONAL",
 }
 
 /**
@@ -303,7 +303,7 @@ export class Mirror<S extends SchemaType> {
             throwOnValidationError: options.throwOnValidationError || false,
             debug: options.debug || false,
             checkStateConsistency: options.checkStateConsistency || false,
-            inferOptions: options.inferOptions || {}
+            inferOptions: options.inferOptions || {},
         };
 
         // Pre-create root containers hinted by initialState (no-op in Loro for roots)
@@ -413,7 +413,7 @@ export class Mirror<S extends SchemaType> {
                             "loro-list",
                             "loro-text",
                             "loro-movable-list",
-                            "loro-tree"
+                            "loro-tree",
                         ].includes(fieldSchema.type)
                     ) {
                         const containerType =
@@ -591,7 +591,7 @@ export class Mirror<S extends SchemaType> {
                         return { ...e, path: canon } as typeof e;
                     }
                     return e;
-                })
+                }),
             } as LoroEventBatch;
             // Incrementally update state using event deltas
             this.state = applyEventBatchToState(
@@ -613,7 +613,7 @@ export class Mirror<S extends SchemaType> {
                         } catch {
                             return undefined;
                         }
-                    }
+                    },
                 }
             ) as unknown as InferType<S>;
             // With canonicalized paths, applyEventBatchToState updates roots precisely.
@@ -753,7 +753,7 @@ export class Mirror<S extends SchemaType> {
         // Process changes by container
         for (const [
             containerId,
-            containerChanges
+            containerChanges,
         ] of changesByContainer.entries()) {
             if (containerId === "") {
                 // Handle root level changes
@@ -1355,7 +1355,7 @@ export class Mirror<S extends SchemaType> {
     private notifySubscribers(direction: SyncDirection, tags?: string[]) {
         const metadata: UpdateMetadata = {
             direction,
-            tags
+            tags,
         };
 
         for (const subscriber of this.subscribers) {
@@ -1928,7 +1928,7 @@ export class Mirror<S extends SchemaType> {
     ) {
         this.containerRegistry.set(containerId, {
             schema: schemaType,
-            registered: true
+            registered: true,
         });
     }
 
@@ -2135,7 +2135,7 @@ function mergeInitialIntoBaseWithSchema(
                 options: {},
                 getContainerType() {
                     return "Map";
-                }
+                },
             } as unknown as RootSchemaType<Record<string, ContainerSchemaType>>);
             continue;
         }
