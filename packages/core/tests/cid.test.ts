@@ -32,7 +32,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
 
     it("types: list items pick up $cid when item is LoroMap", () => {
         const items = schema.LoroList(
-            schema.LoroMap({ value: schema.Number() }),
+            schema.LoroMap({ value: schema.Number() })
         );
         type Items = InferType<typeof items>;
         expectTypeOf<Items>().toExtend<
@@ -148,7 +148,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
             oldState,
             newState,
             "map@1" as any,
-            sMap as any,
+            sMap as any
         );
         expect(changes.length).toBe(0);
     });
@@ -162,13 +162,19 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         // a shows only synthetic $cid
         expect(st.a).toBeDefined();
         expect(typeof st.a[CID_KEY]).toBe("string");
-        expect(Object.keys(st.a)).toEqual([CID_KEY]);
+        expect(Object.keys(st.a)).toEqual([]);
+        expect(Object.prototype.propertyIsEnumerable.call(st.a, CID_KEY)).toBe(
+            false
+        );
 
         // b exists by default and includes $cid
         expect(st.b).toBeDefined();
         expect(typeof st.b).toBe("object");
         expect(typeof st.b[CID_KEY]).toBe("string");
-        expect(Object.keys(st.b)).toEqual([CID_KEY]);
+        expect(Object.keys(st.b)).toEqual([]);
+        expect(Object.prototype.propertyIsEnumerable.call(st.b, CID_KEY)).toBe(
+            false
+        );
     });
 
     it("nested maps: both parent and child have $cid", () => {
@@ -207,6 +213,23 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         expect(st.root[CID_KEY]).toBe(String(root.id));
         const attachedChild = root.get("child") as LoroMap;
         expect(st.root.child[CID_KEY]).toBe(String(attachedChild.id));
+    });
+
+    it("does not expose $cid via Object.entries", () => {
+        const doc = new LoroDoc();
+        const root = doc.getMap("root");
+        root.set("title", "hello");
+
+        const s = schema({
+            root: schema.LoroMap({ title: schema.String() }),
+        });
+        const mirror = new Mirror({ doc, schema: s });
+        const state = mirror.getState() as any;
+
+        expect(state.root[CID_KEY]).toBe(String(root.id));
+        expect(Object.entries(state.root)).toEqual([["title", "hello"]]);
+        const descriptor = Object.getOwnPropertyDescriptor(state.root, CID_KEY);
+        expect(descriptor?.enumerable).toBe(false);
     });
 
     it("FROM_LORO: map.setContainer inserts nested map that gets $cid", async () => {
@@ -327,10 +350,10 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
 
         const before = m.getState() as any;
         const aNode = before.tree[0].children.find(
-            (n: any) => n.data.title === "A",
+            (n: any) => n.data.title === "A"
         );
         const bNode = before.tree[0].children.find(
-            (n: any) => n.data.title === "B",
+            (n: any) => n.data.title === "B"
         );
         expect(typeof aNode.data[CID_KEY]).toBe("string");
         expect(typeof bNode.data[CID_KEY]).toBe("string");
@@ -342,7 +365,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
 
         const after = m.getState() as any;
         const aAfter = after.tree[0].children.find(
-            (n: any) => n.data.title === "A",
+            (n: any) => n.data.title === "A"
         );
         const bAfter = aAfter.children[0];
         expect(bAfter.data.title).toBe("B");
@@ -355,7 +378,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         const s = schema({
             items: schema.LoroMovableList(
                 schema.LoroMap({ val: schema.Number() }),
-                (it) => it.$cid,
+                (it) => it.$cid
             ),
         });
         const m = new Mirror({ doc, schema: s });
@@ -492,7 +515,7 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
             doc,
             schema: schema({
                 list: schema.LoroList(
-                    schema.LoroMap({ title: schema.String() }),
+                    schema.LoroMap({ title: schema.String() })
                 ),
             }),
         });

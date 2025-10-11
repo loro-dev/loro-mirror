@@ -107,6 +107,7 @@ export function loroMirrorAtom<S extends SchemaType>(
         (_get, set, update: Partial<InferInputType<S>>) => {
             store.setState(update);
             // Reflect latest state from Mirror after any stamping like $cid
+            console.log("mirror jotai setState", store.getState());
             set(stateAtom, store.getState() as InferType<S>);
         },
     );
