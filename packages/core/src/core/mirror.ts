@@ -2022,19 +2022,49 @@ export class Mirror<S extends SchemaType> {
  * @returns
  */
 export function toNormalizedJson(doc: LoroDoc) {
-    return doc.toJsonWithReplacer((_k, v) => {
+    const withEnumerableCid = doc.toJsonWithReplacer((_k, v) => {
         if (isContainer(v) && v.kind() === "Tree") {
             return normalizeTreeNodes(v.toJSON()) as unknown as typeof v;
         }
 
         if (isContainer(v) && v.kind() === "Map") {
             const obj = (v as LoroMap).getShallowValue();
-            defineCidProperty(obj, v.id);
-            return obj;
+            return { ...obj, [CID_KEY]: v.id };
         }
 
         return v;
     });
+
+    return restoreCidDescriptors(withEnumerableCid);
+}
+
+// After toJsonWithReplacer returns plain JSON objects with enumerable $cid,
+// walk the structure and restore the non-enumerable descriptor so mirrored state matches schema mode.
+function restoreCidDescriptors(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+            value[i] = restoreCidDescriptors(value[i]);
+        }
+        return value;
+    }
+
+    if (isObject(value)) {
+        const obj = value as Record<string, unknown>;
+        for (const key of Object.keys(obj)) {
+            obj[key] = restoreCidDescriptors(obj[key]);
+        }
+        if (Object.prototype.hasOwnProperty.call(obj, CID_KEY)) {
+            const descriptor = Object.getOwnPropertyDescriptor(obj, CID_KEY);
+            if (!descriptor || descriptor.enumerable) {
+                const cidValue = obj[CID_KEY];
+                delete obj[CID_KEY];
+                Object.defineProperty(obj, CID_KEY, { value: cidValue });
+            }
+        }
+        return obj;
+    }
+
+    return value;
 }
 
 // Normalize a shallow object shape from provided initialState by converting

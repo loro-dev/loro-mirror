@@ -528,7 +528,6 @@ describe("$cid: state injection and write ignoring (always-on for LoroMap)", () 
         const doc = new LoroDoc();
         doc.getList("list").pushContainer(new LoroMap());
         const m = new Mirror({ doc });
-        console.log(m.getState());
         const id = (m.getState() as any)["list"][0].$cid;
         expect(typeof id === "string").toBeTruthy();
     });
