@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.3...loro-mirror-v1.0.4) (2025-10-12)
+
+
+### Bug Fixes
+
+* $cid as non-enumerable property ([#48](https://github.com/loro-dev/loro-mirror/issues/48)) ([5cb6394](https://github.com/loro-dev/loro-mirror/commit/5cb6394424ee3347ea21c3f626d87b7a8958a8b0))
+
 ## [1.0.3](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.2...loro-mirror-v1.0.3) (2025-09-28)
 
 ### Bug Fixes
