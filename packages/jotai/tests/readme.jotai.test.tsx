@@ -49,16 +49,17 @@ describe("Jotai README example", () => {
         });
 
         const { result: todosResult } = renderHook(() =>
-            useAtomValue(todosAtom)
+            useAtomValue(todosAtom),
         );
         const { result: addTodoResult } = renderHook(() =>
-            useSetAtom(addTodoAtom)
+            useSetAtom(addTodoAtom),
         );
         // push an item
         await act(async () => {
-            addTodoResult.current(
-                { text: "New Todo", status: "todo" as TodoStatus },
-            );
+            addTodoResult.current({
+                text: "New Todo",
+                status: "todo" as TodoStatus,
+            });
         });
 
         const state = todosResult.current;

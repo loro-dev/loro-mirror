@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { schema } from "loro-mirror";
-import { createLoroContext, useLoroStore, useLoroValue, useLoroCallback } from "../src";
+import {
+    createLoroContext,
+    useLoroStore,
+    useLoroValue,
+    useLoroCallback,
+} from "../src";
 
 describe("React README examples", () => {
     it("createLoroContext returns provider and hooks for given schema", () => {

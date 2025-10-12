@@ -269,7 +269,7 @@ export interface UpdateMetadata {
  */
 export type SubscriberCallback<T> = (
     state: T,
-    metadata: UpdateMetadata
+    metadata: UpdateMetadata,
 ) => void;
 
 /**
@@ -344,7 +344,7 @@ export class Mirror<S extends SchemaType> {
                 initForMerge,
                 this.schema as RootSchemaType<
                     Record<string, ContainerSchemaType>
-                >
+                >,
             );
         } else {
             const hinted = normalizeInitialShapeShallow(initForMerge);
@@ -402,7 +402,7 @@ export class Mirror<S extends SchemaType> {
                 if (
                     Object.prototype.hasOwnProperty.call(
                         this.schema.definition,
-                        key
+                        key,
                     )
                 ) {
                     const fieldSchema = this.schema.definition[key];
@@ -424,7 +424,7 @@ export class Mirror<S extends SchemaType> {
                         const container = getRootContainerByType(
                             this.doc,
                             key,
-                            containerType
+                            containerType,
                         );
                         // Record canonical root path for this root container id
                         this.rootPathById.set(container.id, [key]);
@@ -439,7 +439,7 @@ export class Mirror<S extends SchemaType> {
         const newState = produce<InferType<S>>((draft) => {
             Object.assign(
                 draft as unknown as Record<string, unknown>,
-                currentDocState
+                currentDocState,
             );
         })(this.state);
 
@@ -451,7 +451,7 @@ export class Mirror<S extends SchemaType> {
      */
     private registerContainer(
         containerID: ContainerID,
-        schemaType: ContainerSchemaType | undefined
+        schemaType: ContainerSchemaType | undefined,
     ) {
         try {
             const container = this.doc.getContainerById(containerID);
@@ -459,7 +459,7 @@ export class Mirror<S extends SchemaType> {
             if (!container) {
                 if (this.options.debug) {
                     console.warn(
-                        `registerContainer: container not found for id ${containerID}`
+                        `registerContainer: container not found for id ${containerID}`,
                     );
                 }
                 return;
@@ -484,7 +484,7 @@ export class Mirror<S extends SchemaType> {
             if (this.options.debug) {
                 console.error(
                     `Error registering container: ${containerID}`,
-                    error
+                    error,
                 );
             }
         }
@@ -513,7 +513,7 @@ export class Mirror<S extends SchemaType> {
                                           Record<string, SchemaType>,
                                           SchemaType
                                       >,
-                                key
+                                key,
                             );
                             if (candidate && isContainerSchema(candidate)) {
                                 nestedSchema = candidate;
@@ -563,7 +563,7 @@ export class Mirror<S extends SchemaType> {
             if (this.options.debug) {
                 console.error(
                     `Error registering nested containers for ${container.id}:`,
-                    error
+                    error,
                 );
             }
         }
@@ -614,7 +614,7 @@ export class Mirror<S extends SchemaType> {
                             return undefined;
                         }
                     },
-                }
+                },
             ) as unknown as InferType<S>;
             // With canonicalized paths, applyEventBatchToState updates roots precisely.
             // No additional root refresh is required here.
@@ -658,12 +658,12 @@ export class Mirror<S extends SchemaType> {
 
                             this.registerContainer(
                                 container.id,
-                                containerSchema
+                                containerSchema,
                             );
 
                             if (!containerSchema) {
                                 console.warn(
-                                    `Container schema not found for key  in list ${event.target}`
+                                    `Container schema not found for key  in list ${event.target}`,
                                 );
                             }
                         }
@@ -682,7 +682,7 @@ export class Mirror<S extends SchemaType> {
 
                         if (!containerSchema) {
                             console.warn(
-                                `Container schema not found for key ${key} in map ${event.target}`
+                                `Container schema not found for key ${key} in map ${event.target}`,
                             );
                         }
                     }
@@ -727,7 +727,7 @@ export class Mirror<S extends SchemaType> {
                 newState,
                 "",
                 this.schema,
-                this.options?.inferOptions
+                this.options?.inferOptions,
             );
             // Apply the changes to the Loro document (and stamp any pending-state metadata like $cid)
             this.applyChangesToLoro(changes, newState);
@@ -765,12 +765,12 @@ export class Mirror<S extends SchemaType> {
                     this.applyContainerChanges(
                         container,
                         containerChanges,
-                        pendingState
+                        pendingState,
                     );
                 } else {
                     throw new Error(
                         `Container not found for ID: ${containerId}.
-                        This is likely due to a stale reference or a synchronization issue.`
+                        This is likely due to a stale reference or a synchronization issue.`,
                     );
                 }
             }
@@ -835,7 +835,7 @@ export class Mirror<S extends SchemaType> {
     private applyContainerChanges(
         container: Container,
         changes: Change[],
-        _pendingState?: InferType<S>
+        _pendingState?: InferType<S>,
     ) {
         // Apply changes in bulk by container type
         switch (container.kind()) {
@@ -850,7 +850,7 @@ export class Mirror<S extends SchemaType> {
                     // If schema marks this key as Ignore, skip writing to Loro
                     const fieldSchema = this.getSchemaForChild(
                         container.id,
-                        key
+                        key,
                     );
                     if (fieldSchema && fieldSchema.type === "ignore") {
                         continue;
@@ -860,13 +860,13 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "insert-container") {
                         const schema = this.getSchemaForChildContainer(
                             container.id,
-                            key
+                            key,
                         );
                         const inserted = this.insertContainerIntoMap(
                             map,
                             schema,
                             key as string,
-                            value
+                            value,
                         );
                         // Stamp $cid into the pendingState value for child maps
                         this.stampCid(value, inserted.id);
@@ -900,13 +900,13 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "insert-container") {
                         const schema = this.getSchemaForChildContainer(
                             container.id,
-                            key
+                            key,
                         );
                         this.insertContainerIntoList(
                             list,
                             schema,
                             index,
-                            value
+                            value,
                         );
                     } else {
                         throw new Error("Unsupported change kind for list");
@@ -937,13 +937,13 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "insert-container") {
                         const schema = this.getSchemaForChildContainer(
                             container.id,
-                            key
+                            key,
                         );
                         this.insertContainerIntoList(
                             list,
                             schema,
                             index,
-                            value
+                            value,
                         );
                     } else if (kind === "move") {
                         const c = change as ChangeKinds["move"];
@@ -955,13 +955,13 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "set-container") {
                         const schema = this.getSchemaForChildContainer(
                             container.id,
-                            key
+                            key,
                         );
                         const [detachedContainer, _containerType] =
                             this.createContainerFromSchema(schema, value);
                         const newContainer = list.setContainer(
                             index,
-                            detachedContainer
+                            detachedContainer,
                         );
 
                         this.registerContainer(newContainer.id, schema);
@@ -1002,7 +1002,7 @@ export class Mirror<S extends SchemaType> {
                     if (change.kind === "tree-create") {
                         const newNode = tree.createNode(
                             change.parent,
-                            change.index
+                            change.index,
                         );
                         // Propagate the concrete TreeID back into the in-memory newState and
                         // fix up any pending child creates that depend on this parent's ID.
@@ -1012,7 +1012,7 @@ export class Mirror<S extends SchemaType> {
                             this.initializeContainer(
                                 newNode.data,
                                 nodeSchema,
-                                change.value
+                                change.value,
                             );
                             // Stamp $cid into node.data in pending state
                             if (
@@ -1021,7 +1021,7 @@ export class Mirror<S extends SchemaType> {
                             ) {
                                 defineCidProperty(
                                     change.value,
-                                    newNode.data.id
+                                    newNode.data.id,
                                 );
                             }
                         }
@@ -1065,7 +1065,7 @@ export class Mirror<S extends SchemaType> {
             default:
                 throw new Error(
                     `Unknown container kind for top-level update: ${kind}.
-                    This is likely a programming error or unsupported container type.`
+                    This is likely a programming error or unsupported container type.`,
                 );
         }
     }
@@ -1085,7 +1085,7 @@ export class Mirror<S extends SchemaType> {
      */
     private updateListContainer(
         list: LoroList | LoroMovableList,
-        value: unknown
+        value: unknown,
     ) {
         // Replace entire list
         if (Array.isArray(value)) {
@@ -1098,7 +1098,7 @@ export class Mirror<S extends SchemaType> {
                 !isLoroMovableListSchema(schema)
             ) {
                 throw new Error(
-                    `Invalid schema for list: ${schema.type}. Expected LoroListSchema`
+                    `Invalid schema for list: ${schema.type}. Expected LoroListSchema`,
                 );
             }
 
@@ -1115,7 +1115,7 @@ export class Mirror<S extends SchemaType> {
                     list,
                     value,
                     idSelector,
-                    itemSchema!
+                    itemSchema!,
                 );
             } else {
                 this.updateListByIndex(list, value, itemSchema);
@@ -1132,7 +1132,7 @@ export class Mirror<S extends SchemaType> {
         list: LoroList | LoroMovableList,
         newItems: unknown[],
         idSelector: (item: unknown) => string | null,
-        itemSchema: SchemaType
+        itemSchema: SchemaType,
     ) {
         // First, map current items by ID
         const currentItemsById = new Map<
@@ -1198,7 +1198,7 @@ export class Mirror<S extends SchemaType> {
                 if (this.options.debug) {
                     console.warn(
                         `Error getting ID for new list item at index ${index}:`,
-                        e
+                        e,
                     );
                 }
             }
@@ -1248,7 +1248,7 @@ export class Mirror<S extends SchemaType> {
                         list,
                         currentIndex,
                         newItem,
-                        itemSchema
+                        itemSchema,
                     );
                 }
             } else {
@@ -1257,7 +1257,7 @@ export class Mirror<S extends SchemaType> {
                     list,
                     currentIndex,
                     newItem,
-                    itemSchema
+                    itemSchema,
                 );
             }
 
@@ -1276,7 +1276,7 @@ export class Mirror<S extends SchemaType> {
     private updateListByIndex(
         list: LoroList | LoroMovableList,
         newItems: unknown[],
-        itemSchema: SchemaType | undefined
+        itemSchema: SchemaType | undefined,
     ) {
         // First, clear the list
         const oldLength = list.length;
@@ -1312,7 +1312,7 @@ export class Mirror<S extends SchemaType> {
         list: LoroList | LoroMovableList,
         index: number,
         item: unknown,
-        itemSchema: SchemaType | undefined
+        itemSchema: SchemaType | undefined,
     ) {
         // Determine if the item should be a container
         let isContainer = false;
@@ -1383,7 +1383,7 @@ export class Mirror<S extends SchemaType> {
         map: LoroMap,
         schema: ContainerSchemaType | undefined,
         key: string,
-        value: unknown
+        value: unknown,
     ) {
         const [detachedContainer, _containerType] =
             this.createContainerFromSchema(schema, value);
@@ -1411,7 +1411,7 @@ export class Mirror<S extends SchemaType> {
     private initializeContainer(
         container: Container,
         schema: ContainerSchemaType | undefined,
-        value: unknown
+        value: unknown,
     ) {
         const kind = container.kind();
         if (kind === "Map") {
@@ -1488,7 +1488,7 @@ export class Mirror<S extends SchemaType> {
      */
     private createContainerFromSchema(
         schema: ContainerSchemaType | undefined,
-        value: unknown
+        value: unknown,
     ): [Container, ContainerType] {
         const containerType = schema
             ? schemaToContainerType(schema)
@@ -1519,7 +1519,7 @@ export class Mirror<S extends SchemaType> {
         list: LoroList | LoroMovableList,
         schema: ContainerSchemaType | undefined,
         index: number,
-        value: unknown
+        value: unknown,
     ) {
         const [detachedContainer, _containerType] =
             this.createContainerFromSchema(schema, value);
@@ -1572,7 +1572,7 @@ export class Mirror<S extends SchemaType> {
             next,
             tree.id,
             treeSchema,
-            this.options?.inferOptions
+            this.options?.inferOptions,
         );
 
         if (changes.length === 0) return;
@@ -1634,7 +1634,7 @@ export class Mirror<S extends SchemaType> {
                 // Infer whether this is a container
                 const ct = tryInferContainerType(
                     val,
-                    this.options?.inferOptions
+                    this.options?.inferOptions,
                 );
                 if (ct && isValueOfContainerType(ct, val)) {
                     // No child schema; insert with inferred container type
@@ -1659,7 +1659,7 @@ export class Mirror<S extends SchemaType> {
         map: LoroMap,
         key: string,
         value: unknown,
-        schema: SchemaType | null
+        schema: SchemaType | null,
     ) {
         if (key === CID_KEY) return; // Ignore CID in writes
         // Check if this field should be a container according to schema
@@ -1707,22 +1707,22 @@ export class Mirror<S extends SchemaType> {
      */
     setState(
         updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
-        options?: SetStateOptions
+        options?: SetStateOptions,
     ): void;
     setState(
         updater: (state: InferType<S>) => void,
-        options?: SetStateOptions
+        options?: SetStateOptions,
     ): void;
     setState(
         updater: Partial<InferInputType<S>>,
-        options?: SetStateOptions
+        options?: SetStateOptions,
     ): void;
     setState(
         updater:
             | ((state: InferType<S>) => InferType<S> | InferInputType<S> | void)
             | ((state: Readonly<InferInputType<S>>) => InferInputType<S>)
             | Partial<InferInputType<S>>,
-        options?: SetStateOptions
+        options?: SetStateOptions,
     ): void {
         if (this.syncing) return; // Prevent recursive updates
         // Calculate new state; support mutative or return-based updater via Immer
@@ -1731,7 +1731,7 @@ export class Mirror<S extends SchemaType> {
                 ? produce<InferType<S>>(this.state, (draft) => {
                       const res = (
                           updater as (
-                              state: InferType<S>
+                              state: InferType<S>,
                           ) => InferType<S> | void
                       )(draft as InferType<S>);
                       if (res && res !== (draft as unknown)) {
@@ -1742,7 +1742,7 @@ export class Mirror<S extends SchemaType> {
                 : (Object.assign(
                       {},
                       this.state as unknown as Record<string, unknown>,
-                      updater as Record<string, unknown>
+                      updater as Record<string, unknown>,
                   ) as InferType<S>);
 
         // Validate state if needed
@@ -1751,7 +1751,7 @@ export class Mirror<S extends SchemaType> {
                 this.schema && validateSchema(this.schema, newState);
             if (validation && !validation.valid) {
                 const errorMessage = `State validation failed: ${validation.errors?.join(
-                    ", "
+                    ", ",
                 )}`;
                 throw new Error(errorMessage);
             }
@@ -1784,7 +1784,7 @@ export class Mirror<S extends SchemaType> {
             console.error(
                 "State diverged",
                 JSON.stringify(state, null, 2),
-                JSON.stringify(this.buildRootStateSnapshot(), null, 2)
+                JSON.stringify(this.buildRootStateSnapshot(), null, 2),
             );
             throw new Error("[InternalError] State diverged");
         }
@@ -1813,7 +1813,7 @@ export class Mirror<S extends SchemaType> {
                 arr.push(
                     isContainer(v)
                         ? this.containerToStateJson(v)
-                        : (v as JSONValue)
+                        : (v as JSONValue),
                 );
             }
             return arr;
@@ -1894,7 +1894,7 @@ export class Mirror<S extends SchemaType> {
             const container = getRootContainerByType(
                 this.doc,
                 key,
-                containerType
+                containerType,
             );
             // Always include maps to expose $cid for stable identity
             if (containerType === "Map") {
@@ -1924,7 +1924,7 @@ export class Mirror<S extends SchemaType> {
      */
     private registerContainerWithRegistry(
         containerId: ContainerID,
-        schemaType: ContainerSchemaType | undefined
+        schemaType: ContainerSchemaType | undefined,
     ) {
         this.containerRegistry.set(containerId, {
             schema: schemaType,
@@ -1942,7 +1942,7 @@ export class Mirror<S extends SchemaType> {
             | LoroMapSchema<Record<string, SchemaType>>
             | LoroMapSchemaWithCatchall<Record<string, SchemaType>, SchemaType>
             | undefined,
-        key: string
+        key: string,
     ): SchemaType | undefined {
         if (!schema) return undefined;
         if (Object.prototype.hasOwnProperty.call(schema.definition, key)) {
@@ -1959,14 +1959,14 @@ export class Mirror<S extends SchemaType> {
     }
 
     private getContainerSchema(
-        containerId: ContainerID
+        containerId: ContainerID,
     ): ContainerSchemaType | undefined {
         return this.containerRegistry.get(containerId)?.schema;
     }
 
     private getSchemaForChildContainer(
         containerId: ContainerID,
-        childKey: string | number
+        childKey: string | number,
     ): ContainerSchemaType | undefined {
         const containerSchema = this.getSchemaForChild(containerId, childKey);
 
@@ -1979,7 +1979,7 @@ export class Mirror<S extends SchemaType> {
 
     private getSchemaForChild(
         containerId: ContainerID,
-        childKey: string | number
+        childKey: string | number,
     ): SchemaType | undefined {
         const containerSchema = this.getContainerSchema(containerId);
 
@@ -1995,7 +1995,7 @@ export class Mirror<S extends SchemaType> {
                           Record<string, SchemaType>,
                           SchemaType
                       >,
-                String(childKey)
+                String(childKey),
             );
         } else if (
             isLoroListSchema(containerSchema) ||
@@ -2074,7 +2074,7 @@ function restoreCidDescriptors(value: unknown): unknown {
 // - plain objects -> {}
 // Other primitive types are passed through (number, boolean, null/undefined).
 function normalizeInitialShapeShallow(
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input)) {
@@ -2093,7 +2093,7 @@ function normalizeInitialShapeShallow(
 
 // Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
 function normalizeTreeNodes(
-    input: unknown[]
+    input: unknown[],
 ): Array<{ id: string; data: Record<string, unknown>; children: unknown[] }> {
     if (!Array.isArray(input)) return [];
     return input.map(mapRawTreeNodeToMirror);
@@ -2126,7 +2126,7 @@ function mapRawTreeNodeToMirror(n: unknown): {
 function mergeInitialIntoBaseWithSchema(
     base: Record<string, unknown>,
     init: Record<string, unknown>,
-    rootSchema: RootSchemaType<Record<string, ContainerSchemaType>>
+    rootSchema: RootSchemaType<Record<string, ContainerSchemaType>>,
 ) {
     for (const [k, initVal] of Object.entries(init)) {
         const fieldSchema = rootSchema.definition[k];
@@ -2166,7 +2166,9 @@ function mergeInitialIntoBaseWithSchema(
                 getContainerType() {
                     return "Map";
                 },
-            } as unknown as RootSchemaType<Record<string, ContainerSchemaType>>);
+            } as unknown as RootSchemaType<
+                Record<string, ContainerSchemaType>
+            >);
             continue;
         }
         if (t === "loro-list" || t === "loro-movable-list") {

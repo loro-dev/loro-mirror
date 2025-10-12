@@ -890,7 +890,7 @@ describe("Mirror - State Consistency", () => {
 
     it("getContainerIds returns all registered container IDs for complex nested structures", async () => {
         const doc = new LoroDoc();
-        
+
         const complexSchema = schema({
             profile: schema.LoroMap({
                 name: schema.String(),

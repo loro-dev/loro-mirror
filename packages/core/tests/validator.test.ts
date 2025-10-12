@@ -118,7 +118,10 @@ describe("validateSchema detects violations", () => {
     });
 
     it("rejects invalid loro-movable-list items", () => {
-        const listSchema = schema.LoroMovableList(schema.String(), (item) => item);
+        const listSchema = schema.LoroMovableList(
+            schema.String(),
+            (item) => item,
+        );
         expect(validateSchema(listSchema, ["a"]).valid).toBe(true);
         const invalid = validateSchema(listSchema, ["a", 2]);
         expect(invalid.valid).toBe(false);

@@ -41,7 +41,7 @@ function markSchemaValidated(schema: SchemaType, value: unknown): void {
  * Type guard for LoroMapSchema
  */
 export function isLoroMapSchema<T extends Record<string, SchemaType>>(
-    schema: SchemaType
+    schema: SchemaType,
 ): schema is LoroMapSchema<T> {
     return (schema as BaseSchemaType).type === "loro-map";
 }
@@ -50,7 +50,7 @@ export function isLoroMapSchema<T extends Record<string, SchemaType>>(
  * Type guard for LoroListSchema
  */
 export function isLoroListSchema<T extends SchemaType>(
-    schema: SchemaType
+    schema: SchemaType,
 ): schema is LoroListSchema<T> {
     return (schema as BaseSchemaType).type === "loro-list";
 }
@@ -62,7 +62,7 @@ export function isListLikeSchema<T extends SchemaType>(
 }
 
 export function isLoroMovableListSchema<T extends SchemaType>(
-    schema: SchemaType
+    schema: SchemaType,
 ): schema is LoroMovableListSchema<T> {
     return (schema as BaseSchemaType).type === "loro-movable-list";
 }
@@ -71,7 +71,7 @@ export function isLoroMovableListSchema<T extends SchemaType>(
  * Type guard for RootSchemaType
  */
 export function isRootSchemaType<T extends Record<string, ContainerSchemaType>>(
-    schema: SchemaType
+    schema: SchemaType,
 ): schema is RootSchemaType<T> {
     return (schema as BaseSchemaType).type === "schema";
 }
@@ -79,7 +79,9 @@ export function isRootSchemaType<T extends Record<string, ContainerSchemaType>>(
 /**
  * Type guard for LoroTextSchemaType
  */
-export function isLoroTextSchema(schema: SchemaType): schema is LoroTextSchemaType {
+export function isLoroTextSchema(
+    schema: SchemaType,
+): schema is LoroTextSchemaType {
     return (schema as BaseSchemaType).type === "loro-text";
 }
 
@@ -95,13 +97,16 @@ export function isLoroTreeSchema<T extends Record<string, SchemaType>>(
 /**
  * Check if a schema is for a Loro container
  */
-export function isContainerSchema(schema?: SchemaType): schema is ContainerSchemaType {
-    return !!schema && (
-        schema.type === "loro-map" ||
-        schema.type === "loro-list" ||
-        schema.type === "loro-text" ||
-        schema.type === "loro-movable-list" ||
-        schema.type === "loro-tree"
+export function isContainerSchema(
+    schema?: SchemaType,
+): schema is ContainerSchemaType {
+    return (
+        !!schema &&
+        (schema.type === "loro-map" ||
+            schema.type === "loro-list" ||
+            schema.type === "loro-text" ||
+            schema.type === "loro-movable-list" ||
+            schema.type === "loro-tree")
     );
 }
 
@@ -175,7 +180,10 @@ export function validateSchema<S extends SchemaType>(
                             const propSchema = schema.definition[key];
                             const propValue = value[key];
 
-                            const result = validateSchema(propSchema, propValue);
+                            const result = validateSchema(
+                                propSchema,
+                                propValue,
+                            );
                             if (!result.valid && result.errors) {
                                 // Prepend property name to each error
                                 const prefixedErrors = result.errors.map(
@@ -193,15 +201,16 @@ export function validateSchema<S extends SchemaType>(
             if (!Array.isArray(value)) {
                 errors.push("Value must be an array");
             } else if (
-                isLoroListSchema(schema) || isLoroMovableListSchema(schema)
+                isLoroListSchema(schema) ||
+                isLoroMovableListSchema(schema)
             ) {
                 const itemSchema = schema.itemSchema;
                 value.forEach((item, index) => {
                     const result = validateSchema(itemSchema, item);
                     if (!result.valid && result.errors) {
                         // Prepend array index to each error
-                        const prefixedErrors = result.errors.map((err) =>
-                            `Item ${index}: ${err}`,
+                        const prefixedErrors = result.errors.map(
+                            (err) => `Item ${index}: ${err}`,
                         );
                         errors.push(...prefixedErrors);
                     }
@@ -235,7 +244,9 @@ export function validateSchema<S extends SchemaType>(
                 // Validate data against nodeSchema
                 const dataResult = validateSchema(schema.nodeSchema, n.data);
                 if (!dataResult.valid && dataResult.errors) {
-                    errors.push(...dataResult.errors.map((e) => `${path}.data: ${e}`));
+                    errors.push(
+                        ...dataResult.errors.map((e) => `${path}.data: ${e}`),
+                    );
                 }
                 // Children
                 if (!Array.isArray(n.children)) {
@@ -277,9 +288,9 @@ export function validateSchema<S extends SchemaType>(
                             );
                             if (!result.valid && result.errors) {
                                 // Prepend property name to each error
-                                const prefixedErrors = result.errors.map((
-                                    err,
-                                ) => `${key}: ${err}`);
+                                const prefixedErrors = result.errors.map(
+                                    (err) => `${key}: ${err}`,
+                                );
                                 errors.push(...prefixedErrors);
                             }
                         }
@@ -296,9 +307,7 @@ export function validateSchema<S extends SchemaType>(
                     }
                 }
             } else {
-                errors.push(
-                    `Should be a schema, but got ${schema.type}`,
-                );
+                errors.push(`Should be a schema, but got ${schema.type}`);
             }
             break;
 
@@ -310,14 +319,16 @@ export function validateSchema<S extends SchemaType>(
 
     // Run custom validation if provided
     if (
-        schema.options.validate && typeof schema.options.validate === "function"
+        schema.options.validate &&
+        typeof schema.options.validate === "function"
     ) {
         try {
             const customValidation = schema.options.validate(value);
             if (customValidation !== true) {
-                const errorMessage = typeof customValidation === "string"
-                    ? customValidation
-                    : "Value failed custom validation";
+                const errorMessage =
+                    typeof customValidation === "string"
+                        ? customValidation
+                        : "Value failed custom validation";
                 errors.push(errorMessage);
             }
         } catch (error) {
@@ -384,9 +395,7 @@ export function getDefaultValue<S extends SchemaType>(
                             key,
                         )
                     ) {
-                        const value = getDefaultValue(
-                            schema.definition[key],
-                        );
+                        const value = getDefaultValue(schema.definition[key]);
                         if (value !== undefined) {
                             result[key] = value;
                         }
@@ -415,9 +424,7 @@ export function getDefaultValue<S extends SchemaType>(
                             key,
                         )
                     ) {
-                        const value = getDefaultValue(
-                            schema.definition[key],
-                        );
+                        const value = getDefaultValue(schema.definition[key]);
                         if (value !== undefined) {
                             result[key] = value;
                         }
@@ -445,7 +452,8 @@ export function createValueFromSchema<S extends SchemaType>(
     const schemaType = (schema as BaseSchemaType).type;
 
     if (
-        schemaType === "string" || schemaType === "number" ||
+        schemaType === "string" ||
+        schemaType === "number" ||
         schemaType === "boolean"
     ) {
         return value as InferType<S>;

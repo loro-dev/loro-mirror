@@ -79,7 +79,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
             if (
                 !deepEqual(
                     (a as Record<string, unknown>)[key],
-                    (b as Record<string, unknown>)[key]
+                    (b as Record<string, unknown>)[key],
                 )
             )
                 return false;
@@ -96,7 +96,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
  */
 export function getPathValue(
     obj: Record<string, unknown>,
-    path: string[]
+    path: string[],
 ): unknown {
     let current: unknown = obj;
 
@@ -118,7 +118,7 @@ export function getPathValue(
 export function setPathValue(
     obj: Record<string, unknown>,
     path: string[],
-    value: unknown
+    value: unknown,
 ): void {
     if (path.length === 0) return;
 
@@ -165,13 +165,13 @@ export function valueIsContainer(value: unknown): value is ContainerValue {
 
 export function valueIsContainerOfType(
     value: unknown,
-    containerType: string
+    containerType: string,
 ): value is ContainerValue {
     return valueIsContainer(value) && value.cid.endsWith(containerType);
 }
 
 export function containerIdToContainerType(
-    containerId: ContainerID
+    containerId: ContainerID,
 ): ContainerType | undefined {
     return containerId.split(":")[2] as ContainerType;
 }
@@ -179,7 +179,7 @@ export function containerIdToContainerType(
 export function getRootContainerByType(
     doc: LoroDoc,
     key: string,
-    type: ContainerType
+    type: ContainerType,
 ): Container {
     if (type === "Text") {
         return doc.getText(key);
@@ -200,7 +200,7 @@ export function getRootContainerByType(
 export function insertChildToMap(
     containerId: ContainerID | "",
     key: string,
-    value: unknown
+    value: unknown,
 ): Change {
     if (isObject(value)) {
         return {
@@ -232,7 +232,7 @@ export function insertChildToMap(
 export function tryUpdateToContainer(
     change: Change,
     toUpdate: boolean,
-    schema: SchemaType | undefined
+    schema: SchemaType | undefined,
 ): Change {
     if (!toUpdate) {
         return change;
@@ -243,7 +243,7 @@ export function tryUpdateToContainer(
     }
 
     const containerType = schema
-        ? schemaToContainerType(schema) ?? tryInferContainerType(change.value)
+        ? (schemaToContainerType(schema) ?? tryInferContainerType(change.value))
         : undefined;
 
     if (containerType == null) {
@@ -275,7 +275,7 @@ export function tryUpdateToContainer(
 
 /* Get container type from schema */
 export function schemaToContainerType(
-    schema: SchemaType
+    schema: SchemaType,
 ): ContainerType | undefined {
     const containerType = schema.getContainerType();
     return containerType === null ? undefined : containerType;
@@ -284,7 +284,7 @@ export function schemaToContainerType(
 /* Try to infer container type from value */
 export function tryInferContainerType(
     value: unknown,
-    defaults?: InferContainerOptions
+    defaults?: InferContainerOptions,
 ): ContainerType | undefined {
     if (isObject(value)) {
         return "Map";
@@ -305,7 +305,7 @@ export function tryInferContainerType(
 /* Check if value is of a given container type */
 export function isValueOfContainerType(
     containerType: ContainerType,
-    value: unknown
+    value: unknown,
 ): boolean {
     switch (containerType) {
         case "MovableList":
@@ -325,7 +325,7 @@ export function isValueOfContainerType(
 /* Infer container type from value */
 export function inferContainerTypeFromValue(
     value: unknown,
-    defaults?: InferContainerOptions
+    defaults?: InferContainerOptions,
 ): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined {
     if (isObject(value)) {
         return "loro-map";
@@ -364,7 +364,7 @@ export function isStringLike(value: unknown): value is string {
 /* Type guard to ensure state and schema are of the correct type */
 export function isStateAndSchemaOfType<
     S extends ObjectLike | ArrayLike | string,
-    T extends SchemaType
+    T extends SchemaType,
 >(
     values: {
         oldState: unknown;
@@ -372,7 +372,7 @@ export function isStateAndSchemaOfType<
         schema: SchemaType | undefined;
     },
     stateGuard: (value: unknown) => value is S,
-    schemaGuard: (schema: SchemaType) => schema is T
+    schemaGuard: (schema: SchemaType) => schema is T,
 ): values is { oldState: S; newState: S; schema: T | undefined } {
     return (
         stateGuard(values.oldState) &&

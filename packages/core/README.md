@@ -89,7 +89,6 @@ Trees are advanced usage; see Advanced: Trees at the end.
 
 Types: `SyncDirection`, `UpdateMetadata`, `SetStateOptions`.
 
-
 ### Schema Builder
 
 - Root: `schema({ ...fields })`
@@ -174,7 +173,9 @@ export function App() {
             </button>
             <ul>
                 {state.todos.map((t) => (
-                    <li key={t.$cid /* stable key from Loro container id */}>{t.text}</li>
+                    <li key={t.$cid /* stable key from Loro container id */}>
+                        {t.text}
+                    </li>
                 ))}
             </ul>
         </div>

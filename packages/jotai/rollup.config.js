@@ -1,40 +1,40 @@
-const typescript = require('rollup-plugin-typescript2');
-const { nodeResolve } = require('@rollup/plugin-node-resolve');
-const commonjs = require('@rollup/plugin-commonjs');
-const pkg = require('./package.json');
+const typescript = require("rollup-plugin-typescript2");
+const { nodeResolve } = require("@rollup/plugin-node-resolve");
+const commonjs = require("@rollup/plugin-commonjs");
+const pkg = require("./package.json");
 
 module.exports = {
-  input: 'src/index.ts',
-  output: [
-    {
-      file: pkg.main,
-      format: 'cjs',
-      sourcemap: true,
-    },
-    {
-      file: pkg.module,
-      format: 'esm',
-      sourcemap: true,
-    },
-  ],
-  external: [
-    ...Object.keys(pkg.dependencies || {}),
-    ...Object.keys(pkg.peerDependencies || {}),
-    'jotai',
-    'jotai/utils',
-  ],
-  plugins: [
-    nodeResolve(),
-    commonjs(),
-    typescript({
-      useTsconfigDeclarationDir: true,
-      tsconfigOverride: {
-        compilerOptions: {
-          declaration: true,
-          declarationDir: 'dist',
+    input: "src/index.ts",
+    output: [
+        {
+            file: pkg.main,
+            format: "cjs",
+            sourcemap: true,
         },
-        exclude: ['**/*.test.ts', '**/*.test.tsx', 'tests'],
-      },
-    }),
-  ],
+        {
+            file: pkg.module,
+            format: "esm",
+            sourcemap: true,
+        },
+    ],
+    external: [
+        ...Object.keys(pkg.dependencies || {}),
+        ...Object.keys(pkg.peerDependencies || {}),
+        "jotai",
+        "jotai/utils",
+    ],
+    plugins: [
+        nodeResolve(),
+        commonjs(),
+        typescript({
+            useTsconfigDeclarationDir: true,
+            tsconfigOverride: {
+                compilerOptions: {
+                    declaration: true,
+                    declarationDir: "dist",
+                },
+                exclude: ["**/*.test.ts", "**/*.test.tsx", "tests"],
+            },
+        }),
+    ],
 };

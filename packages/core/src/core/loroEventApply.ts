@@ -47,9 +47,9 @@ export function applyEventBatchToState<T extends object>(
               nodeDataWithCid?: (treeId: ContainerID) => boolean;
               getNodeDataCid?: (
                   treeId: ContainerID,
-                  nodeId: TreeID
+                  nodeId: TreeID,
               ) => string | undefined;
-          }
+          },
 ): T {
     const opts =
         typeof options === "function"
@@ -65,7 +65,7 @@ export function applyEventBatchToState<T extends object>(
                 opts.getContainerById,
                 opts.containerToJson,
                 opts.nodeDataWithCid,
-                opts.getNodeDataCid
+                opts.getNodeDataCid,
             );
         }
     })(currentState);
@@ -82,7 +82,10 @@ function applySingleEventToDraft(
     getContainerById?: (id: ContainerID) => Container | undefined,
     containerToJson?: (c: Container) => JSONValue,
     nodeDataWithCid?: (treeId: ContainerID) => boolean,
-    getNodeDataCid?: (treeId: ContainerID, nodeId: TreeID) => string | undefined
+    getNodeDataCid?: (
+        treeId: ContainerID,
+        nodeId: TreeID,
+    ) => string | undefined,
 ) {
     if (isIgnoredByAncestor(e.target, ignoreSet, getContainerById)) {
         return;
@@ -137,7 +140,7 @@ function applySingleEventToDraft(
                     target,
                     e.diff.updated,
                     ignoreSet,
-                    containerToJson
+                    containerToJson,
                 );
             }
             break;
@@ -170,7 +173,7 @@ function applySingleEventToDraft(
                     e.diff.diff,
                     e.target,
                     nodeDataWithCid,
-                    getNodeDataCid
+                    getNodeDataCid,
                 );
                 // Invalidate cache for this roots array after structural change
                 ROOTS_TREE_INDEX_CACHE.delete(target as JSONValue[]);
@@ -225,7 +228,7 @@ function applySingleEventToDraft(
  */
 function getParentKeyNodeByPath(
     root: JSONObject,
-    path: (string | number)[]
+    path: (string | number)[],
 ): {
     parent: JSONObject | JSONValue[] | undefined;
     key: string | number | undefined;
@@ -292,7 +295,7 @@ function getParentKeyNodeByPath(
 // PERF: this can be slow
 function getTreeNodeLocation(
     roots: JSONValue[],
-    id: string
+    id: string,
 ): { list: JSONValue[]; index: number; node: JSONObject } | undefined {
     let index = ROOTS_TREE_INDEX_CACHE.get(roots);
     if (!index) {
@@ -310,7 +313,7 @@ function getTreeNodeLocation(
 }
 
 function buildTreeIndex(
-    roots: JSONValue[]
+    roots: JSONValue[],
 ): Map<string, { list: JSONValue[]; index: number; node: JSONObject }> {
     const map = new Map<
         string,
@@ -379,7 +382,7 @@ function applyMapDiff(
     targetObj: JSONObject,
     updated: Record<string, unknown>,
     ignoreSet: Set<ContainerID>,
-    containerToJson?: (c: Container) => JSONValue
+    containerToJson?: (c: Container) => JSONValue,
 ) {
     if (!isJSONObject(targetObj)) return;
     for (const [k, v] of Object.entries(updated)) {
@@ -411,7 +414,7 @@ function applyListDelta(
     targetArr: JSONValue[],
     deltas: Array<{ insert?: unknown[]; delete?: number; retain?: number }>,
     ignoreSet: Set<ContainerID>,
-    containerToJson?: (c: Container) => JSONValue
+    containerToJson?: (c: Container) => JSONValue,
 ) {
     let index = 0;
     for (const d of deltas) {
@@ -464,7 +467,10 @@ function applyTreeDiff(
     >,
     treeId?: ContainerID,
     nodeDataWithCid?: (treeId: ContainerID) => boolean,
-    getNodeDataCid?: (treeId: ContainerID, nodeId: TreeID) => string | undefined
+    getNodeDataCid?: (
+        treeId: ContainerID,
+        nodeId: TreeID,
+    ) => string | undefined,
 ) {
     type Node = StateTreeNode;
 
@@ -527,7 +533,7 @@ function clampIndex(idx: number, len: number) {
 
 function findNodeAndParent(
     roots: StateTreeNode[],
-    id: string
+    id: string,
 ):
     | {
           parent: StateTreeNode | undefined;
@@ -558,7 +564,7 @@ function findNodeAndParent(
  */
 function applyTextDelta(
     base: string,
-    deltas: Array<{ insert?: string; delete?: number; retain?: number }>
+    deltas: Array<{ insert?: string; delete?: number; retain?: number }>,
 ): string {
     if (deltas.length === 0) {
         return base;
@@ -594,7 +600,7 @@ function applyTextDelta(
 function setAt(
     parent: JSONObject | JSONValue[],
     key: string | number,
-    value: JSONValue
+    value: JSONValue,
 ) {
     if (Array.isArray(parent) && typeof key === "number") {
         parent[key] = value;
@@ -605,7 +611,7 @@ function setAt(
 
 function getAt(
     parent: JSONObject | JSONValue[],
-    key: string | number
+    key: string | number,
 ): JSONValue | undefined {
     if (Array.isArray(parent) && typeof key === "number") {
         return parent[key];
@@ -643,7 +649,7 @@ function containerToMirrorJson(c: Container): JSONValue {
 function isIgnoredByAncestor(
     id: ContainerID,
     ignoreSet: Set<ContainerID>,
-    getContainerById?: (id: ContainerID) => Container | undefined
+    getContainerById?: (id: ContainerID) => Container | undefined,
 ): boolean {
     if (ignoreSet.has(id)) return true;
     if (!getContainerById) return false;

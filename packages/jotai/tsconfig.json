@@ -4,17 +4,10 @@
         "outDir": "./dist",
         "rootDir": "./src",
         "composite": true,
-        "noEmit": false,
+        "noEmit": false
     },
-    "include": [
-        "src/**/*"
-    ],
-    "exclude": [
-        "node_modules",
-        "dist",
-        "**/*.test.ts",
-        "**/*.test.tsx"
-    ],
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"],
     "references": [
         {
             "path": "../core"
