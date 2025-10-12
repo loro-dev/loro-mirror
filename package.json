@@ -7,6 +7,7 @@
         "build": "pnpm -r build",
         "test": "vitest run",
         "lint": "oxlint --type-aware",
+        "format": "prettier --write .",
         "typecheck": "pnpm -r typecheck"
     },
     "keywords": [
@@ -24,6 +25,7 @@
         "@types/node": "^18.0.0",
         "oxlint": "^1.12.0",
         "oxlint-tsgolint": "^0.0.4",
+        "prettier": "^3.6.2",
         "typescript": "^4.7.0",
         "vitest": "^3.2.4"
     }
