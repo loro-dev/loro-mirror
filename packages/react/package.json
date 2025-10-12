@@ -1,6 +1,6 @@
 {
     "name": "loro-mirror-react",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "description": "React hooks and context for Loro Mirror: type-safe CRDT-backed state with selective subscriptions.",
     "type": "module",
     "main": "dist/index.js",
