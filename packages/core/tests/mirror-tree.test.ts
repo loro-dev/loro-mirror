@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable unicorn/consistent-function-scoping */
 import { describe, it, expect } from "vitest";
-import { LoroDoc, LoroText } from "loro-crdt";
+import { LoroDoc, LoroText, type LoroEventBatch } from "loro-crdt";
 import { Mirror } from "../src/core/mirror";
 import { applyEventBatchToState } from "../src/core/loroEventApply";
 import { schema } from "../src/schema";
@@ -728,7 +728,7 @@ describe("LoroTree integration", () => {
         await tick();
         expect(m.getState().tree[0].data.tags).toEqual(["mid", "y"]);
     });
-    it("FROM_LORO: ignores own origin 'to-loro' events to avoid feedback", async () => {
+    it("FROM_LORO: ignores mirror-produced events to avoid feedback", async () => {
         const doc = new LoroDoc();
         const s = schema({
             tree: schema.LoroTree(schema.LoroMap({ title: schema.String() })),
@@ -743,7 +743,7 @@ describe("LoroTree integration", () => {
         } as any);
         await tick();
 
-        // Only TO_LORO notification should be recorded (FROM_LORO ignored due to origin)
+        // Only TO_LORO notification should be recorded (FROM_LORO ignored because we suppress local commits)
         expect(directions.filter((d) => d === "TO_LORO").length).toBe(1);
         expect(directions.filter((d) => d === "FROM_LORO").length).toBe(0);
     });
@@ -1040,16 +1040,11 @@ describe("LoroTree integration", () => {
             true,
         ]);
 
-        // Collect only the next TO_LORO event's tree diffs
+        // Collect only the tree diffs from the reorder commit
         let lastTreeOps: any[] = [];
+        const batches: LoroEventBatch[] = [];
         const unsub = doc.subscribe((batch) => {
-            // Mirror commits with origin "to-loro" for setState updates
-            if (batch.origin !== "to-loro") return;
-            for (const e of batch.events) {
-                if (e.diff.type === "tree") {
-                    lastTreeOps.push(...e.diff.diff);
-                }
-            }
+            batches.push(batch);
         });
 
         // New state: reorder to C, A, B (by ids) – expect only moves, not full delete+create
@@ -1060,6 +1055,16 @@ describe("LoroTree integration", () => {
         } as any);
         await tick();
         unsub();
+
+        const lastBatch = batches[batches.length - 1];
+        expect(lastBatch).toBeDefined();
+        if (lastBatch) {
+            for (const e of lastBatch.events) {
+                if (e.diff.type === "tree") {
+                    lastTreeOps.push(...e.diff.diff);
+                }
+            }
+        }
 
         // Validate we only saw move operations (no full rebuild)
         expect(lastTreeOps.length).toBeGreaterThan(0);
