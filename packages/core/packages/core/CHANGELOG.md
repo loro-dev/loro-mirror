@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.4...loro-mirror-v1.1.0) (2025-10-14)
+
+
+### Features
+
+* **core:** expose commit metadata options in setState ([#51](https://github.com/loro-dev/loro-mirror/issues/51)) ([f1dfabb](https://github.com/loro-dev/loro-mirror/commit/f1dfabbba96f16b21666d7396f8705b6816608c5))
+
 ## [1.0.4](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.0.3...loro-mirror-v1.0.4) (2025-10-12)
 
 
