@@ -239,6 +239,19 @@ export interface SetStateOptions {
      * Tags can be used for tracking the source of changes or grouping related changes
      */
     tags?: string[] | string;
+    /**
+     * Optional origin metadata forwarded to the underlying Loro commit.
+     * Useful when callers need to tag commits with application-specific provenance.
+     */
+    origin?: string;
+    /**
+     * Optional timestamp forwarded to the underlying Loro commit metadata.
+     */
+    timestamp?: number;
+    /**
+     * Optional message forwarded to the underlying Loro commit metadata.
+     */
+    message?: string;
 }
 
 type ContainerRegistry = Map<
@@ -573,7 +586,7 @@ export class Mirror<S extends SchemaType> {
      * Handle events from the LoroDoc
      */
     private handleLoroEvent = (event: LoroEventBatch) => {
-        if (event.origin === "to-loro") return;
+        if (this.syncing) return;
         this.syncing = true;
         try {
             // Pre-register any containers referenced in this batch
@@ -713,7 +726,10 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update Loro based on state changes
      */
-    private updateLoro(newState: InferType<S>) {
+    private updateLoro(
+        newState: InferType<S>,
+        options?: SetStateOptions,
+    ) {
         if (this.syncing) return;
 
         this.syncing = true;
@@ -730,7 +746,7 @@ export class Mirror<S extends SchemaType> {
                 this.options?.inferOptions,
             );
             // Apply the changes to the Loro document (and stamp any pending-state metadata like $cid)
-            this.applyChangesToLoro(changes, newState);
+            this.applyChangesToLoro(changes, newState, options);
         } finally {
             this.syncing = false;
         }
@@ -739,7 +755,11 @@ export class Mirror<S extends SchemaType> {
     /**
      * Apply a set of changes to the Loro document
      */
-    private applyChangesToLoro(changes: Change[], pendingState?: InferType<S>) {
+    private applyChangesToLoro(
+        changes: Change[],
+        pendingState?: InferType<S>,
+        options?: SetStateOptions,
+    ) {
         // Group changes by container for batch processing
         const changesByContainer = new Map<ContainerID | "", Change[]>();
 
@@ -777,7 +797,31 @@ export class Mirror<S extends SchemaType> {
         }
         // Only commit if we actually applied any changes
         if (changes.length > 0) {
-            this.doc.commit({ origin: "to-loro" });
+            let commitOptions: Parameters<LoroDoc["commit"]>[0];
+            if (options) {
+                const commitMeta: {
+                    origin?: string;
+                    timestamp?: number;
+                    message?: string;
+                } = {};
+                if (options.origin !== undefined) {
+                    commitMeta.origin = options.origin;
+                }
+                if (options.timestamp !== undefined) {
+                    commitMeta.timestamp = options.timestamp;
+                }
+                if (options.message !== undefined) {
+                    commitMeta.message = options.message;
+                }
+                if (
+                    commitMeta.origin !== undefined ||
+                    commitMeta.timestamp !== undefined ||
+                    commitMeta.message !== undefined
+                ) {
+                    commitOptions = commitMeta;
+                }
+            }
+            this.doc.commit(commitOptions);
         }
     }
 
@@ -1767,7 +1811,7 @@ export class Mirror<S extends SchemaType> {
         // Update Loro based on new state
         // Refresh in-memory state from Doc to capture assigned IDs (e.g., TreeIDs)
         // and any canonical normalization (like Tree meta->data mapping).
-        this.updateLoro(newState);
+        this.updateLoro(newState, options);
         this.state = newState;
         const shouldCheck = this.options.checkStateConsistency;
         if (shouldCheck) {

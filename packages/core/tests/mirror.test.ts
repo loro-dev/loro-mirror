@@ -17,6 +17,145 @@ describe("Mirror - State Consistency", () => {
         doc = new LoroDoc();
     });
 
+    it("forwards commit metadata through setState options", async () => {
+        const metaSchema = schema({
+            root: schema.LoroMap({
+                value: schema.String(),
+            }),
+        });
+
+        const commitSpy = vi.spyOn(doc, "commit");
+        const mirror = new Mirror({
+            doc,
+            schema: metaSchema,
+        });
+
+        commitSpy.mockClear();
+
+        const timestamp = Date.now();
+        const message = "update-from-ui";
+        const origin = "ui-panel";
+
+        mirror.setState(
+            {
+                root: {
+                    value: "next",
+                },
+            } as any,
+            { origin, timestamp, message },
+        );
+
+        await waitForSync();
+
+        expect(commitSpy).toHaveBeenCalledTimes(1);
+        expect(commitSpy.mock.calls[0][0]).toEqual({
+            origin,
+            timestamp,
+            message,
+        });
+
+        commitSpy.mockRestore();
+        mirror.dispose();
+    });
+
+    it("forwards partial commit metadata when only timestamp is provided", async () => {
+        const metaSchema = schema({
+            root: schema.LoroMap({
+                value: schema.String(),
+            }),
+        });
+
+        const commitSpy = vi.spyOn(doc, "commit");
+        const mirror = new Mirror({
+            doc,
+            schema: metaSchema,
+        });
+
+        commitSpy.mockClear();
+
+        const timestamp = Date.now();
+        mirror.setState(
+            {
+                root: {
+                    value: "time-only",
+                },
+            } as any,
+            { timestamp },
+        );
+
+        await waitForSync();
+
+        expect(commitSpy).toHaveBeenCalledTimes(1);
+        expect(commitSpy.mock.calls[0][0]).toEqual({ timestamp });
+
+        commitSpy.mockRestore();
+        mirror.dispose();
+    });
+
+    it("forwards partial commit metadata when only message is provided", async () => {
+        const metaSchema = schema({
+            root: schema.LoroMap({
+                value: schema.String(),
+            }),
+        });
+
+        const commitSpy = vi.spyOn(doc, "commit");
+        const mirror = new Mirror({
+            doc,
+            schema: metaSchema,
+        });
+
+        commitSpy.mockClear();
+
+        const message = "note";
+        mirror.setState(
+            {
+                root: {
+                    value: "message-only",
+                },
+            } as any,
+            { message },
+        );
+
+        await waitForSync();
+
+        expect(commitSpy).toHaveBeenCalledTimes(1);
+        expect(commitSpy.mock.calls[0][0]).toEqual({ message });
+
+        commitSpy.mockRestore();
+        mirror.dispose();
+    });
+
+    it("omits commit metadata when options are not provided", async () => {
+        const metaSchema = schema({
+            root: schema.LoroMap({
+                value: schema.String(),
+            }),
+        });
+
+        const commitSpy = vi.spyOn(doc, "commit");
+        const mirror = new Mirror({
+            doc,
+            schema: metaSchema,
+        });
+
+        commitSpy.mockClear();
+
+        mirror.setState({
+            root: {
+                value: "no-options",
+            },
+        } as any);
+
+        await waitForSync();
+
+        expect(commitSpy).toHaveBeenCalledTimes(1);
+        expect(commitSpy.mock.calls[0][0]).toBeUndefined();
+
+        commitSpy.mockRestore();
+        mirror.dispose();
+    });
+
     it("syncs initial state from LoroDoc correctly", async () => {
         // Set up initial Loro state
         const todoMap = doc.getMap("todos");

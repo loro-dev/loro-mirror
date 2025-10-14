@@ -82,7 +82,7 @@ Trees are advanced usage; see Advanced: Trees at the end.
 - Methods:
     - getState(): Current state
     - setState(updater | partial, options?): Mutate a draft or return a new object. Runs synchronously so downstream logic can immediately read the latest state.
-        - options: `{ tags?: string | string[] }` (surfaces in subscriber metadata)
+        - options: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string }` — tags surface in subscriber metadata; commit metadata is forwarded to the underlying Loro commit.
     - subscribe((state, metadata) => void): Subscribe; returns unsubscribe
         - metadata: `{ direction: FROM_LORO | TO_LORO; tags?: string[] }`
     - dispose(): Remove all subscriptions

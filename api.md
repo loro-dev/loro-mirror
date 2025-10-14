@@ -42,7 +42,7 @@ Contents
             - Mutate a draft: `(draft: InferType<S>) => void`
             - Return a new object: `(prev: Readonly<InferInputType<S>>) => InferInputType<S>`
             - Shallow partial: `Partial<InferInputType<S>>`
-        - `options?: { tags?: string | string[] }` — tags surface in subscriber metadata
+        - `options?: { tags?: string | string[]; origin?: string; timestamp?: number; message?: string }` — tags surface in subscriber metadata; commit metadata (`origin`, `timestamp`, `message`) is forwarded to the underlying Loro commit
     - `subscribe((state, metadata) => void): () => void`
         - `metadata: { direction: SyncDirection; tags?: string[] }`
         - Returns an unsubscribe function
@@ -55,7 +55,7 @@ Contents
         - `FROM_LORO` — changes applied from the Loro document
         - `TO_LORO` — changes produced by `setState`
         - `BIDIRECTIONAL` — manual/initial sync context
-    - Mirror ignores events with origin `"to-loro"` to prevent feedback loops.
+    - Mirror suppresses document events emitted during its own `setState` commits to prevent feedback loops; provide `origin`, `timestamp`, or `message` when you need to tag those commits.
     - Initial state precedence: defaults (from schema) → `doc` snapshot (normalized) → hinted shapes from `initialState` (no writes to Loro).
     - Trees: mirror state uses `{ id: string; data: object; children: Node[] }`. Loro tree `meta` is normalized to `data`.
     - `$cid` on maps: Mirror injects a read-only `$cid` field into every LoroMap shape in state. It equals the Loro container ID, is not written back to Loro, and is ignored by diffs.
