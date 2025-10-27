@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v1.1.0...loro-mirror-jotai-v1.1.1) (2025-10-27)
+
+
+### Miscellaneous Chores
+
+* **loro-mirror-jotai:** Synchronize loro-mirror-suite versions
+
 ## [1.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v1.0.4...loro-mirror-jotai-v1.1.0) (2025-10-14)
 
 
