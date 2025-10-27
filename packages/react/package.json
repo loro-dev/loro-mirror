@@ -45,7 +45,7 @@
     "peerDependencies": {
         "loro-crdt": "^1.8.0",
         "loro-mirror": "workspace:*",
-        "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
+        "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
     },
     "devDependencies": {
         "@types/node": "^20.10.5",
