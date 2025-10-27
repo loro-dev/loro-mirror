@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.1.0...loro-mirror-react-v1.1.1) (2025-10-27)
+
+
+### Bug Fixes
+
+* add compatibility declare for react 19 ([35aa319](https://github.com/loro-dev/loro-mirror/commit/35aa3192f3902f8595f6f34a6b79c4a60e6cf78c))
+
 ## [1.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.0.4...loro-mirror-react-v1.1.0) (2025-10-14)
 
 
