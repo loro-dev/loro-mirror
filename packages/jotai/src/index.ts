@@ -89,6 +89,7 @@ export function loroMirrorAtom<S extends SchemaType>(
     });
 
     subAtom.onMount = (set) => {
+        set(store.getState() as InferType<S>);
         const sub = store.subscribe((state, { direction }) => {
             if (direction === SyncDirection.FROM_LORO) {
                 set(state);
