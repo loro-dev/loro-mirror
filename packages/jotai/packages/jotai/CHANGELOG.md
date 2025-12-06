@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v1.1.1...loro-mirror-jotai-v1.1.2) (2025-12-06)
+
+
+### Bug Fixes
+
+* initialize subAtom state on mount with current store state ([#56](https://github.com/loro-dev/loro-mirror/issues/56)) ([ca94175](https://github.com/loro-dev/loro-mirror/commit/ca94175455842f9c0c35be4ea691edd6e9fcce5e))
+
 ## [1.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v1.1.0...loro-mirror-jotai-v1.1.1) (2025-10-27)
 
 
