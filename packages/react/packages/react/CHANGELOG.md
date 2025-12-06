@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.1.1...loro-mirror-react-v1.1.2) (2025-12-06)
+
+
+### Miscellaneous Chores
+
+* **loro-mirror-react:** Synchronize loro-mirror-suite versions
+
 ## [1.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.1.0...loro-mirror-react-v1.1.1) (2025-10-27)
 
 
