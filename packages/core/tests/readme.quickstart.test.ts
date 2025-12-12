@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { LoroDoc } from "loro-crdt";
-import { Mirror, schema, validateSchema } from "../src";
+import { Mirror, schema, validateSchema } from "../src/index.js";
 
 describe("README Quick Start examples", () => {
     it("creates a store, updates immutably and via draft, and injects cid", async () => {

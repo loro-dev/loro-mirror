@@ -1,6 +1,6 @@
-import { Mirror, SyncDirection } from "../src/core/mirror";
-import { valueIsContainer, valueIsContainerOfType } from "../src/core/utils";
-import { schema } from "../src/schema";
+import { Mirror, SyncDirection } from "../src/core/mirror.js";
+import { valueIsContainer, valueIsContainerOfType } from "../src/core/utils.js";
+import { schema } from "../src/schema/index.js";
 import { LoroDoc, LoroList, LoroMap } from "loro-crdt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

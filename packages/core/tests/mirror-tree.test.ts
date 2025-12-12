@@ -2,9 +2,9 @@
 /* eslint-disable unicorn/consistent-function-scoping */
 import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroText, type LoroEventBatch } from "loro-crdt";
-import { Mirror } from "../src/core/mirror";
-import { applyEventBatchToState } from "../src/core/loroEventApply";
-import { schema } from "../src/schema";
+import { Mirror } from "../src/core/mirror.js";
+import { applyEventBatchToState } from "../src/core/loroEventApply.js";
+import { schema } from "../src/schema/index.js";
 
 // Small helper to wait for microtasks (mirror commits async)
 const tick = async () => {

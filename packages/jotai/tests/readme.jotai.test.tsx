@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { LoroDoc } from "loro-crdt";
 import { InferInputType, schema } from "loro-mirror";
-import { loroMirrorAtom } from "../src";
+import { loroMirrorAtom } from "../src/index.js";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 
 describe("Jotai README example", () => {

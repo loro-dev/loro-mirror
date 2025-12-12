@@ -3,7 +3,7 @@ import { useAtom } from "jotai";
 import { LoroDoc } from "loro-crdt";
 import { schema } from "loro-mirror";
 import { afterEach, describe, expect, it } from "vitest";
-import { loroMirrorAtom } from "../src";
+import { loroMirrorAtom } from "../src/index.js";
 
 // Helper to wait for Jotai state propagation
 const waitFor = (ms: number) =>

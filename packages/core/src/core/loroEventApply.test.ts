@@ -1,7 +1,7 @@
 /* eslint-disable unicorn/consistent-function-scoping */
 import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroText, LoroList, LoroMap, LoroCounter } from "loro-crdt";
-import { applyEventBatchToState } from "./loroEventApply";
+import { applyEventBatchToState } from "./loroEventApply.js";
 
 const commitAndAssert = (doc: LoroDoc, getState: () => unknown) => {
     doc.commit();

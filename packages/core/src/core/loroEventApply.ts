@@ -8,7 +8,7 @@ import {
     LoroEventBatch,
     TreeID,
 } from "loro-crdt";
-import { defineCidProperty, isTreeID } from "./utils";
+import { defineCidProperty, isTreeID } from "./utils.js";
 
 // Plain JSON-like value held in Mirror state (no `any`)
 type JSONPrimitive = string | number | boolean | null | undefined;
