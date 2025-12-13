@@ -110,7 +110,13 @@ Loro Mirror provides a declarative schema system that enables:
     - `schema.String<T extends string = string>(options?)` - String type with optional generic constraint
     - `schema.Number(options?)` - Number type
     - `schema.Boolean(options?)` - Boolean type
+    - `schema.Any(options?)` - Runtime-inferred value/container type for JSON-like dynamic fields
     - `schema.Ignore(options?)` - Field that won't sync with Loro, useful for local computed fields
+
+`schema.Any` options:
+
+- `defaultLoroText?: boolean` (defaults to `false` for `Any` when omitted)
+- `defaultMovableList?: boolean` (inherits from global inference options)
 
 - **Container Types**:
     - `schema.LoroMap(definition, options?)` - Object container that can nest arbitrary field schemas
@@ -331,6 +337,7 @@ Loro Mirror uses a typed schema to map your app state to Loro containers. Common
 - `schema.String(options?)`: string
 - `schema.Number(options?)`: number
 - `schema.Boolean(options?)`: boolean
+- `schema.Any(options?)`: JSON-like unknown (runtime-inferred)
 - `schema.Ignore(options?)`: exclude from sync (app-only)
 - `schema.LoroText(options?)`: rich text (`LoroText`)
 - `schema.LoroMap(definition, options?)`: object (`LoroMap`)

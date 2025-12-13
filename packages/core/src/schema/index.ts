@@ -4,6 +4,8 @@
  * This module provides utilities to define schemas that map between JavaScript types and Loro CRDT types.
  */
 import {
+    AnySchemaOptions,
+    AnySchemaType,
     BooleanSchemaType,
     ContainerSchemaType,
     IgnoreSchemaType,
@@ -60,6 +62,21 @@ schema.String = function <
             return null;
         },
     } as StringSchemaType<T> & { options: O };
+};
+
+/**
+ * Define an any field (runtime-inferred by Mirror)
+ */
+schema.Any = function <O extends AnySchemaOptions = AnySchemaOptions>(
+    options?: O,
+) {
+    return {
+        type: "any" as const,
+        options: options || ({} as O),
+        getContainerType: () => {
+            return null;
+        },
+    } as AnySchemaType & { options: O };
 };
 
 /**

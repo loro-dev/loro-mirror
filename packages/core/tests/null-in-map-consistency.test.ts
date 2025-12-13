@@ -2,19 +2,6 @@ import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroMap, LoroList } from "loro-crdt";
 import { Mirror, schema, toNormalizedJson } from "../src/index.js";
 
-function stripCid(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(stripCid);
-    if (value && typeof value === "object") {
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            if (k === "$cid") continue;
-            out[k] = stripCid(v);
-        }
-        return out;
-    }
-    return value;
-}
-
 describe("setState consistency with null fields in LoroMap", () => {
     it("does not diverge when a loro-map field contains null and checkStateConsistency is enabled", async () => {
         const withSchema = schema({

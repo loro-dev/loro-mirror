@@ -4,9 +4,9 @@
 
 export { Mirror, SyncDirection, toNormalizedJson } from "./mirror.js";
 export type {
-    InferContainerOptions,
     MirrorOptions,
     SetStateOptions,
     SubscriberCallback,
     UpdateMetadata,
+    InferContainerOptions
 } from "./mirror.js";

@@ -2,6 +2,14 @@ import { test, expectTypeOf, describe } from "vitest";
 import { InferType, schema } from "../src/index.js";
 
 describe("infer type", () => {
+    test("infer any", () => {
+        const anySchema = schema.Any();
+
+        type InferredType = InferType<typeof anySchema>;
+
+        expectTypeOf<InferredType>().toEqualTypeOf<unknown>();
+    });
+
     test("catchall", () => {
         const mixedSchema = schema
             .LoroMap({

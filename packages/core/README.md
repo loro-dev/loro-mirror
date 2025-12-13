@@ -92,7 +92,7 @@ Types: `SyncDirection`, `UpdateMetadata`, `SetStateOptions`.
 ### Schema Builder
 
 - Root: `schema({ ...fields })`
-- Primitives: `schema.String`, `schema.Number`, `schema.Boolean`, `schema.Ignore`
+- Primitives: `schema.String`, `schema.Number`, `schema.Boolean`, `schema.Any`, `schema.Ignore`
 - Containers (core):
     - `schema.LoroMap({ ...fields })`
     - `schema.LoroList(itemSchema, idSelector?)`
@@ -112,6 +112,12 @@ Signatures:
 - `schema.LoroTree(nodeMapSchema, options?)`
 
 SchemaOptions for any field: `{ required?: boolean; defaultValue?: unknown; description?: string; validate?: (value) => boolean | string }`.
+
+Any options:
+
+- `schema.Any({ defaultLoroText?: boolean; defaultMovableList?: boolean })`
+    - `defaultLoroText` defaults to `false` for Any when omitted (primitive string), overriding the global `inferOptions.defaultLoroText`.
+    - `defaultMovableList` inherits from the global inference options unless specified.
 
 Reserved key `$cid`:
 

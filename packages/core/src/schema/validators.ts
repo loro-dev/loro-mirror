@@ -2,6 +2,7 @@
  * Validators for schema definitions
  */
 import {
+    AnySchemaType,
     BaseSchemaType,
     ContainerSchemaType,
     InferType,
@@ -41,57 +42,64 @@ function markSchemaValidated(schema: SchemaType, value: unknown): void {
  * Type guard for LoroMapSchema
  */
 export function isLoroMapSchema<T extends Record<string, SchemaType>>(
-    schema: SchemaType,
+    schema?: SchemaType,
 ): schema is LoroMapSchema<T> {
-    return (schema as BaseSchemaType).type === "loro-map";
+    return !!schema && (schema as BaseSchemaType).type === "loro-map";
 }
 
 /**
  * Type guard for LoroListSchema
  */
 export function isLoroListSchema<T extends SchemaType>(
-    schema: SchemaType,
+    schema?: SchemaType,
 ): schema is LoroListSchema<T> {
-    return (schema as BaseSchemaType).type === "loro-list";
+    return !!schema && (schema as BaseSchemaType).type === "loro-list";
 }
 
 export function isListLikeSchema<T extends SchemaType>(
-    schema: SchemaType,
+    schema?: SchemaType,
 ): schema is LoroListSchema<T> | LoroMovableListSchema<T> {
     return isLoroListSchema(schema) || isLoroMovableListSchema(schema);
 }
 
 export function isLoroMovableListSchema<T extends SchemaType>(
-    schema: SchemaType,
+    schema?: SchemaType,
 ): schema is LoroMovableListSchema<T> {
-    return (schema as BaseSchemaType).type === "loro-movable-list";
+    return !!schema && (schema as BaseSchemaType).type === "loro-movable-list";
 }
 
 /**
  * Type guard for RootSchemaType
  */
 export function isRootSchemaType<T extends Record<string, ContainerSchemaType>>(
-    schema: SchemaType,
+    schema?: SchemaType,
 ): schema is RootSchemaType<T> {
-    return (schema as BaseSchemaType).type === "schema";
+    return !!schema && (schema as BaseSchemaType).type === "schema";
 }
 
 /**
  * Type guard for LoroTextSchemaType
  */
 export function isLoroTextSchema(
-    schema: SchemaType,
+    schema?: SchemaType,
 ): schema is LoroTextSchemaType {
-    return (schema as BaseSchemaType).type === "loro-text";
+    return !!schema && (schema as BaseSchemaType).type === "loro-text";
 }
 
 /**
  * Type guard for LoroTreeSchema
  */
 export function isLoroTreeSchema<T extends Record<string, SchemaType>>(
-    schema: SchemaType,
+    schema?: SchemaType,
 ): schema is LoroTreeSchema<T> {
-    return (schema as BaseSchemaType).type === "loro-tree";
+    return !!schema && (schema as BaseSchemaType).type === "loro-tree";
+}
+
+/**
+ * Type guard for AnySchemaType
+ */
+export function isAnySchema(schema?: SchemaType): schema is AnySchemaType {
+    return !!schema && (schema as BaseSchemaType).type === "any";
 }
 
 /**
@@ -136,6 +144,22 @@ export function validateSchema<S extends SchemaType>(
 
     // Validate based on schema type
     switch ((schema as BaseSchemaType).type) {
+        case "any": {
+            // Accept JSON-like values (primitives, arrays, and plain objects)
+            if (
+                typeof value !== "string" &&
+                typeof value !== "number" &&
+                typeof value !== "boolean" &&
+                value !== null &&
+                value !== undefined &&
+                !Array.isArray(value) &&
+                !isObject(value)
+            ) {
+                errors.push("Value must be JSON-like");
+            }
+            break;
+        }
+
         case "string":
             if (typeof value !== "string") {
                 errors.push("Value must be a string");
@@ -361,6 +385,11 @@ export function getDefaultValue<S extends SchemaType>(
     const schemaType = (schema as BaseSchemaType).type;
 
     switch (schemaType) {
+        case "any": {
+            // Only honor explicit defaultValue (handled above); otherwise undefined
+            return undefined;
+        }
+
         case "string": {
             const value = schema.options.required ? "" : undefined;
             if (value === undefined) return undefined;
