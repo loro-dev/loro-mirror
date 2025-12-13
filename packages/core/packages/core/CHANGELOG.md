@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.1.3...loro-mirror-v1.2.0) (2025-12-13)
+
+
+### Features
+
+* schema.Any() ([#60](https://github.com/loro-dev/loro-mirror/issues/60)) ([87101ec](https://github.com/loro-dev/loro-mirror/commit/87101eca84d71d74c889d29579df550c3058f7dd))
+
 ## [1.1.3](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.1.2...loro-mirror-v1.1.3) (2025-12-13)
 
 
