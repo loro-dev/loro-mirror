@@ -1,9 +1,10 @@
 /* eslint-disable unicorn/consistent-function-scoping */
 import { Mirror } from "../src/core/mirror";
-import { LoroDoc } from "loro-crdt";
+import { isContainer, LoroDoc } from "loro-crdt";
 import { schema } from "../src/schema";
 import { describe, expect, it } from "vitest";
 import { valueIsContainerOfType } from "../src/core/utils";
+import { diffMovableListByIndex } from "../src/core/diff";
 
 // Utility function to wait for sync to complete (three microtasks for better reliability)
 const waitForSync = async () => {
@@ -611,5 +612,176 @@ describe("MovableList", () => {
 
             current = next;
         }
+    });
+});
+
+describe("MovableList (inferred)", () => {
+    const getMovableListItemContainerIds = (doc: LoroDoc, key: string) => {
+        const list = doc.getMovableList(key);
+        const ids: string[] = [];
+        for (let i = 0; i < list.length; i++) {
+            const v = list.get(i);
+            if (!isContainer(v)) {
+                throw new Error("Expected movable list items to be containers");
+            }
+            ids.push(v.id);
+        }
+        return ids;
+    };
+
+    const getListState = (state: unknown) => {
+        if (!state || typeof state !== "object") {
+            throw new Error("Expected state to be an object");
+        }
+        const list = (state as Record<string, unknown>)["list"];
+        if (!Array.isArray(list)) {
+            throw new Error("Expected state.list to be an array");
+        }
+        return list as Array<Record<string, unknown>>;
+    };
+
+    const getCid = (item: Record<string, unknown>) => {
+        const cid = item["$cid"];
+        if (typeof cid !== "string") {
+            throw new Error("Expected item.$cid to be a string");
+        }
+        return cid;
+    };
+
+    it("diffMovableListByIndex emits a single move for a pure one-element reorder", () => {
+        const doc = new LoroDoc();
+        const containerId = doc.getMovableList("list").id;
+
+        const oldState = ["a", "b", "c", "d"];
+        const newState = ["b", "c", "a", "d"];
+
+        const changes = diffMovableListByIndex(
+            doc,
+            oldState,
+            newState,
+            containerId,
+            undefined,
+            { defaultMovableList: true },
+        );
+
+        expect(changes).toEqual([
+            {
+                container: containerId,
+                key: 0,
+                value: undefined,
+                kind: "move",
+                fromIndex: 0,
+                toIndex: 2,
+            },
+        ]);
+    });
+
+    it("works without schema when defaultMovableList is enabled", async () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            inferOptions: { defaultMovableList: true },
+        });
+
+        mirror.setState({ list: ["a", "b"] });
+        await waitForSync();
+
+        let serialized = doc.getDeepValueWithID() as unknown as Record<
+            string,
+            unknown
+        >;
+        expect(valueIsContainerOfType(serialized["list"], ":MovableList")).toBe(
+            true,
+        );
+
+        mirror.setState({ list: ["a", "c", "d"] });
+        await waitForSync();
+
+        const list = doc.getMovableList("list");
+        expect(list.length).toBe(3);
+        expect(list.get(0)).toBe("a");
+        expect(list.get(1)).toBe("c");
+        expect(list.get(2)).toBe("d");
+
+        // Deletions
+        mirror.setState({ list: ["a"] });
+        await waitForSync();
+        expect(list.length).toBe(1);
+        expect(list.get(0)).toBe("a");
+
+        // Reorder (index-based fallback uses index diffs when items have no $cid)
+        mirror.setState({ list: ["x", "a"] });
+        await waitForSync();
+        expect(list.length).toBe(2);
+        expect(list.get(0)).toBe("x");
+        expect(list.get(1)).toBe("a");
+
+        serialized = doc.getDeepValueWithID() as unknown as Record<
+            string,
+            unknown
+        >;
+        expect(valueIsContainerOfType(serialized["list"], ":MovableList")).toBe(
+            true,
+        );
+    });
+
+    it("preserves nested map container identity for object items", async () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            inferOptions: { defaultMovableList: true },
+        });
+
+        mirror.setState({
+            list: [{ k: 1 }, { k: 2 }],
+        });
+        await waitForSync();
+
+        const list = doc.getMovableList("list");
+        const first = list.get(0);
+        expect(isContainer(first)).toBe(true);
+        const firstId = isContainer(first) ? first.id : "";
+
+        mirror.setState({
+            list: [{ k: 1, x: 3 }, { k: 2 }],
+        });
+        await waitForSync();
+
+        const firstAfter = list.get(0);
+        expect(isContainer(firstAfter)).toBe(true);
+        expect(isContainer(firstAfter) ? firstAfter.id : "").toBe(firstId);
+    });
+
+    it("uses $cid as idSelector to preserve containers across complex reorders", async () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            inferOptions: { defaultMovableList: true },
+        });
+
+        mirror.setState({
+            list: [{ v: "a" }, { v: "b" }, { v: "c" }, { v: "d" }],
+        });
+        await waitForSync();
+
+        const before = getMovableListItemContainerIds(doc, "list");
+        expect(new Set(before).size).toBe(before.length);
+
+        const list0 = getListState(mirror.getState());
+        if (list0.length !== 4) {
+            throw new Error("Expected list to have length 4");
+        }
+
+        // Complex reorder (not representable as a single move)
+        // [a,b,c,d] -> [b,d,a,c]
+        const next = [list0[1], list0[3], list0[0], list0[2]];
+        mirror.setState({ list: next });
+        await waitForSync();
+
+        const after = getMovableListItemContainerIds(doc, "list");
+        expect(new Set(after)).toEqual(new Set(before));
+
+        const expectedOrder = next.map((x) => getCid(x));
+        expect(after).toEqual(expectedOrder);
     });
 });

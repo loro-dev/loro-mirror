@@ -201,31 +201,25 @@ export function insertChildToMap(
     containerId: ContainerID | "",
     key: string,
     value: unknown,
+    inferOptions?: InferContainerOptions,
 ): Change {
-    if (isObject(value)) {
+    const ct = tryInferContainerType(value, inferOptions);
+    if (ct) {
         return {
             container: containerId,
             key,
-            value: value,
+            value,
             kind: "insert-container",
-            childContainerType: "Map",
-        };
-    } else if (Array.isArray(value)) {
-        return {
-            container: containerId,
-            key,
-            value: value,
-            kind: "insert-container",
-            childContainerType: "List",
-        };
-    } else {
-        return {
-            container: containerId,
-            key,
-            value: value,
-            kind: "insert",
+            childContainerType: ct,
         };
     }
+
+    return {
+        container: containerId,
+        key,
+        value,
+        kind: "insert",
+    };
 }
 
 /* Try to update a change to insert a container */
@@ -233,6 +227,7 @@ export function tryUpdateToContainer(
     change: Change,
     toUpdate: boolean,
     schema: SchemaType | undefined,
+    inferOptions?: InferContainerOptions,
 ): Change {
     if (!toUpdate) {
         return change;
@@ -242,9 +237,11 @@ export function tryUpdateToContainer(
         return change;
     }
 
+    const effectiveInferOptions = applySchemaToInferOptions(schema, inferOptions);
     const containerType = schema
-        ? (schemaToContainerType(schema) ?? tryInferContainerType(change.value))
-        : undefined;
+        ? (schemaToContainerType(schema) ??
+          tryInferContainerType(change.value, effectiveInferOptions))
+        : tryInferContainerType(change.value, effectiveInferOptions);
 
     if (containerType == null) {
         return change;
@@ -302,6 +299,19 @@ export function tryInferContainerType(
     }
 }
 
+export function applySchemaToInferOptions(
+    schema: SchemaType | undefined,
+    base: InferContainerOptions | undefined,
+): InferContainerOptions | undefined {
+    if (!schema || schema.type !== "any") return base;
+    const next: InferContainerOptions = { ...base };
+    next.defaultLoroText = schema.options.defaultLoroText ?? false;
+    if (schema.options.defaultMovableList !== undefined) {
+        next.defaultMovableList = schema.options.defaultMovableList;
+    }
+    return next;
+}
+
 /* Check if value is of a given container type */
 export function isValueOfContainerType(
     containerType: ContainerType,
@@ -312,7 +322,7 @@ export function isValueOfContainerType(
         case "List":
             return typeof value === "object" && Array.isArray(value);
         case "Map":
-            return typeof value === "object" && value !== null;
+            return isObject(value);
         case "Text":
             return typeof value === "string" && value !== null;
         case "Tree":

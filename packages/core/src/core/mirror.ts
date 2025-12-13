@@ -17,6 +17,7 @@ import {
     LoroTree,
     TreeID,
 } from "loro-crdt";
+import type { InferContainerOptions } from "../inferOptions";
 
 import { applyEventBatchToState } from "./loroEventApply";
 import {
@@ -42,6 +43,7 @@ import {
     inferContainerTypeFromValue,
     isObject,
     isValueOfContainerType,
+    applySchemaToInferOptions,
     schemaToContainerType,
     tryInferContainerType,
     getRootContainerByType,
@@ -132,10 +134,7 @@ export interface MirrorOptions<S extends SchemaType> {
     inferOptions?: InferContainerOptions;
 }
 
-export type InferContainerOptions = {
-    defaultLoroText?: boolean;
-    defaultMovableList?: boolean;
-};
+export type { InferContainerOptions } from "../inferOptions";
 
 export type ChangeKinds = {
     set: {
@@ -296,6 +295,8 @@ export class Mirror<S extends SchemaType> {
     private syncing = false;
     private options: MirrorOptions<S>;
     private containerRegistry: ContainerRegistry = new Map();
+    private inferOptionsByContainerId: Map<ContainerID, InferContainerOptions> =
+        new Map();
     private subscriptions: (() => void)[] = [];
     // Canonical root path (e.g., ["profile"]) per root container id
     private rootPathById: Map<ContainerID, string[]> = new Map();
@@ -528,6 +529,15 @@ export class Mirror<S extends SchemaType> {
                                       >,
                                 key,
                             );
+                            if (candidate?.type === "any") {
+                                this.inferOptionsByContainerId.set(
+                                    value.id,
+                                    this.getInferOptionsForChild(
+                                        container.id,
+                                        candidate,
+                                    ),
+                                );
+                            }
                             if (candidate && isContainerSchema(candidate)) {
                                 nestedSchema = candidate;
                             }
@@ -550,12 +560,21 @@ export class Mirror<S extends SchemaType> {
                             (isLoroListSchema(parentSchema) ||
                                 isLoroMovableListSchema(parentSchema))
                         ) {
-                            nestedSchema =
-                                parentSchema.itemSchema as ContainerSchemaType;
+                            const itemSchema = parentSchema.itemSchema;
+                            if (itemSchema?.type === "any") {
+                                this.inferOptionsByContainerId.set(
+                                    value.id,
+                                    this.getInferOptionsForChild(
+                                        container.id,
+                                        itemSchema,
+                                    ),
+                                );
+                            }
+                            if (isContainerSchema(itemSchema)) {
+                                nestedSchema = itemSchema;
+                            }
                         }
-                        if (nestedSchema) {
-                            this.registerContainer(value.id, nestedSchema);
-                        }
+                        this.registerContainer(value.id, nestedSchema);
                     }
                 }
             } else if (container.kind() === "Tree") {
@@ -906,11 +925,19 @@ export class Mirror<S extends SchemaType> {
                             container.id,
                             key,
                         );
+                        const childInfer =
+                            fieldSchema?.type === "any"
+                                ? this.getInferOptionsForChild(
+                                      container.id,
+                                      fieldSchema,
+                                  )
+                                : undefined;
                         const inserted = this.insertContainerIntoMap(
                             map,
                             schema,
                             key as string,
                             value,
+                            childInfer,
                         );
                         // Stamp $cid into the pendingState value for child maps
                         this.stampCid(value, inserted.id);
@@ -942,6 +969,10 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "insert") {
                         list.insert(index, value);
                     } else if (kind === "insert-container") {
+                        const fieldSchema = this.getSchemaForChild(
+                            container.id,
+                            key,
+                        );
                         const schema = this.getSchemaForChildContainer(
                             container.id,
                             key,
@@ -951,6 +982,12 @@ export class Mirror<S extends SchemaType> {
                             schema,
                             index,
                             value,
+                            fieldSchema?.type === "any"
+                                ? this.getInferOptionsForChild(
+                                      container.id,
+                                      fieldSchema,
+                                  )
+                                : undefined,
                         );
                     } else {
                         throw new Error("Unsupported change kind for list");
@@ -979,6 +1016,10 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "insert") {
                         list.insert(index, value);
                     } else if (kind === "insert-container") {
+                        const fieldSchema = this.getSchemaForChild(
+                            container.id,
+                            key,
+                        );
                         const schema = this.getSchemaForChildContainer(
                             container.id,
                             key,
@@ -988,6 +1029,12 @@ export class Mirror<S extends SchemaType> {
                             schema,
                             index,
                             value,
+                            fieldSchema?.type === "any"
+                                ? this.getInferOptionsForChild(
+                                      container.id,
+                                      fieldSchema,
+                                  )
+                                : undefined,
                         );
                     } else if (kind === "move") {
                         const c = change as ChangeKinds["move"];
@@ -997,17 +1044,40 @@ export class Mirror<S extends SchemaType> {
                     } else if (kind === "set") {
                         list.set(index, value);
                     } else if (kind === "set-container") {
+                        const fieldSchema = this.getSchemaForChild(
+                            container.id,
+                            key,
+                        );
                         const schema = this.getSchemaForChildContainer(
                             container.id,
                             key,
                         );
+                        const infer =
+                            fieldSchema?.type === "any"
+                                ? this.getInferOptionsForChild(
+                                      container.id,
+                                      fieldSchema,
+                                  )
+                                : !schema
+                                ? this.getInferOptionsForContainer(container.id)
+                                : undefined;
                         const [detachedContainer, _containerType] =
-                            this.createContainerFromSchema(schema, value);
+                            this.createContainerFromSchema(
+                                schema,
+                                value,
+                                infer,
+                            );
                         const newContainer = list.setContainer(
                             index,
                             detachedContainer,
                         );
 
+                        if (!schema && infer) {
+                            this.inferOptionsByContainerId.set(
+                                newContainer.id,
+                                infer,
+                            );
+                        }
                         this.registerContainer(newContainer.id, schema);
                         this.initializeContainer(newContainer, schema, value);
                         // Stamp $cid into pending state when replacing with a map container
@@ -1358,20 +1428,32 @@ export class Mirror<S extends SchemaType> {
         item: unknown,
         itemSchema: SchemaType | undefined,
     ) {
-        // Determine if the item should be a container
-        let isContainer = false;
+        const baseInfer = this.getInferOptionsForContainer(list.id);
+        const effectiveInfer = this.getInferOptionsForChild(
+            list.id,
+            itemSchema,
+        );
+
         let containerSchema: ContainerSchemaType | undefined;
+        let containerType: ContainerType | undefined;
+
         if (itemSchema && isContainerSchema(itemSchema)) {
-            isContainer = true;
             containerSchema = itemSchema;
+            containerType = schemaToContainerType(itemSchema);
         } else {
-            isContainer =
-                tryInferContainerType(item, this.options?.inferOptions) !==
-                undefined;
+            containerType = tryInferContainerType(item, effectiveInfer);
         }
 
-        if (isContainer && typeof item === "object" && item !== null) {
-            this.insertContainerIntoList(list, containerSchema, index, item);
+        if (containerType && isValueOfContainerType(containerType, item)) {
+            const childInfer =
+                containerSchema ? undefined : (effectiveInfer || baseInfer);
+            this.insertContainerIntoList(
+                list,
+                containerSchema,
+                index,
+                item,
+                childInfer,
+            );
             return;
         }
 
@@ -1428,13 +1510,20 @@ export class Mirror<S extends SchemaType> {
         schema: ContainerSchemaType | undefined,
         key: string,
         value: unknown,
+        childInferOptions?: InferContainerOptions,
     ) {
+        const infer =
+            childInferOptions || (!schema ? this.getInferOptionsForContainer(map.id) : undefined);
         const [detachedContainer, _containerType] =
-            this.createContainerFromSchema(schema, value);
+            this.createContainerFromSchema(schema, value, infer);
         const insertedContainer = map.setContainer(key, detachedContainer);
 
         if (!insertedContainer) {
             throw new Error("Failed to insert container into map");
+        }
+
+        if (!schema && infer) {
+            this.inferOptionsByContainerId.set(insertedContainer.id, infer);
         }
 
         this.registerContainer(insertedContainer.id, schema);
@@ -1470,18 +1559,55 @@ export class Mirror<S extends SchemaType> {
                       SchemaType
                   >
                 | undefined;
+            const baseInfer = this.getInferOptionsForContainer(map.id);
             for (const [key, val] of Object.entries(value)) {
                 // Skip injected CID field
                 if (key === CID_KEY) continue;
-                const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
+                if (mapSchema) {
+                    const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
 
-                if (fieldSchema && isContainerSchema(fieldSchema)) {
-                    const ct = schemaToContainerType(fieldSchema);
-                    if (ct && isValueOfContainerType(ct, val)) {
-                        this.insertContainerIntoMap(map, fieldSchema, key, val);
-                    } else {
-                        map.set(key, val);
+                    if (fieldSchema?.type === "any") {
+                        const infer = this.getInferOptionsForChild(
+                            map.id,
+                            fieldSchema,
+                        );
+                        const ct = tryInferContainerType(val, infer);
+                        if (ct && isValueOfContainerType(ct, val)) {
+                            this.insertContainerIntoMap(
+                                map,
+                                undefined,
+                                key,
+                                val,
+                                infer,
+                            );
+                        } else {
+                            map.set(key, val);
+                        }
+                        continue;
                     }
+
+                    if (fieldSchema && isContainerSchema(fieldSchema)) {
+                        const ct = schemaToContainerType(fieldSchema);
+                        if (ct && isValueOfContainerType(ct, val)) {
+                            this.insertContainerIntoMap(
+                                map,
+                                fieldSchema,
+                                key,
+                                val,
+                            );
+                        } else {
+                            map.set(key, val);
+                        }
+                        continue;
+                    }
+
+                    map.set(key, val);
+                    continue;
+                }
+
+                const ct = tryInferContainerType(val, baseInfer);
+                if (ct && isValueOfContainerType(ct, val)) {
+                    this.insertContainerIntoMap(map, undefined, key, val, baseInfer);
                 } else {
                     map.set(key, val);
                 }
@@ -1496,10 +1622,22 @@ export class Mirror<S extends SchemaType> {
                 schema as LoroListSchema<SchemaType> | undefined
             )?.itemSchema;
 
+            const baseInfer = this.getInferOptionsForContainer(list.id);
             const isListItemContainer = isContainerSchema(itemSchema);
 
             for (let i = 0; i < value.length; i++) {
                 const item = value[i];
+
+                if (itemSchema?.type === "any") {
+                    const infer = applySchemaToInferOptions(itemSchema, baseInfer) || baseInfer;
+                    const ct = tryInferContainerType(item, infer);
+                    if (ct && isValueOfContainerType(ct, item)) {
+                        this.insertContainerIntoList(list, undefined, i, item, infer);
+                    } else {
+                        list.insert(i, item);
+                    }
+                    continue;
+                }
 
                 if (isListItemContainer) {
                     const ct = schemaToContainerType(itemSchema);
@@ -1508,9 +1646,20 @@ export class Mirror<S extends SchemaType> {
                     } else {
                         list.insert(i, item);
                     }
-                } else {
-                    list.insert(i, item);
+                    continue;
                 }
+
+                if (!itemSchema) {
+                    const ct = tryInferContainerType(item, baseInfer);
+                    if (ct && isValueOfContainerType(ct, item)) {
+                        this.insertContainerIntoList(list, undefined, i, item, baseInfer);
+                    } else {
+                        list.insert(i, item);
+                    }
+                    continue;
+                }
+
+                list.insert(i, item);
             }
         } else if (kind === "Text") {
             const text = container as LoroText;
@@ -1533,10 +1682,11 @@ export class Mirror<S extends SchemaType> {
     private createContainerFromSchema(
         schema: ContainerSchemaType | undefined,
         value: unknown,
+        inferOptions?: InferContainerOptions,
     ): [Container, ContainerType] {
         const containerType = schema
             ? schemaToContainerType(schema)
-            : tryInferContainerType(value, this.options?.inferOptions);
+            : tryInferContainerType(value, inferOptions);
 
         switch (containerType) {
             case "Map":
@@ -1564,9 +1714,12 @@ export class Mirror<S extends SchemaType> {
         schema: ContainerSchemaType | undefined,
         index: number,
         value: unknown,
+        childInferOptions?: InferContainerOptions,
     ) {
+        const infer =
+            childInferOptions || (!schema ? this.getInferOptionsForContainer(list.id) : undefined);
         const [detachedContainer, _containerType] =
-            this.createContainerFromSchema(schema, value);
+            this.createContainerFromSchema(schema, value, infer);
         let insertedContainer: Container | undefined;
 
         if (index === undefined) {
@@ -1577,6 +1730,10 @@ export class Mirror<S extends SchemaType> {
 
         if (!insertedContainer) {
             throw new Error("Failed to insert container into list");
+        }
+
+        if (!schema && infer) {
+            this.inferOptionsByContainerId.set(insertedContainer.id, infer);
         }
 
         this.registerContainer(insertedContainer.id, schema);
@@ -1676,13 +1833,11 @@ export class Mirror<S extends SchemaType> {
                 this.updateMapEntry(map, key, val, schema);
             } else {
                 // Infer whether this is a container
-                const ct = tryInferContainerType(
-                    val,
-                    this.options?.inferOptions,
-                );
+                const infer = this.getInferOptionsForContainer(map.id);
+                const ct = tryInferContainerType(val, infer);
                 if (ct && isValueOfContainerType(ct, val)) {
                     // No child schema; insert with inferred container type
-                    this.insertContainerIntoMap(map, undefined, key, val);
+                    this.insertContainerIntoMap(map, undefined, key, val, infer);
                 } else {
                     map.set(key, val);
                 }
@@ -1718,6 +1873,20 @@ export class Mirror<S extends SchemaType> {
             if (fieldSchema && fieldSchema.type === "ignore") {
                 // Skip ignore fields: they live only in mirrored state
                 return;
+            }
+            if (fieldSchema?.type === "any") {
+                const infer = this.getInferOptionsForChild(map.id, fieldSchema);
+                const ct = tryInferContainerType(value, infer);
+                if (ct && isValueOfContainerType(ct, value)) {
+                    this.insertContainerIntoMap(
+                        map,
+                        undefined,
+                        key,
+                        value,
+                        infer,
+                    );
+                    return;
+                }
             }
             if (fieldSchema && isContainerSchema(fieldSchema)) {
                 const ct = schemaToContainerType(fieldSchema);
@@ -1981,6 +2150,22 @@ export class Mirror<S extends SchemaType> {
         defineCidProperty(target, cid);
     }
 
+    private getInferOptionsForContainer(containerId: ContainerID | "") {
+        if (containerId !== "") {
+            const local = this.inferOptionsByContainerId.get(containerId);
+            if (local) return local;
+        }
+        return this.options?.inferOptions || {};
+    }
+
+    private getInferOptionsForChild(
+        parentId: ContainerID,
+        childSchema: SchemaType | undefined,
+    ) {
+        const base = this.getInferOptionsForContainer(parentId);
+        return applySchemaToInferOptions(childSchema, base) || base;
+    }
+
     private getSchemaForMapKey(
         schema:
             | LoroMapSchema<Record<string, SchemaType>>
@@ -2093,7 +2278,7 @@ function restoreCidDescriptors(value: unknown): unknown {
     }
 
     if (isObject(value)) {
-        const obj = value as Record<string, unknown>;
+        const obj = value;
         for (const key of Object.keys(obj)) {
             obj[key] = restoreCidDescriptors(obj[key]);
         }

@@ -104,6 +104,7 @@ All schema builders live under the `schema` namespace and are exported at the pa
     - `schema.String<T = string>(options?)`
     - `schema.Number(options?)`
     - `schema.Boolean(options?)`
+    - `schema.Any(options?)` — runtime-inferred value/container type (useful for dynamic JSON-like fields)
     - `schema.Ignore(options?)` — present in state, ignored for Loro diffs/validation
 
 - Containers
@@ -122,6 +123,10 @@ All schema builders live under the `schema` namespace and are exported at the pa
     - `defaultValue?: unknown` — default value when not present
     - `description?: string`
     - `validate?: (value) => boolean | string` — custom validator message when not true
+
+- `schema.Any` options (per-Any inference overrides)
+    - `defaultLoroText?: boolean` — default `false` for `Any` when omitted (primitive string), overriding the global `inferOptions.defaultLoroText`.
+    - `defaultMovableList?: boolean` — inherits from the global inference options unless explicitly set.
 
 - Type inference
     - `InferType<S>` — state type produced by a schema
