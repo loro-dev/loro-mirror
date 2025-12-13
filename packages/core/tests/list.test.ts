@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { longestIncreasingSubsequence } from "../src/core/diff";
-import { Mirror, schema } from "../src";
+import { longestIncreasingSubsequence } from "../src/core/diff.js";
+import { Mirror, schema } from "../src/index.js";
 import { LoroDoc } from "loro-crdt";
 
 describe("longestIncreasingSubsequence", () => {

@@ -18,7 +18,7 @@ import {
     TreeID,
 } from "loro-crdt";
 
-import { applyEventBatchToState } from "./loroEventApply";
+import { applyEventBatchToState } from "./loroEventApply.js";
 import {
     ContainerSchemaType,
     getDefaultValue,
@@ -36,7 +36,7 @@ import {
     RootSchemaType,
     SchemaType,
     validateSchema,
-} from "../schema";
+} from "../schema/index.js";
 import {
     deepEqual,
     inferContainerTypeFromValue,
@@ -46,9 +46,9 @@ import {
     tryInferContainerType,
     getRootContainerByType,
     defineCidProperty,
-} from "./utils";
-import { diffContainer, diffTree } from "./diff";
-import { CID_KEY } from "../constants";
+} from "./utils.js";
+import { diffContainer, diffTree } from "./diff.js";
+import { CID_KEY } from "../constants.js";
 
 // Plain JSON-like value used for state snapshots
 type JSONPrimitive = string | number | boolean | null | undefined;
@@ -98,7 +98,7 @@ export interface MirrorOptions<S extends SchemaType> {
     /**
      * Initial state (optional)
      */
-    initialState?: Partial<import("../schema").InferInputType<S>>;
+    initialState?: Partial<import("../schema/index.js").InferInputType<S>>;
 
     /**
      * Whether to validate state updates against the schema
@@ -726,10 +726,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update Loro based on state changes
      */
-    private updateLoro(
-        newState: InferType<S>,
-        options?: SetStateOptions,
-    ) {
+    private updateLoro(newState: InferType<S>, options?: SetStateOptions) {
         if (this.syncing) return;
 
         this.syncing = true;

@@ -1,9 +1,9 @@
 /* eslint-disable unicorn/consistent-function-scoping */
-import { Mirror } from "../src/core/mirror";
+import { Mirror } from "../src/core/mirror.js";
 import { LoroDoc } from "loro-crdt";
-import { schema } from "../src/schema";
+import { schema } from "../src/schema/index.js";
 import { describe, expect, it } from "vitest";
-import { valueIsContainerOfType } from "../src/core/utils";
+import { valueIsContainerOfType } from "../src/core/utils.js";
 
 // Utility function to wait for sync to complete (three microtasks for better reliability)
 const waitForSync = async () => {

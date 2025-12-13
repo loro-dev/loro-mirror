@@ -21,10 +21,10 @@ import {
     SchemaType,
     StringSchemaType,
     InferType,
-} from "./types";
+} from "./types.js";
 
-export * from "./types";
-export * from "./validators";
+export * from "./types.js";
+export * from "./validators.js";
 
 /**
  * Create a schema definition

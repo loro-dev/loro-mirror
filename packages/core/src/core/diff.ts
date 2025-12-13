@@ -22,9 +22,9 @@ import {
     LoroTreeSchema,
     RootSchemaType,
     SchemaType,
-} from "../schema";
-import { ChangeKinds, InferContainerOptions, type Change } from "./mirror";
-import { CID_KEY } from "../constants";
+} from "../schema/index.js";
+import { ChangeKinds, InferContainerOptions, type Change } from "./mirror.js";
+import { CID_KEY } from "../constants.js";
 
 import {
     containerIdToContainerType,
@@ -42,7 +42,7 @@ import {
     isArrayLike,
     isTreeID,
     defineCidProperty,
-} from "./utils";
+} from "./utils.js";
 
 /**
  * Finds the longest increasing subsequence of a sequence of numbers

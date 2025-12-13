@@ -1,6 +1,6 @@
 import { it, expect } from "vitest";
 import { LoroDoc, LoroMap } from "loro-crdt";
-import { Mirror, schema } from "../src/";
+import { Mirror, schema } from "../src/index.js";
 
 it("Applying remote event then calling setState immediately may cause an event apply order issue", async () => {
     const docA = new LoroDoc();

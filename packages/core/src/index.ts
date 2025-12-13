@@ -4,7 +4,7 @@
  */
 
 // Re-export all public APIs
-export * from "./schema";
+export * from "./schema/index.js";
 export {
     Mirror,
     toNormalizedJson,
@@ -14,11 +14,11 @@ export {
     type SubscriberCallback,
     type InferContainerOptions,
     SyncDirection,
-} from "./core";
+} from "./core/index.js";
 
 // Default export
-import * as schema from "./schema";
-import * as core from "./core";
+import * as schema from "./schema/index.js";
+import * as core from "./core/index.js";
 
 type Combined = typeof schema & typeof core;
 const loroMirror: Combined = Object.assign({}, schema, core);

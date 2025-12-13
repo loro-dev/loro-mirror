@@ -2,7 +2,7 @@
  * Test for schema catchall functionality
  */
 import { describe, it, expect } from "vitest";
-import { schema } from "../src/schema";
+import { schema } from "../src/schema/index.js";
 
 describe("Schema Catchall Functionality", () => {
     it("should create a schema with catchall support", () => {

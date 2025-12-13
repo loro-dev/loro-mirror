@@ -12,8 +12,8 @@ import {
     LoroTreeSchema,
     RootSchemaType,
     SchemaType,
-} from "./types";
-import { isObject } from "../core/utils";
+} from "./types.js";
+import { isObject } from "../core/utils.js";
 
 const schemaValidationCache = new WeakMap<object, WeakSet<object>>();
 

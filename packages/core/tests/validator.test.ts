@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LoroDoc } from "loro-crdt";
-import { Mirror } from "../src/core/mirror";
-import { schema, validateSchema } from "../src/schema";
-import * as schemaModule from "../src/schema";
+import { Mirror } from "../src/core/mirror.js";
+import { schema, validateSchema } from "../src/schema/index.js";
+import * as schemaModule from "../src/schema/index.js";
 
 describe("schema validator caching", () => {
     let doc: LoroDoc;
