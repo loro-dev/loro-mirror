@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { LoroDoc, LoroMap, LoroList } from "loro-crdt";
-import { Mirror, schema, toNormalizedJson } from "../src";
+import { Mirror, schema, toNormalizedJson } from "../src/index.js";
 
 describe("setState consistency with null fields in LoroMap", () => {
     it("does not diverge when a loro-map field contains null and checkStateConsistency is enabled", async () => {

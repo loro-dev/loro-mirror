@@ -1,5 +1,5 @@
 import { test, expectTypeOf, describe } from "vitest";
-import { InferType, schema } from "../src";
+import { InferType, schema } from "../src/index.js";
 
 describe("infer type", () => {
     test("infer any", () => {

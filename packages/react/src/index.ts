@@ -2,4 +2,4 @@
  * React integration for Loro Mirror
  */
 
-export * from "./hooks";
+export * from "./hooks.js";

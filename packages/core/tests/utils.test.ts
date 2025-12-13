@@ -4,7 +4,7 @@ import {
     getPathValue,
     setPathValue,
     isObject,
-} from "../src/core/utils";
+} from "../src/core/utils.js";
 
 describe("Utility Functions", () => {
     describe("isObject", () => {

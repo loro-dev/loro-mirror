@@ -3,9 +3,9 @@
  */
 
 import { Container, ContainerID, ContainerType, LoroDoc } from "loro-crdt";
-import { SchemaType } from "../schema";
-import { Change, InferContainerOptions } from "./mirror";
-import { CID_KEY } from "../constants";
+import { SchemaType } from "../schema/index.js";
+import { Change, InferContainerOptions } from "./mirror.js";
+import { CID_KEY } from "../constants.js";
 
 export function defineCidProperty(target: unknown, cid: ContainerID) {
     if (

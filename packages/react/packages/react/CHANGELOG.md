@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.1.2...loro-mirror-react-v1.1.3) (2025-12-13)
+
+
+### Bug Fixes
+
+* use explicit .js extensions for ESM-compliant imports ([#58](https://github.com/loro-dev/loro-mirror/issues/58)) ([d6ee6fe](https://github.com/loro-dev/loro-mirror/commit/d6ee6fe6f9e0781b6f8440075115d6315e3c1594))
+
 ## [1.1.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.1.1...loro-mirror-react-v1.1.2) (2025-12-06)
 
 

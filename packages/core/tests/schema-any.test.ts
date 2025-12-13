@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { LoroDoc } from "loro-crdt";
-import { Mirror } from "../src/core/mirror";
-import { schema } from "../src/schema";
-import { valueIsContainer, valueIsContainerOfType } from "../src/core/utils";
+import { Mirror } from "../src/core/mirror.js";
+import { schema } from "../src/schema/index.js";
+import { valueIsContainer, valueIsContainerOfType } from "../src/core/utils.js";
 
 const waitForSync = async () => {
     await Promise.resolve();

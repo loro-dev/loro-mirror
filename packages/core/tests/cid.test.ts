@@ -1,10 +1,10 @@
 import { describe, it, expect, expectTypeOf } from "vitest";
 import { LoroDoc, LoroMap } from "loro-crdt";
-import { Mirror } from "../src/core/mirror";
-import { schema } from "../src/schema";
-import { InferType } from "../src";
-import { CID_KEY } from "../src/constants";
-import { diffMap } from "../src/core/diff";
+import { Mirror } from "../src/core/mirror.js";
+import { schema } from "../src/schema/index.js";
+import { InferType } from "../src/index.js";
+import { CID_KEY } from "../src/constants.js";
+import { diffMap } from "../src/core/diff.js";
 
 describe("$cid: state injection and write ignoring (always-on for LoroMap)", () => {
     it("types: LoroMap includes $cid by default", () => {

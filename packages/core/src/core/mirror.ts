@@ -17,9 +17,10 @@ import {
     LoroTree,
     TreeID,
 } from "loro-crdt";
-import type { InferContainerOptions } from "../inferOptions";
+import type { InferContainerOptions } from "../schema/types.js";
+export type { InferContainerOptions } from "../schema/types.js";
 
-import { applyEventBatchToState } from "./loroEventApply";
+import { applyEventBatchToState } from "./loroEventApply.js";
 import {
     ContainerSchemaType,
     getDefaultValue,
@@ -37,7 +38,7 @@ import {
     RootSchemaType,
     SchemaType,
     validateSchema,
-} from "../schema";
+} from "../schema/index.js";
 import {
     deepEqual,
     inferContainerTypeFromValue,
@@ -48,9 +49,9 @@ import {
     tryInferContainerType,
     getRootContainerByType,
     defineCidProperty,
-} from "./utils";
-import { diffContainer, diffTree } from "./diff";
-import { CID_KEY } from "../constants";
+} from "./utils.js";
+import { diffContainer, diffTree } from "./diff.js";
+import { CID_KEY } from "../constants.js";
 
 // Plain JSON-like value used for state snapshots
 type JSONPrimitive = string | number | boolean | null | undefined;
@@ -100,7 +101,7 @@ export interface MirrorOptions<S extends SchemaType> {
     /**
      * Initial state (optional)
      */
-    initialState?: Partial<import("../schema").InferInputType<S>>;
+    initialState?: Partial<import("../schema/index.js").InferInputType<S>>;
 
     /**
      * Whether to validate state updates against the schema
@@ -133,8 +134,6 @@ export interface MirrorOptions<S extends SchemaType> {
      */
     inferOptions?: InferContainerOptions;
 }
-
-export type { InferContainerOptions } from "../inferOptions";
 
 export type ChangeKinds = {
     set: {
@@ -522,11 +521,11 @@ export class Mirror<S extends SchemaType> {
                         if (parentSchema && isLoroMapSchema(parentSchema)) {
                             const candidate = this.getSchemaForMapKey(
                                 parentSchema as
-                                    | LoroMapSchema<Record<string, SchemaType>>
-                                    | LoroMapSchemaWithCatchall<
-                                          Record<string, SchemaType>,
-                                          SchemaType
-                                      >,
+                                | LoroMapSchema<Record<string, SchemaType>>
+                                | LoroMapSchemaWithCatchall<
+                                    Record<string, SchemaType>,
+                                    SchemaType
+                                >,
                                 key,
                             );
                             if (candidate?.type === "any") {
@@ -745,10 +744,7 @@ export class Mirror<S extends SchemaType> {
     /**
      * Update Loro based on state changes
      */
-    private updateLoro(
-        newState: InferType<S>,
-        options?: SetStateOptions,
-    ) {
+    private updateLoro(newState: InferType<S>, options?: SetStateOptions) {
         if (this.syncing) return;
 
         this.syncing = true;
@@ -928,9 +924,9 @@ export class Mirror<S extends SchemaType> {
                         const childInfer =
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                      container.id,
-                                      fieldSchema,
-                                  )
+                                    container.id,
+                                    fieldSchema,
+                                )
                                 : undefined;
                         const inserted = this.insertContainerIntoMap(
                             map,
@@ -984,9 +980,9 @@ export class Mirror<S extends SchemaType> {
                             value,
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                      container.id,
-                                      fieldSchema,
-                                  )
+                                    container.id,
+                                    fieldSchema,
+                                )
                                 : undefined,
                         );
                     } else {
@@ -1031,9 +1027,9 @@ export class Mirror<S extends SchemaType> {
                             value,
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                      container.id,
-                                      fieldSchema,
-                                  )
+                                    container.id,
+                                    fieldSchema,
+                                )
                                 : undefined,
                         );
                     } else if (kind === "move") {
@@ -1055,12 +1051,12 @@ export class Mirror<S extends SchemaType> {
                         const infer =
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                      container.id,
-                                      fieldSchema,
-                                  )
+                                    container.id,
+                                    fieldSchema,
+                                )
                                 : !schema
-                                ? this.getInferOptionsForContainer(container.id)
-                                : undefined;
+                                    ? this.getInferOptionsForContainer(container.id)
+                                    : undefined;
                         const [detachedContainer, _containerType] =
                             this.createContainerFromSchema(
                                 schema,
@@ -1555,9 +1551,9 @@ export class Mirror<S extends SchemaType> {
             const mapSchema = schema as
                 | LoroMapSchema<Record<string, SchemaType>>
                 | LoroMapSchemaWithCatchall<
-                      Record<string, SchemaType>,
-                      SchemaType
-                  >
+                    Record<string, SchemaType>,
+                    SchemaType
+                >
                 | undefined;
             const baseInfer = this.getInferOptionsForContainer(map.id);
             for (const [key, val] of Object.entries(value)) {
@@ -1866,9 +1862,9 @@ export class Mirror<S extends SchemaType> {
             const mapSchema = schema as
                 | LoroMapSchema<Record<string, SchemaType>>
                 | LoroMapSchemaWithCatchall<
-                      Record<string, SchemaType>,
-                      SchemaType
-                  >;
+                    Record<string, SchemaType>,
+                    SchemaType
+                >;
             const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
             if (fieldSchema && fieldSchema.type === "ignore") {
                 // Skip ignore fields: they live only in mirrored state
@@ -1942,21 +1938,21 @@ export class Mirror<S extends SchemaType> {
         const newState =
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
-                      const res = (
-                          updater as (
-                              state: InferType<S>,
-                          ) => InferType<S> | void
-                      )(draft as InferType<S>);
-                      if (res && res !== (draft as unknown)) {
-                          // Return a replacement so Immer finalizes it
-                          return res as unknown as typeof draft;
-                      }
-                  })
+                    const res = (
+                        updater as (
+                            state: InferType<S>,
+                        ) => InferType<S> | void
+                    )(draft as InferType<S>);
+                    if (res && res !== (draft as unknown)) {
+                        // Return a replacement so Immer finalizes it
+                        return res as unknown as typeof draft;
+                    }
+                })
                 : (Object.assign(
-                      {},
-                      this.state as unknown as Record<string, unknown>,
-                      updater as Record<string, unknown>,
-                  ) as InferType<S>);
+                    {},
+                    this.state as unknown as Record<string, unknown>,
+                    updater as Record<string, unknown>,
+                ) as InferType<S>);
 
         // Validate state if needed
         if (this.options.validateUpdates) {
@@ -2219,11 +2215,11 @@ export class Mirror<S extends SchemaType> {
         if (isLoroMapSchema(containerSchema)) {
             return this.getSchemaForMapKey(
                 containerSchema as
-                    | LoroMapSchema<Record<string, SchemaType>>
-                    | LoroMapSchemaWithCatchall<
-                          Record<string, SchemaType>,
-                          SchemaType
-                      >,
+                | LoroMapSchema<Record<string, SchemaType>>
+                | LoroMapSchemaWithCatchall<
+                    Record<string, SchemaType>,
+                    SchemaType
+                >,
                 String(childKey),
             );
         } else if (

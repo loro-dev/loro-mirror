@@ -1,5 +1,5 @@
-import { Mirror, SyncDirection, UpdateMetadata } from "../src/core/mirror";
-import { schema } from "../src/schema";
+import { Mirror, SyncDirection, UpdateMetadata } from "../src/core/mirror.js";
+import { schema } from "../src/schema/index.js";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 

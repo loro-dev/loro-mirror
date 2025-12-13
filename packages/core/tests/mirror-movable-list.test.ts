@@ -1,10 +1,10 @@
 /* eslint-disable unicorn/consistent-function-scoping */
-import { Mirror } from "../src/core/mirror";
+import { Mirror } from "../src/core/mirror.js";
 import { isContainer, LoroDoc } from "loro-crdt";
-import { schema } from "../src/schema";
+import { schema } from "../src/schema/index.js";
 import { describe, expect, it } from "vitest";
-import { valueIsContainerOfType } from "../src/core/utils";
-import { diffMovableListByIndex } from "../src/core/diff";
+import { valueIsContainerOfType } from "../src/core/utils.js";
+import { diffMovableListByIndex } from "../src/core/diff.js";
 
 // Utility function to wait for sync to complete (three microtasks for better reliability)
 const waitForSync = async () => {

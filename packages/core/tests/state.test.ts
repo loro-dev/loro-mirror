@@ -8,8 +8,8 @@ import {
     RootSchemaType,
     schema,
     StringSchemaType,
-} from "../src/schema";
-import { Mirror, SyncDirection } from "../src/core/mirror";
+} from "../src/schema/index.js";
+import { Mirror, SyncDirection } from "../src/core/mirror.js";
 import { LoroDoc } from "loro-crdt";
 
 // Utility to wait for sync to complete (three microtasks for reliable sync)

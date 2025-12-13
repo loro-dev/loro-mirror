@@ -4,9 +4,9 @@
  * based on whether an idSelector is provided
  */
 
-import { Mirror } from "../src/core/mirror";
+import { Mirror } from "../src/core/mirror.js";
 import { LoroDoc, LoroMap } from "loro-crdt";
-import { schema } from "../src/schema";
+import { schema } from "../src/schema/index.js";
 import { describe, expect, it } from "vitest";
 
 // Utility function to wait for sync to complete (three microtasks for better reliability)
