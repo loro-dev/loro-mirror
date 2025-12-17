@@ -77,38 +77,44 @@ export interface UseLoroStoreOptions<S extends SchemaType> {
  * }
  * ```
  */
-export function useLoroStore<S extends SchemaType>(
-    options: UseLoroStoreOptions<S>,
-) {
+function useLoroStore<S extends SchemaType>(options: UseLoroStoreOptions<S>) {
     // Create a stable reference to the store
-    const storeRef = useRef<Mirror<S> | null>(null);
+    const storeRef = useRef<{ mirror: Mirror<S>; doc: LoroDoc } | null>(null);
 
     // Initialize the store and get initial state
-    const getStore = useCallback((): Mirror<S> => {
+    const getMirror = useCallback((): Mirror<S> => {
         let store = storeRef.current;
-        if (!store) {
-            store = new Mirror(options);
+        if (!store || store.doc !== options.doc) {
+            store = { mirror: new Mirror(options), doc: options.doc };
             storeRef.current = store;
         }
-        return store;
-    }, [options]);
+        return store.mirror;
+    }, [
+        options.doc,
+        options.debug,
+        options.initialState,
+        options.schema,
+        options.throwOnValidationError,
+        options.validateUpdates,
+    ]);
 
     // Get the current state
     const [state, setLocalState] = useState<InferType<S>>(() => {
-        return getStore().getState();
+        return getMirror().getState();
     });
 
     // Subscribe to state changes
     useEffect(() => {
-        const store = getStore();
+        const store = getMirror();
 
         // Update local state when the store changes
         const unsubscribe = store.subscribe((newState: InferType<S>) => {
             setLocalState(newState);
         });
 
+        setLocalState(getMirror().getState());
         return unsubscribe;
-    }, [getStore]);
+    }, [getMirror]);
 
     // Create a stable setState function
     type SetStateFn = {
@@ -120,15 +126,15 @@ export function useLoroStore<S extends SchemaType>(
     };
     const setState: SetStateFn = useCallback(
         (updater: unknown) => {
-            getStore().setState(updater as never);
+            getMirror().setState(updater as never);
         },
-        [getStore],
+        [getMirror],
     ) as unknown as SetStateFn;
 
     return {
         state,
         setState,
-        store: getStore(),
+        store: getMirror(),
     };
 }
 
