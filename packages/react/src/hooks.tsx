@@ -77,7 +77,9 @@ export interface UseLoroStoreOptions<S extends SchemaType> {
  * }
  * ```
  */
-function useLoroStore<S extends SchemaType>(options: UseLoroStoreOptions<S>) {
+export function useLoroStore<S extends SchemaType>(
+    options: UseLoroStoreOptions<S>,
+) {
     // Create a stable reference to the store
     const storeRef = useRef<{ mirror: Mirror<S>; doc: LoroDoc } | null>(null);
 
@@ -166,6 +168,7 @@ export function useLoroValue<S extends SchemaType, R>(
 
     // Subscribe to changes
     useEffect(() => {
+        setValue(selector(store.getState()));
         const unsubscribe = store.subscribe((state: InferType<S>) => {
             const newValue = selector(state);
             setValue(newValue);
@@ -318,6 +321,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
         const [state, setState] = useState(store.getState());
 
         useEffect(() => {
+            setState(store.getState());
             const unsubscribe = store.subscribe((newState: InferType<S>) => {
                 setState(newState);
             });
