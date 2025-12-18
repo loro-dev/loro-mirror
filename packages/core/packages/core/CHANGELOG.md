@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.2.0...loro-mirror-v1.2.1) (2025-12-18)
+
+
+### Bug Fixes
+
+* **core:** suppress Any subtree schema warnings ([#64](https://github.com/loro-dev/loro-mirror/issues/64)) ([7fbece8](https://github.com/loro-dev/loro-mirror/commit/7fbece85a763f78f00e72e586dbdd85b43d393ed))
+
 ## [1.2.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.1.3...loro-mirror-v1.2.0) (2025-12-13)
 
 

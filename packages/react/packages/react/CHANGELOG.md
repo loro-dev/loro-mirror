@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.2.0...loro-mirror-react-v1.2.1) (2025-12-18)
+
+
+### Bug Fixes
+
+* react useLoroStore ([#62](https://github.com/loro-dev/loro-mirror/issues/62)) ([f0d4807](https://github.com/loro-dev/loro-mirror/commit/f0d48074501e33568268f789c9c61276971fc690))
+
 ## [1.2.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.1.3...loro-mirror-react-v1.2.0) (2025-12-13)
 
 
