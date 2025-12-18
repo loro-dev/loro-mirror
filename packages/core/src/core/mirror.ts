@@ -1936,18 +1936,18 @@ export class Mirror<S extends SchemaType> {
                 // Infer whether this is a container
                 const infer = this.getInferOptionsForContainer(map.id);
                 const ct = tryInferContainerType(val, infer);
-	                if (ct && isValueOfContainerType(ct, val)) {
-	                    // No child schema; insert with inferred container type
-	                    this.insertContainerIntoMap(
-	                        map,
-	                        undefined,
-	                        key,
-	                        val,
-	                        infer,
-	                    );
-	                } else {
-	                    map.set(key, val);
-	                }
+                if (ct && isValueOfContainerType(ct, val)) {
+                    // No child schema; insert with inferred container type
+                    this.insertContainerIntoMap(
+                        map,
+                        undefined,
+                        key,
+                        val,
+                        infer,
+                    );
+                } else {
+                    map.set(key, val);
+                }
             }
             currentKeys.delete(key);
         }
@@ -1984,16 +1984,16 @@ export class Mirror<S extends SchemaType> {
             if (fieldSchema?.type === "any") {
                 const infer = this.getInferOptionsForChild(map.id, fieldSchema);
                 const ct = tryInferContainerType(value, infer);
-	                if (ct && isValueOfContainerType(ct, value)) {
-	                    this.insertContainerIntoMap(
-	                        map,
-	                        undefined,
-	                        key,
-	                        value,
-	                        infer,
-	                    );
-	                    return;
-	                }
+                if (ct && isValueOfContainerType(ct, value)) {
+                    this.insertContainerIntoMap(
+                        map,
+                        undefined,
+                        key,
+                        value,
+                        infer,
+                    );
+                    return;
+                }
             }
             if (fieldSchema && isContainerSchema(fieldSchema)) {
                 const ct = schemaToContainerType(fieldSchema);
