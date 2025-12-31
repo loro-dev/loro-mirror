@@ -438,7 +438,11 @@ export function getDefaultValue<S extends SchemaType>(
         case "loro-list":
             return [] as InferType<S>;
         case "loro-tree": {
-            const value = schema.options.required ? [] : undefined;
+            const required =
+                schema.options.required !== undefined
+                    ? schema.options.required
+                    : true;
+            const value = required ? [] : undefined;
             if (value === undefined) return undefined;
             return value as InferType<S>;
         }
