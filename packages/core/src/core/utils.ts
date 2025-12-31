@@ -30,11 +30,15 @@ export function isObject(value: unknown): value is Record<string, unknown> {
     );
 }
 
+// Keys that could cause prototype pollution if assigned directly
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 /**
  * Recursively removes undefined values from an object.
  * This treats undefined values as non-existent fields.
  * Preserves non-enumerable properties like $cid.
  * Returns the original object if no undefined values are found.
+ * Protects against prototype pollution by skipping unsafe keys.
  */
 export function stripUndefined<T>(value: T): T {
     if (value === undefined) {
@@ -53,15 +57,19 @@ export function stripUndefined<T>(value: T): T {
         // Check if any enumerable property is undefined or needs stripping
         let hasUndefined = false;
         let hasNestedChanges = false;
-        const strippedValues: Record<string, unknown> = {};
+        const strippedValues: Map<string, unknown> = new Map();
 
         for (const key of Object.keys(value)) {
+            // Skip unsafe keys to prevent prototype pollution
+            if (UNSAFE_KEYS.has(key)) {
+                continue;
+            }
             const val = value[key];
             if (val === undefined) {
                 hasUndefined = true;
             } else {
                 const stripped = stripUndefined(val);
-                strippedValues[key] = stripped;
+                strippedValues.set(key, stripped);
                 if (stripped !== val) {
                     hasNestedChanges = true;
                 }
@@ -73,18 +81,28 @@ export function stripUndefined<T>(value: T): T {
             return value;
         }
 
-        const result: Record<string, unknown> = {};
+        // Use Object.create(null) to avoid prototype pollution
+        const result = Object.create(null) as Record<string, unknown>;
         // Copy non-enumerable properties (like $cid) first
         const allProps = Object.getOwnPropertyNames(value);
         for (const key of allProps) {
+            // Skip unsafe keys
+            if (UNSAFE_KEYS.has(key)) {
+                continue;
+            }
             const descriptor = Object.getOwnPropertyDescriptor(value, key);
             if (descriptor && !descriptor.enumerable) {
                 Object.defineProperty(result, key, descriptor);
             }
         }
-        // Copy the stripped values
-        for (const key of Object.keys(strippedValues)) {
-            result[key] = strippedValues[key];
+        // Copy the stripped values using Object.defineProperty to be safe
+        for (const [key, val] of strippedValues) {
+            Object.defineProperty(result, key, {
+                value: val,
+                writable: true,
+                enumerable: true,
+                configurable: true,
+            });
         }
         return result as T;
     }
