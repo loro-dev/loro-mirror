@@ -1282,6 +1282,34 @@ export function diffMap<S extends ObjectLike>(
         const oldItem = oldStateObj[key];
         const newItem = newStateObj[key];
 
+        // Treat undefined values as non-existent fields.
+        // This allows users to pass objects with undefined values without causing errors.
+        if (newItem === undefined) {
+            // If old item exists, we need to delete it
+            if (key in oldStateObj && oldItem !== undefined) {
+                const childSchemaForDelete = getMapChildSchema(
+                    schema as
+                    | LoroMapSchema<Record<string, SchemaType>>
+                    | LoroMapSchemaWithCatchall<
+                        Record<string, SchemaType>,
+                        SchemaType
+                    >
+                    | RootSchemaType<Record<string, ContainerSchemaType>>
+                    | undefined,
+                    key,
+                );
+                if (!(childSchemaForDelete && childSchemaForDelete.type === "ignore")) {
+                    changes.push({
+                        container: containerId,
+                        key,
+                        value: undefined,
+                        kind: "delete",
+                    });
+                }
+            }
+            continue;
+        }
+
         // Figure out if the modified new value is a container
         const childSchema = getMapChildSchema(
             schema as

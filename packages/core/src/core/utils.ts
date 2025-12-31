@@ -31,6 +31,67 @@ export function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Recursively removes undefined values from an object.
+ * This treats undefined values as non-existent fields.
+ * Preserves non-enumerable properties like $cid.
+ * Returns the original object if no undefined values are found.
+ */
+export function stripUndefined<T>(value: T): T {
+    if (value === undefined) {
+        return value;
+    }
+    if (Array.isArray(value)) {
+        let hasChanges = false;
+        const result = value.map((item) => {
+            const stripped = stripUndefined(item);
+            if (stripped !== item) hasChanges = true;
+            return stripped;
+        });
+        return hasChanges ? (result as T) : value;
+    }
+    if (isObject(value)) {
+        // Check if any enumerable property is undefined or needs stripping
+        let hasUndefined = false;
+        let hasNestedChanges = false;
+        const strippedValues: Record<string, unknown> = {};
+
+        for (const key of Object.keys(value)) {
+            const val = value[key];
+            if (val === undefined) {
+                hasUndefined = true;
+            } else {
+                const stripped = stripUndefined(val);
+                strippedValues[key] = stripped;
+                if (stripped !== val) {
+                    hasNestedChanges = true;
+                }
+            }
+        }
+
+        // If no changes needed, return original object
+        if (!hasUndefined && !hasNestedChanges) {
+            return value;
+        }
+
+        const result: Record<string, unknown> = {};
+        // Copy non-enumerable properties (like $cid) first
+        const allProps = Object.getOwnPropertyNames(value);
+        for (const key of allProps) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (descriptor && !descriptor.enumerable) {
+                Object.defineProperty(result, key, descriptor);
+            }
+        }
+        // Copy the stripped values
+        for (const key of Object.keys(strippedValues)) {
+            result[key] = strippedValues[key];
+        }
+        return result as T;
+    }
+    return value;
+}
+
+/**
  * Performs a deep equality check between two values
  */
 export function deepEqual(a: unknown, b: unknown): boolean {
