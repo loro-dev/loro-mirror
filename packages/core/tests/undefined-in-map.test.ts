@@ -29,11 +29,12 @@ describe("undefined values in Map should be treated as non-existent fields", () 
         }).not.toThrow();
 
         const state = mirror.getState() as any;
-        console.log("State after setState:", JSON.stringify(state, null, 2));
         
-        // The age field should not exist (not be set to undefined)
+        // The name field should be set
         expect(state.root.name).toBe("test");
-        // age should either be undefined or not exist in the result
+        // The age field should not exist in the state (key should not be present)
+        expect("age" in state.root).toBe(false);
+        expect(state.root.age).toBeUndefined();
     });
 
     it("should ignore undefined fields in nested maps", async () => {
@@ -66,6 +67,9 @@ describe("undefined values in Map should be treated as non-existent fields", () 
 
         const state = mirror.getState() as any;
         expect(state.root.user.name).toBe("John");
+        // The email field should not exist in the state
+        expect("email" in state.root.user).toBe(false);
+        expect(state.root.user.email).toBeUndefined();
     });
 
     it("should handle undefined in schema.Any fields", async () => {
@@ -95,5 +99,51 @@ describe("undefined values in Map should be treated as non-existent fields", () 
 
         const state = mirror.getState() as any;
         expect(state.root.data.field1).toBe("value");
+        // The field2 should not exist in the state
+        expect("field2" in state.root.data).toBe(false);
+        expect(state.root.data.field2).toBeUndefined();
+    });
+
+    it("should delete existing field when set to undefined", async () => {
+        const testSchema = schema({
+            root: schema.LoroMap({
+                name: schema.String(),
+                age: schema.Number(),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            checkStateConsistency: true,
+        });
+
+        // First set both fields
+        mirror.setState({
+            root: {
+                name: "test",
+                age: 25,
+            },
+        } as any);
+
+        let state = mirror.getState() as any;
+        expect(state.root.name).toBe("test");
+        expect(state.root.age).toBe(25);
+        expect("age" in state.root).toBe(true);
+
+        // Now set age to undefined - it should be deleted
+        mirror.setState({
+            root: {
+                name: "test",
+                age: undefined,
+            },
+        } as any);
+
+        state = mirror.getState() as any;
+        expect(state.root.name).toBe("test");
+        // The age field should be deleted
+        expect("age" in state.root).toBe(false);
+        expect(state.root.age).toBeUndefined();
     });
 });
