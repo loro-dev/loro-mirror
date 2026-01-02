@@ -2520,6 +2520,10 @@ function mergeInitialIntoBaseWithSchema(
             if (!(k in base)) base[k] = "";
             continue;
         }
+        if (t === "loro-tree") {
+            if (!(k in base)) base[k] = [];
+            continue;
+        }
         if (t === "string" || t === "number" || t === "boolean") {
             if (!(k in base)) base[k] = initVal;
             continue;

@@ -1117,4 +1117,20 @@ describe("LoroTree integration", () => {
 
         expect(m.getState().root.tree[0].data.desc).toBe("world");
     });
+
+    it("Schema - LoroTree example from README docs works (#65)", async () => {
+        /*
+            The example of using schema.LoroMap() from the README docs
+            failed with `Cannot read properties of undefined (reading 'push')`
+            https://github.com/loro-dev/loro-mirror/issues/65
+        */
+        const node = schema.LoroMap({
+            name: schema.String({ required: true }),
+        });
+        const s = schema({ tree: schema.LoroTree(node) });
+        const mirror = new Mirror({ doc: new LoroDoc(), schema: s });
+        mirror.setState((st) => {
+            st.tree.push({ data: { name: "root" }, children: [] });
+        });
+    });
 });
