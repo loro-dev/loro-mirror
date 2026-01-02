@@ -49,6 +49,7 @@ import {
     tryInferContainerType,
     getRootContainerByType,
     defineCidProperty,
+    stripUndefined,
 } from "./utils.js";
 import { diffContainer, diffTree } from "./diff.js";
 import { CID_KEY } from "../constants.js";
@@ -1644,6 +1645,8 @@ export class Mirror<S extends SchemaType> {
             for (const [key, val] of Object.entries(value)) {
                 // Skip injected CID field
                 if (key === CID_KEY) continue;
+                // Skip undefined values - treat them as non-existent fields
+                if (val === undefined) continue;
                 if (mapSchema) {
                     const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
 
@@ -2088,7 +2091,9 @@ export class Mirror<S extends SchemaType> {
         // Refresh in-memory state from Doc to capture assigned IDs (e.g., TreeIDs)
         // and any canonical normalization (like Tree meta->data mapping).
         this.updateLoro(newState, options);
-        this.state = newState;
+        // Strip undefined values from the state to match LoroDoc behavior
+        // (undefined values are treated as non-existent fields)
+        this.state = stripUndefined(newState);
         const shouldCheck = this.options.checkStateConsistency;
         if (shouldCheck) {
             this.checkStateConsistency();
