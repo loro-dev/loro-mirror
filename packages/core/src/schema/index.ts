@@ -51,10 +51,9 @@ export function schema<
 /**
  * Define a string field
  */
-schema.String = function <
-    T extends string = string,
-    O extends SchemaOptions = {},
->(options?: O) {
+schema.String = function <T extends string = string, O extends SchemaOptions = {}>(
+    options?: O,
+): StringSchemaType<T> & { options: O } {
     return {
         type: "string" as const,
         options: (options || {}) as O,
@@ -62,6 +61,17 @@ schema.String = function <
             return null;
         },
     } as StringSchemaType<T> & { options: O };
+} as {
+    // Overload 1: No options - default required string
+    <T extends string = string>(): StringSchemaType<T> & { options: {} };
+    // Overload 2: With required: false (single generic) - O inferred from literal
+    <T extends string = string>(
+        options: { required: false } & SchemaOptions,
+    ): StringSchemaType<T> & { options: { required: false } };
+    // Overload 3: Explicit O type parameter (backwards compatible)
+    <T extends string = string, O extends SchemaOptions = SchemaOptions>(
+        options: O,
+    ): StringSchemaType<T> & { options: O };
 };
 
 /**
