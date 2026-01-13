@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { longestIncreasingSubsequence } from "../src/core/diff.js";
+import {
+    diffListWithIdSelector,
+    longestIncreasingSubsequence,
+} from "../src/core/diff.js";
 import { Mirror, schema } from "../src/index.js";
 import { LoroDoc } from "loro-crdt";
 
@@ -73,6 +76,29 @@ describe("longestIncreasingSubsequence", () => {
         }
 
         expect(result.length).toBe(4);
+    });
+});
+
+describe("diffListWithIdSelector", () => {
+    it("emits a minimal delete+insert for a simple swap", () => {
+        const doc = new LoroDoc();
+        const containerId = doc.getList("list").id;
+
+        const changes = diffListWithIdSelector(
+            doc,
+            ["A", "B", "C"],
+            ["B", "A", "C"],
+            containerId,
+            undefined,
+            (x) => String(x),
+        );
+
+        expect(changes).toHaveLength(2);
+        expect(changes.filter((c) => c.kind === "delete")).toHaveLength(1);
+        expect(changes.filter((c) => c.kind === "insert")).toHaveLength(1);
+        expect(changes.some((c) => c.kind === "insert" && c.value === "C")).toBe(
+            false,
+        );
     });
 });
 

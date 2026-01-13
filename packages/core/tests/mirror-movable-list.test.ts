@@ -4,7 +4,7 @@ import { isContainer, LoroDoc } from "loro-crdt";
 import { schema } from "../src/schema/index.js";
 import { describe, expect, it } from "vitest";
 import { valueIsContainerOfType } from "../src/core/utils.js";
-import { diffMovableListByIndex } from "../src/core/diff.js";
+import { diffMovableList, diffMovableListByIndex } from "../src/core/diff.js";
 
 // Utility function to wait for sync to complete (three microtasks for better reliability)
 const waitForSync = async () => {
@@ -672,6 +672,34 @@ describe("MovableList (inferred)", () => {
                 kind: "move",
                 fromIndex: 0,
                 toIndex: 2,
+            },
+        ]);
+    });
+
+    it("diffMovableList emits a minimal move sequence for a pure rotation", () => {
+        const doc = new LoroDoc();
+        const containerId = doc.getMovableList("list").id;
+
+        const oldState = ["A", "B", "C", "D", "E"];
+        const newState = ["B", "C", "D", "E", "A"];
+
+        const changes = diffMovableList(
+            doc,
+            oldState,
+            newState,
+            containerId,
+            undefined,
+            (x) => String(x),
+        );
+
+        expect(changes).toEqual([
+            {
+                container: containerId,
+                key: 0,
+                value: undefined,
+                kind: "move",
+                fromIndex: 0,
+                toIndex: 4,
             },
         ]);
     });
