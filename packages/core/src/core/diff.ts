@@ -622,12 +622,16 @@ export function diffMovableList<S extends ArrayLike>(
                 throw new Error("Invariant violation: anchor id missing in current order");
             }
 
-            let to = anchorIndex;
-            if (to == null) {
-                // Append.
-                to = order.length - 1;
-            } else if (from < to) {
-                // Loro move uses `toIndex` in the list after the removal.
+            // `toIndex` is defined in the list *after* the removal.
+            //
+            // - If we have an anchor, we want to insert right before it.
+            // - If we don't have an anchor (end of the list), treat it as an append.
+            //
+            // For the anchor case, when `from < anchorIndex`, removing the element shifts
+            // the anchor left by 1, so we subtract 1.
+            const targetBeforeRemoval = anchorIndex ?? order.length;
+            let to = targetBeforeRemoval;
+            if (from < targetBeforeRemoval) {
                 to -= 1;
             }
 
