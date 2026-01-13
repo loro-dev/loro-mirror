@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.2.1...loro-mirror-v1.2.2) (2026-01-13)
+
+
+### Bug Fixes
+
+* **core:** minimize list diffs for reorders ([#70](https://github.com/loro-dev/loro-mirror/issues/70)) ([3e75aaa](https://github.com/loro-dev/loro-mirror/commit/3e75aaadda4eea7b14499c42d105d0e65b06ba77))
+* **mirror:** treat undefined values in Map as non-existent fields ([#66](https://github.com/loro-dev/loro-mirror/issues/66)) ([3aa6c97](https://github.com/loro-dev/loro-mirror/commit/3aa6c9747dcf594a74f744cf7414b1ee77ef3f61))
+
 ## [1.2.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.2.0...loro-mirror-v1.2.1) (2025-12-18)
 
 
