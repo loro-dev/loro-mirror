@@ -585,15 +585,53 @@ export function diffMovableList<S extends ArrayLike>(
     }
     const newCommonIds: string[] = common.map((c) => c.id);
     if (!deepEqual(oldCommonIds, newCommonIds)) {
-        // Need to move
+        // Need to move.
+        //
+        // Use LIS to keep the longest subsequence of items that are already in the correct
+        // relative order, and move only the remaining items. This minimizes the number of
+        // `move` operations for pure reorders.
+        const oldPosById = new Map<string, number>();
+        oldCommonIds.forEach((id, i) => oldPosById.set(id, i));
+        const oldPositionsInNewOrder = newCommonIds.map((id) => {
+            const pos = oldPosById.get(id);
+            if (pos == null) {
+                throw new Error("Invariant violation: common id missing in old state");
+            }
+            return pos;
+        });
+        const stableNewIndices = new Set(
+            longestIncreasingSubsequence(oldPositionsInNewOrder),
+        );
+
         const order = [...oldCommonIds];
         const idxOf = new Map<string, number>();
         order.forEach((id, i) => idxOf.set(id, i));
 
-        for (let target = 0; target < newCommonIds.length; target++) {
-            const id = newCommonIds[target];
+        for (let i = newCommonIds.length - 1; i >= 0; i--) {
+            const id = newCommonIds[i];
+            if (stableNewIndices.has(i)) continue;
             const from = idxOf.get(id);
-            if (from == null || from === target) continue;
+            if (from == null) continue;
+
+            // Place `id` right before the already-processed "anchor" (the next id in new order).
+            // This matches the standard LIS-based list diff strategy and avoids index drift when
+            // earlier moves shift later indices.
+            const anchorId = i + 1 < newCommonIds.length ? newCommonIds[i + 1] : undefined;
+            const anchorIndex = anchorId ? idxOf.get(anchorId) : undefined;
+            if (anchorId && anchorIndex == null) {
+                throw new Error("Invariant violation: anchor id missing in current order");
+            }
+
+            let to = anchorIndex;
+            if (to == null) {
+                // Append.
+                to = order.length - 1;
+            } else if (from < to) {
+                // Loro move uses `toIndex` in the list after the removal.
+                to -= 1;
+            }
+
+            if (from === to) continue;
 
             changes.push({
                 container: containerId,
@@ -601,13 +639,13 @@ export function diffMovableList<S extends ArrayLike>(
                 value: undefined,
                 kind: "move",
                 fromIndex: from,
-                toIndex: target,
+                toIndex: to,
             });
 
             const [moved] = order.splice(from, 1);
-            order.splice(target, 0, moved);
-            const start = Math.min(from, target);
-            const end = Math.max(from, target);
+            order.splice(to, 0, moved);
+            const start = Math.min(from, to);
+            const end = Math.max(from, to);
             for (let i = start; i <= end; i++) idxOf.set(order[i], i);
         }
     }
@@ -694,8 +732,8 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     }
 
     const useContainer = !!(schema?.itemSchema.getContainerType() ?? true);
-    const oldItemsById = new Map();
-    const newItemsById = new Map();
+    const oldItemsById = new Map<string, { item: unknown; index: number }>();
+    const newItemsById = new Map<string, { item: unknown; newIndex: number }>();
 
     for (const [index, item] of oldState.entries()) {
         const id = idSelector(item);
@@ -714,81 +752,93 @@ export function diffListWithIdSelector<S extends ArrayLike>(
         }
     }
 
-    const list = doc.getList(containerId);
-    let newIndex = 0;
-    let offset = 0;
-    let index = 0;
-    while (index < oldState.length) {
-        if (newIndex >= newState.length) {
-            // An old item not found in the new state, delete here
+    // Compute the longest common subsequence (LCS) between old/new id sequences via LIS on
+    // old indices in new order (ids are expected to be unique).
+    const commonIdsInNewOrder: string[] = [];
+    const oldIndexInNewOrder: number[] = [];
+    for (const [newIndex, item] of newState.entries()) {
+        const id = idSelector(item);
+        if (!id) continue;
+        const oldInfo = oldItemsById.get(id);
+        if (!oldInfo) continue;
+        commonIdsInNewOrder.push(id);
+        oldIndexInNewOrder.push(oldInfo.index);
+    }
+
+    const keepIdSet = new Set<string>();
+    for (const i of longestIncreasingSubsequence(oldIndexInNewOrder)) {
+        keepIdSet.add(commonIdsInNewOrder[i]);
+    }
+
+    // 1) Deletions (from highest index to lowest).
+    for (let i = oldState.length - 1; i >= 0; i--) {
+        const id = idSelector(oldState[i]);
+        if (!id || !keepIdSet.has(id)) {
             changes.push({
                 container: containerId,
-                key: index + offset,
+                key: i,
                 value: undefined,
                 kind: "delete",
             });
-            offset--;
-            index++;
-            continue;
         }
+    }
 
-        const oldItem = oldState[index];
-        const newItem = newState[newIndex];
-        if (oldItem === newItem) {
-            newIndex++;
-            index++;
-            continue;
-        }
-
-        const oldId = idSelector(oldItem);
-        const newId = idSelector(newItem);
-        if (oldId === newId) {
-            const item = list.get(index);
-            if (isContainer(item)) {
-                changes.push(
-                    ...diffContainer(
-                        doc,
-                        oldItem,
-                        newItem,
-                        item.id,
-                        schema?.itemSchema,
-                        inferOptions,
-                    ),
-                );
-            } else if (!deepEqual(oldItem, newItem)) {
-                changes.push({
-                    container: containerId,
-                    key: index + offset,
-                    value: undefined,
-                    kind: "delete",
-                });
-                changes.push(
-                    tryUpdateToContainer(
-                        {
-                            container: containerId,
-                            key: index + offset,
-                            value: newItem,
-                            kind: "insert",
-                        },
-                        useContainer,
-                        schema?.itemSchema,
-                        inferOptions,
-                    ),
-                );
-            }
-
-            index++;
-            newIndex++;
-            continue;
-        }
-
-        if (newId && !oldItemsById.has(newId)) {
-            // A new item
+    // 2) Insertions (items that are new or moved).
+    for (const [newIndex, item] of newState.entries()) {
+        const id = idSelector(item);
+        if (!id || !keepIdSet.has(id)) {
             changes.push(
                 tryUpdateToContainer(
                     {
                         container: containerId,
-                        key: index + offset,
+                        key: newIndex,
+                        value: item,
+                        kind: "insert",
+                    },
+                    useContainer,
+                    schema?.itemSchema,
+                    inferOptions,
+                ),
+            );
+        }
+    }
+
+    // 3) Updates for kept items (preserve nested containers when possible).
+    const list = doc.getList(containerId);
+    for (const id of commonIdsInNewOrder) {
+        if (!keepIdSet.has(id)) continue;
+        const oldInfo = oldItemsById.get(id);
+        const newInfo = newItemsById.get(id);
+        if (!oldInfo || !newInfo) continue;
+
+        const oldItem = oldInfo.item;
+        const newItem = newInfo.item;
+        if (deepEqual(oldItem, newItem)) continue;
+
+        const itemOnLoro = list.get(oldInfo.index);
+        if (isContainer(itemOnLoro)) {
+            changes.push(
+                ...diffContainer(
+                    doc,
+                    oldItem,
+                    newItem,
+                    itemOnLoro.id,
+                    schema?.itemSchema,
+                    inferOptions,
+                ),
+            );
+        } else {
+            changes.push({
+                container: containerId,
+                key: newInfo.newIndex,
+                value: undefined,
+                kind: "delete",
+            });
+            changes.push(
+                tryUpdateToContainer(
+                    {
+                        container: containerId,
+                        key: newInfo.newIndex,
                         value: newItem,
                         kind: "insert",
                     },
@@ -797,39 +847,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     inferOptions,
                 ),
             );
-
-            offset++;
-            newIndex++;
-            continue;
         }
-
-        // An old item not found in the new state, delete here
-        changes.push({
-            container: containerId,
-            key: index + offset,
-            value: undefined,
-            kind: "delete",
-        });
-        offset--;
-        index++;
-    }
-
-    for (; newIndex < newState.length; newIndex++) {
-        const newItem = newState[newIndex];
-        changes.push(
-            tryUpdateToContainer(
-                {
-                    container: containerId,
-                    key: index + offset,
-                    value: newItem,
-                    kind: "insert",
-                },
-                useContainer,
-                schema?.itemSchema,
-                inferOptions,
-            ),
-        );
-        offset++;
     }
 
     return changes;
