@@ -14,7 +14,12 @@ import {
     RootSchemaType,
     SchemaType,
 } from "./types.js";
-import { isObject } from "../core/utils.js";
+import {
+    isObject,
+    getTransform,
+    applyEncode,
+    applyDecode,
+} from "../core/utils.js";
 
 const schemaValidationCache = new WeakMap<object, WeakSet<object>>();
 
@@ -143,7 +148,7 @@ export function validateSchema<S extends SchemaType>(
     }
 
     // Validate based on schema type
-    switch ((schema as BaseSchemaType).type) {
+    switch (schema.type) {
         case "any": {
             // Accept JSON-like values (primitives, arrays, and plain objects)
             if (
@@ -161,21 +166,14 @@ export function validateSchema<S extends SchemaType>(
         }
 
         case "string":
-            if (typeof value !== "string") {
-                errors.push("Value must be a string");
-            }
-            break;
-
         case "number":
-            if (typeof value !== "number") {
-                errors.push("Value must be a number");
-            }
-            break;
-
         case "boolean":
-            if (typeof value !== "boolean") {
-                errors.push("Value must be a boolean");
-            }
+            validateTransformablePrimitive(
+                schema,
+                value,
+                schema.type,
+                errors,
+            );
             break;
 
         case "ignore":
@@ -331,13 +329,13 @@ export function validateSchema<S extends SchemaType>(
                     }
                 }
             } else {
-                errors.push(`Should be a schema, but got ${schema.type}`);
+                errors.push(`Should be a schema, but got ${(schema as any).type}`);
             }
             break;
 
         default:
             errors.push(
-                `Unknown schema type: ${(schema as BaseSchemaType).type}`,
+                `Unknown schema type: ${(schema as any).type}`
             );
     }
 
@@ -368,6 +366,49 @@ export function validateSchema<S extends SchemaType>(
     return { valid: false, errors };
 }
 
+function validateTransformablePrimitive<S extends SchemaType>(
+    schema: S,
+    value: {},
+    expectedType: "string" | "number" | "boolean",
+    errors: string[],
+) {
+    const transform = getTransform(schema);
+
+    if (transform) {
+        // Call transform's validate if present
+        if (transform.validate) {
+            try {
+                // Value is known to be non-null/undefined at this point
+                const result = transform.validate(value as {});
+                if (result !== true) {
+                    errors.push(
+                        typeof result === "string"
+                            ? result
+                            : "Transform validation failed",
+                    );
+                }
+            } catch (error) {
+                errors.push(`Transform validation error: ${String(error)}`);
+            }
+        }
+
+        // Optionally check encoded type
+        if (transform.validateEncodedType) {
+            const encoded = applyEncode(schema, value);
+            if (typeof encoded !== expectedType) {
+                errors.push(
+                    `Transform encode must return a ${expectedType}, got ${typeof encoded}`,
+                );
+            }
+        }
+    } else {
+        // No transform - check value is the expected primitive type
+        if (typeof value !== expectedType) {
+            errors.push(`Value must be a ${expectedType}`);
+        }
+    }
+}
+
 /**
  * Get default value for a schema
  * Based on the schema type, it might return a plain value or a wrapped value
@@ -391,21 +432,24 @@ export function getDefaultValue<S extends SchemaType>(
         }
 
         case "string": {
-            const value = schema.options.required ? "" : undefined;
-            if (value === undefined) return undefined;
-            return value as InferType<S>;
+            if (schema.options.required === false) {
+                return undefined;
+            }
+            return applyDecode(schema, "") as InferType<S>;
         }
 
         case "number": {
-            const value = schema.options.required ? 0 : undefined;
-            if (value === undefined) return undefined;
-            return value as InferType<S>;
+            if (schema.options.required === false) {
+                return undefined;
+            }
+            return applyDecode(schema, 0) as InferType<S>;
         }
 
         case "boolean": {
-            const value = schema.options.required ? false : undefined;
-            if (value === undefined) return undefined;
-            return value as InferType<S>;
+            if (schema.options.required === false) {
+                return undefined;
+            }
+            return applyDecode(schema, false) as InferType<S>;
         }
 
         case "loro-text": {

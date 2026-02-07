@@ -50,15 +50,21 @@ import {
     getRootContainerByType,
     defineCidProperty,
     stripUndefined,
+    applyDecode,
+    applyEncode,
+    decodeNestedJsonValues,
+    getMapFieldSchema,
+    getListItemSchema,
+    safeStringify,
 } from "./utils.js";
 import { diffContainer, diffTree } from "./diff.js";
 import { CID_KEY } from "../constants.js";
 
 // Plain JSON-like value used for state snapshots
-type JSONPrimitive = string | number | boolean | null | undefined;
-type JSONValue = JSONPrimitive | JSONObject | JSONValue[];
-interface JSONObject {
-    [k: string]: JSONValue;
+type MirrorStatePrimitive = string | number | boolean | null | undefined | {};
+type MirrorState = MirrorStatePrimitive | MirrorStateObject | MirrorState[];
+interface MirrorStateObject {
+    [k: string]: MirrorState;
 }
 
 function hasKeyProp(c: Change): c is Extract<Change, { key: string | number }> {
@@ -481,11 +487,15 @@ export class Mirror<S extends SchemaType> {
 
             const containerId = container.id;
 
-            // If already registered, optionally upgrade schema, then skip deep re-scan
+            // If already registered, optionally upgrade schema
             const existing = this.containerRegistry.get(containerId);
             if (existing) {
                 if (!existing.schema && schemaType) {
                     existing.schema = schemaType;
+                    // Schema was missing on initial registration (e.g. from
+                    // ensureRootContainersFromInitialState), so nested
+                    // containers were never scanned. Do it now.
+                    this.registerNestedContainers(container);
                 }
                 return;
             }
@@ -665,7 +675,7 @@ export class Mirror<S extends SchemaType> {
                 normalized,
                 {
                     getContainerById: (id) => this.doc.getContainerById(id),
-                    containerToJson: (c) => this.containerToStateJson(c),
+                    containerToMirrorState: (c) => this.containerToMirrorState(c),
                     nodeDataWithCid: (treeId) => {
                         const s = this.getContainerSchema(treeId);
                         return !!(s && isLoroTreeSchema(s));
@@ -679,6 +689,22 @@ export class Mirror<S extends SchemaType> {
                         } catch {
                             return undefined;
                         }
+                    },
+                    getSchemaForKey: (containerId, mapKey) => {
+                        if (mapKey !== undefined) {
+                            return this.getSchemaForChild(containerId, mapKey);
+                        }
+                        // No key — return item schema for list containers
+                        const containerSchema =
+                            this.getContainerSchema(containerId);
+                        if (
+                            containerSchema &&
+                            (isLoroListSchema(containerSchema) ||
+                                isLoroMovableListSchema(containerSchema))
+                        ) {
+                            return containerSchema.itemSchema;
+                        }
+                        return undefined;
                     },
                 },
             ) as unknown as InferType<S>;
@@ -745,7 +771,7 @@ export class Mirror<S extends SchemaType> {
                                 );
                             }
 
-                            this.registerContainer(container.id, containerSchema);
+                            this.registerContainer(container.id, containerSchema);  
 
                             if (
                                 schema &&
@@ -1540,7 +1566,7 @@ export class Mirror<S extends SchemaType> {
 	        }
 
         // Default to simple insert
-        list.insert(index, item);
+        list.insert(index, applyEncode(itemSchema, item));
     }
 
     /**
@@ -1680,12 +1706,14 @@ export class Mirror<S extends SchemaType> {
                                 val,
                             );
                         } else {
-                            map.set(key, val);
+                            // Schema says container but value doesn't match - fall back to primitive
+                            map.set(key, applyEncode(fieldSchema, val));
                         }
                         continue;
                     }
 
-                    map.set(key, val);
+                    // Primitive schema - encode value before storing
+                    map.set(key, applyEncode(fieldSchema, val));
                     continue;
                 }
 
@@ -1742,7 +1770,7 @@ export class Mirror<S extends SchemaType> {
                     if (ct && isValueOfContainerType(ct, item)) {
                         this.insertContainerIntoList(list, itemSchema, i, item);
                     } else {
-                        list.insert(i, item);
+                        list.insert(i, applyEncode(itemSchema, item));
                     }
                     continue;
                 }
@@ -1763,7 +1791,7 @@ export class Mirror<S extends SchemaType> {
                     continue;
                 }
 
-                list.insert(i, item);
+                list.insert(i, applyEncode(itemSchema, item));
             }
         } else if (kind === "Text") {
             const text = container as LoroText;
@@ -2005,9 +2033,13 @@ export class Mirror<S extends SchemaType> {
                     return; // Avoid overwriting the inserted container
                 }
             }
+
+            // Primitive schema (possibly with transform) — encode and set
+            map.set(key, applyEncode(fieldSchema, value));
+            return;
         }
 
-        // Default to simple set
+        // Default to simple set (no schema available)
         map.set(key, value);
     }
 
@@ -2108,38 +2140,45 @@ export class Mirror<S extends SchemaType> {
         if (!deepEqual(state, this.buildRootStateSnapshot())) {
             console.error(
                 "State diverged",
-                JSON.stringify(state, null, 2),
-                JSON.stringify(this.buildRootStateSnapshot(), null, 2),
+                safeStringify(state),
+                safeStringify(this.buildRootStateSnapshot()),
             );
             throw new Error("[InternalError] State diverged");
         }
     }
 
-    // Plain JSON-like types for state snapshot generation
-    private containerToStateJson(c: Container): JSONValue {
+    private containerToMirrorState(c: Container): MirrorState {
         const kind = c.kind();
+        const schema = this.getContainerSchema(c.id);
         if (kind === "Map") {
             const m = c as LoroMap;
-            const obj: JSONObject = {};
+            const obj: MirrorStateObject = {};
             defineCidProperty(obj, c.id);
             for (const k of m.keys()) {
                 const v = m.get(k);
-                obj[k] = isContainer(v)
-                    ? this.containerToStateJson(v)
-                    : (v as JSONValue);
+                if (isContainer(v)) {
+                    obj[k] = this.containerToMirrorState(v);
+                } else {
+                    // Decode primitive values using field schema
+                    const fieldSchema = getMapFieldSchema(schema, k);
+                    obj[k] = applyDecode(fieldSchema, v) as MirrorState;
+                }
             }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
-            const arr: JSONValue[] = [];
+            const arr: MirrorState[] = [];
             const l = c as unknown as LoroList | LoroMovableList;
             const len = l.length;
+            // Get item schema for decoding list items
+            const itemSchema = getListItemSchema(schema);
             for (let i = 0; i < len; i++) {
                 const v = l.get(i);
-                arr.push(
-                    isContainer(v)
-                        ? this.containerToStateJson(v)
-                        : (v as JSONValue),
-                );
+                if (isContainer(v)) {
+                    arr.push(this.containerToMirrorState(v));
+                } else {
+                    // Decode primitive items using item schema
+                    arr.push(applyDecode(itemSchema, v) as MirrorState);
+                }
             }
             return arr;
         } else if (kind === "Text") {
@@ -2195,8 +2234,9 @@ export class Mirror<S extends SchemaType> {
                     }
                 };
                 stamp(normalized);
+                decodeNestedJsonValues(normalized, schema);
             }
-            return normalized as unknown as JSONValue;
+            return normalized as unknown as MirrorState;
         }
         // Fallback
         return c.toJSON();
@@ -2223,22 +2263,22 @@ export class Mirror<S extends SchemaType> {
             );
             // Always include maps to expose $cid for stable identity
             if (containerType === "Map") {
-                root[key] = this.containerToStateJson(container);
+                root[key] = this.containerToMirrorState(container);
             } else if (
                 containerType === "List" ||
                 containerType === "MovableList"
             ) {
                 // Always include lists, even if empty, to match Mirror's state shape
-                root[key] = this.containerToStateJson(container);
+                root[key] = this.containerToMirrorState(container);
             } else if (containerType === "Text") {
                 // Always include text, even if empty, to match Mirror's state shape
-                root[key] = this.containerToStateJson(container);
+                root[key] = this.containerToMirrorState(container);
             } else if (containerType === "Tree") {
-                const arr = this.containerToStateJson(container) as unknown[];
+                const arr = this.containerToMirrorState(container) as unknown[];
                 if (!Array.isArray(arr) || arr.length === 0) continue;
                 root[key] = arr;
             } else {
-                root[key] = this.containerToStateJson(container);
+                root[key] = this.containerToMirrorState(container);
             }
         }
         return root;

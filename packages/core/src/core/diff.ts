@@ -42,6 +42,9 @@ import {
     isArrayLike,
     isTreeID,
     defineCidProperty,
+    valuesEqual,
+    applyEncode,
+    hasTransform,
 } from "./utils.js";
 
 /**
@@ -655,6 +658,7 @@ export function diffMovableList<S extends ArrayLike>(
     }
 
     // 4) Insertions (items only in new state)
+    const itemSchema = schema?.itemSchema;
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
         if (!id || !oldMap.has(id)) {
@@ -667,7 +671,7 @@ export function diffMovableList<S extends ArrayLike>(
                         kind: "insert",
                     },
                     true,
-                    schema?.itemSchema,
+                    itemSchema,
                     inferOptions,
                 ),
             );
@@ -676,7 +680,7 @@ export function diffMovableList<S extends ArrayLike>(
 
     // 5) Updates (for items present in both states)
     for (const info of common) {
-        if (deepEqual(info.oldItem, info.newItem)) continue;
+        if (valuesEqual(itemSchema, info.oldItem, info.newItem, "deep-equality")) continue;
 
         const movableList = doc.getMovableList(containerId);
         const currentItem = movableList.get(info.oldIndex);
@@ -686,7 +690,7 @@ export function diffMovableList<S extends ArrayLike>(
                 info.oldItem,
                 info.newItem,
                 currentItem.id,
-                schema?.itemSchema,
+                itemSchema,
                 inferOptions,
             );
             changes.push(...nested);
@@ -700,7 +704,7 @@ export function diffMovableList<S extends ArrayLike>(
                         kind: "set",
                     },
                     true,
-                    schema?.itemSchema,
+                    itemSchema,
                     inferOptions,
                 ),
             );
@@ -788,6 +792,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     }
 
     // 2) Insertions (items that are new or moved).
+    const itemSchema = schema?.itemSchema;
     for (const [newIndex, item] of newState.entries()) {
         const id = idSelector(item);
         if (!id || !keepIdSet.has(id)) {
@@ -800,7 +805,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                         kind: "insert",
                     },
                     useContainer,
-                    schema?.itemSchema,
+                    itemSchema,
                     inferOptions,
                 ),
             );
@@ -817,7 +822,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
 
         const oldItem = oldInfo.item;
         const newItem = newInfo.item;
-        if (deepEqual(oldItem, newItem)) continue;
+        if (valuesEqual(itemSchema, oldItem, newItem, "deep-equality")) continue;
 
         const itemOnLoro = list.get(oldInfo.index);
         if (isContainer(itemOnLoro)) {
@@ -827,7 +832,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     oldItem,
                     newItem,
                     itemOnLoro.id,
-                    schema?.itemSchema,
+                    itemSchema,
                     inferOptions,
                 ),
             );
@@ -847,7 +852,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                         kind: "insert",
                     },
                     useContainer,
-                    schema?.itemSchema,
+                    itemSchema,
                     inferOptions,
                 ),
             );
@@ -888,13 +893,14 @@ export function diffList<S extends ArrayLike>(
     const oldLen = oldState.length;
     const newLen = newState.length;
     const list = doc.getList(containerId);
+    const itemSchema = schema?.itemSchema;
 
     // Find common prefix
     let start = 0;
     while (
         start < oldLen &&
         start < newLen &&
-        oldState[start] === newState[start]
+        valuesEqual(itemSchema, oldState[start], newState[start], "reference-equality")
     ) {
         start++;
     }
@@ -904,7 +910,7 @@ export function diffList<S extends ArrayLike>(
     while (
         suffix < oldLen - start &&
         suffix < newLen - start &&
-        oldState[oldLen - 1 - suffix] === newState[newLen - 1 - suffix]
+        valuesEqual(itemSchema, oldState[oldLen - 1 - suffix], newState[newLen - 1 - suffix], "reference-equality")
     ) {
         suffix++;
     }
@@ -916,7 +922,7 @@ export function diffList<S extends ArrayLike>(
     const overlap = Math.min(oldBlockLen, newBlockLen);
     for (let j = 0; j < overlap; j++) {
         const i = start + j;
-        if (oldState[i] === newState[i]) continue;
+        if (valuesEqual(itemSchema, oldState[i], newState[i], "reference-equality")) continue;
 
         const itemOnLoro = list.get(i);
         if (isContainer(itemOnLoro)) {
@@ -925,7 +931,7 @@ export function diffList<S extends ArrayLike>(
                 oldState[i],
                 newState[i],
                 itemOnLoro.id,
-                schema?.itemSchema,
+                itemSchema,
                 inferOptions,
             );
             changes.push(...nestedChanges);
@@ -945,7 +951,7 @@ export function diffList<S extends ArrayLike>(
                         kind: "insert",
                     },
                     true,
-                    schema?.itemSchema,
+                    itemSchema,
                     inferOptions,
                 ),
             );
@@ -975,7 +981,7 @@ export function diffList<S extends ArrayLike>(
                     kind: "insert",
                 },
                 true,
-                schema?.itemSchema,
+                itemSchema,
                 inferOptions,
             ),
         );
@@ -1142,13 +1148,14 @@ export function diffMovableListByIndex(
     const oldLen = oldState.length;
     const newLen = newState.length;
     const list = doc.getMovableList(containerId);
+    const itemSchema = schema?.itemSchema;
 
     // Find common prefix
     let start = 0;
     while (
         start < oldLen &&
         start < newLen &&
-        oldState[start] === newState[start]
+        valuesEqual(itemSchema, oldState[start], newState[start], "reference-equality")
     ) {
         start++;
     }
@@ -1158,7 +1165,7 @@ export function diffMovableListByIndex(
     while (
         suffix < oldLen - start &&
         suffix < newLen - start &&
-        oldState[oldLen - 1 - suffix] === newState[newLen - 1 - suffix]
+        valuesEqual(itemSchema, oldState[oldLen - 1 - suffix], newState[newLen - 1 - suffix], "reference-equality")
     ) {
         suffix++;
     }
@@ -1170,7 +1177,7 @@ export function diffMovableListByIndex(
     const overlap = Math.min(oldBlockLen, newBlockLen);
     for (let j = 0; j < overlap; j++) {
         const i = start + j;
-        if (oldState[i] === newState[i]) continue;
+        if (valuesEqual(itemSchema, oldState[i], newState[i], "reference-equality")) continue;
 
         const itemOnLoro = list.get(i);
         const next = newState[i];
@@ -1184,7 +1191,7 @@ export function diffMovableListByIndex(
                         oldState[i],
                         next,
                         itemOnLoro.id,
-                        schema?.itemSchema,
+                        itemSchema,
                         inferOptions,
                     ),
                 );
@@ -1201,7 +1208,7 @@ export function diffMovableListByIndex(
                     kind: "set",
                 },
                 true,
-                schema?.itemSchema,
+                itemSchema,
                 inferOptions,
             ),
         );
@@ -1230,7 +1237,7 @@ export function diffMovableListByIndex(
                     kind: "insert",
                 },
                 true,
-                schema?.itemSchema,
+                itemSchema,
                 inferOptions,
             ),
         );
@@ -1358,8 +1365,10 @@ export function diffMap<S extends ObjectLike>(
             inferOptions,
         );
         let containerType =
-            childSchema?.getContainerType() ??
-            tryInferContainerType(newItem, childInferOptions);
+            hasTransform(childSchema)
+                ? undefined
+                : (childSchema?.getContainerType() ??
+                  tryInferContainerType(newItem, childInferOptions));
         if (
             childSchema?.getContainerType() &&
             containerType &&
@@ -1393,7 +1402,7 @@ export function diffMap<S extends ObjectLike>(
                 changes.push({
                     container: containerId,
                     key,
-                    value: newItem,
+                    value: applyEncode(childSchema, newItem),
                     kind: "insert",
                 });
             }
@@ -1478,15 +1487,19 @@ export function diffMap<S extends ObjectLike>(
                         ),
                     );
                 }
-                // The type of the child has changed
-                // Either it was previously a container and now it's not
-                // or it was not a container and now it is
             } else {
+                if (valuesEqual(childSchema, oldItem, newItem, "reference-equality")) {
+                    continue; 
+                }
+
+                // The type or value of the child has changed
+                // Either the value has changed, or it was previously a container and now it's not,
+                // or it was not a container and now it is
                 changes.push(
                     insertChildToMap(
                         containerId,
                         key,
-                        newStateObj[key],
+                        applyEncode(childSchema, newItem),
                         applySchemaToInferOptions(childSchema, inferOptions),
                     ),
                 );

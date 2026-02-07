@@ -10,6 +10,7 @@ A TypeScript state management library that syncs application state with [loro-cr
 - 🔍 **Selective Updates**: Subscribe to specific parts of your state
 - 🛠️ **Developer Friendly**: Familiar API inspired by popular state management libraries
 - 📱 **React Integration**: Hooks and context providers for React applications
+- 🔀 **Transforms**: Work with rich domain types (Date, BigInt, custom objects) while Loro stores primitives
 
 ## Packages
 
@@ -112,6 +113,49 @@ Loro Mirror provides a declarative schema system that enables:
     - `schema.Boolean(options?)` - Boolean type
     - `schema.Any(options?)` - Runtime-inferred value/container type for JSON-like dynamic fields
     - `schema.Ignore(options?)` - Field that won't sync with Loro, useful for local computed fields
+
+- **Transforms** (on primitive types):
+
+    Primitive schemas support `.transform()` to convert between CRDT primitives and rich domain types:
+
+    ```typescript
+    const dateTransform = {
+        decode: (s: string) => new Date(s),
+        encode: (d: Date) => d.toISOString(),
+    };
+
+    const taskSchema = schema({
+        task: schema.LoroMap({
+            title: schema.String(),
+            dueDate: schema.String().transform(dateTransform), // Type infers as Date
+        }),
+    });
+
+    // Now you can use Date objects directly
+    mirror.setState({ task: { title: "Review PR", dueDate: new Date() } });
+    mirror.getState().task.dueDate.getTime(); // Already a Date
+    ```
+
+    The transform definition has this shape:
+
+    ```typescript
+    interface TransformDefinition<CRDTType, DomainType> {
+        decode: (value: CRDTType & {}) => DomainType & {};
+        encode: (value: DomainType & {}) => CRDTType & {};
+        validate?: (value: DomainType & {}) => boolean | string;
+        isEqual?:
+            | "reference-equality"
+            | "encoded-value-equality"
+            | "deep-equality"
+            | ((a: DomainType, b: DomainType) => boolean);
+    }
+    ```
+
+    **Note:** The encode and decode functions will never receive `null` or `undefined` values and must not return them. Nullish values are handled before transforms are applied.
+
+    **Important:** `DomainType` should be immutable or [supported by Immer](https://immerjs.github.io/immer/complex-objects/), otherwise changes to transformed values may not be detected and converted to CRDT operations. Never mutate `DomainType` instances outside of Loro Mirror's `setState` function.
+
+    For optional fields, just use the transform directly - the type automatically includes `| undefined`:
 
 `schema.Any` options:
 
@@ -334,9 +378,9 @@ For detailed documentation, see the README files in each package:
 
 Loro Mirror uses a typed schema to map your app state to Loro containers. Common schema constructors:
 
-- `schema.String(options?)`: string
-- `schema.Number(options?)`: number
-- `schema.Boolean(options?)`: boolean
+- `schema.String(options?)`: string (supports `.transform()` for domain types)
+- `schema.Number(options?)`: number (supports `.transform()` for domain types)
+- `schema.Boolean(options?)`: boolean (supports `.transform()` for domain types)
 - `schema.Any(options?)`: JSON-like unknown (runtime-inferred)
 - `schema.Ignore(options?)`: exclude from sync (app-only)
 - `schema.LoroText(options?)`: rich text (`LoroText`)

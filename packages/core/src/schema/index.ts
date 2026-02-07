@@ -23,7 +23,52 @@ import {
     SchemaType,
     StringSchemaType,
     InferType,
+    TransformDefinition,
 } from "./types.js";
+
+/**
+ * String schema builder with transform method.
+ * Transform decode/encode never receive null/undefined - they pass through as-is.
+ */
+type StringSchemaBuilder<T extends string, O extends SchemaOptions> =
+    StringSchemaType<T> & { options: O } & {
+        transform: <D>(
+            def: TransformDefinition<T, D>,
+        ) => StringSchemaType<T> & {
+            options: O;
+            transform: TransformDefinition<T, D>;
+        };
+    };
+
+/**
+ * Number schema builder with transform method.
+ * Transform decode/encode never receive null/undefined - they pass through as-is.
+ */
+type NumberSchemaBuilder<O extends SchemaOptions> = NumberSchemaType & {
+    options: O;
+} & {
+    transform: <D>(
+        def: TransformDefinition<number, D>,
+    ) => NumberSchemaType & {
+        options: O;
+        transform: TransformDefinition<number, D>;
+    };
+};
+
+/**
+ * Boolean schema builder with transform method.
+ * Transform decode/encode never receive null/undefined - they pass through as-is.
+ */
+type BooleanSchemaBuilder<O extends SchemaOptions> = BooleanSchemaType & {
+    options: O;
+} & {
+    transform: <D>(
+        def: TransformDefinition<boolean, D>,
+    ) => BooleanSchemaType & {
+        options: O;
+        transform: TransformDefinition<boolean, D>;
+    };
+};
 
 export * from "./types.js";
 export * from "./validators.js";
@@ -54,14 +99,22 @@ export function schema<
 schema.String = function <
     T extends string = string,
     O extends SchemaOptions = {},
->(options?: O) {
-    return {
+>(options?: O): StringSchemaBuilder<T, O> {
+    const baseSchema = {
         type: "string" as const,
         options: (options || {}) as O,
         getContainerType: () => {
             return null;
         },
-    } as StringSchemaType<T> & { options: O };
+    };
+
+    return {
+        ...baseSchema,
+        transform: <D>(def: TransformDefinition<T, D>) => ({
+            ...baseSchema,
+            transform: def,
+        }),
+    } as StringSchemaBuilder<T, O>;
 };
 
 /**
@@ -82,27 +135,47 @@ schema.Any = function <O extends AnySchemaOptions = AnySchemaOptions>(
 /**
  * Define a number field
  */
-schema.Number = function <O extends SchemaOptions = {}>(options?: O) {
-    return {
+schema.Number = function <O extends SchemaOptions = {}>(
+    options?: O,
+): NumberSchemaBuilder<O> {
+    const baseSchema = {
         type: "number" as const,
         options: options || ({} as O),
         getContainerType: () => {
             return null; // Primitive type, no container
         },
-    } as NumberSchemaType & { options: O };
+    };
+
+    return {
+        ...baseSchema,
+        transform: <D>(def: TransformDefinition<number, D>) => ({
+            ...baseSchema,
+            transform: def,
+        }),
+    } as NumberSchemaBuilder<O>;
 };
 
 /**
  * Define a boolean field
  */
-schema.Boolean = function <O extends SchemaOptions = {}>(options?: O) {
-    return {
+schema.Boolean = function <O extends SchemaOptions = {}>(
+    options?: O,
+): BooleanSchemaBuilder<O> {
+    const baseSchema = {
         type: "boolean" as const,
         options: options || ({} as O),
         getContainerType: () => {
             return null; // Primitive type, no container
         },
-    } as BooleanSchemaType & { options: O };
+    };
+
+    return {
+        ...baseSchema,
+        transform: <D>(def: TransformDefinition<boolean, D>) => ({
+            ...baseSchema,
+            transform: def,
+        }),
+    } as BooleanSchemaBuilder<O>;
 };
 
 /**
