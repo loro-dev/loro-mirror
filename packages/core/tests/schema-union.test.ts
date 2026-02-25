@@ -233,14 +233,16 @@ describe("Mirror with Union schema", () => {
         const mirror = new Mirror({
             doc,
             schema: rootUnionSchema,
-        });
-
-        mirror.setState((draft) => {
-            (draft as Record<string, unknown>).content = { kind: "article", body: "Hello" };
+            initialState: {
+                content: { kind: "article", body: "Hello" },
+            },
         });
 
         const state = mirror.getState();
         expect(state.content.kind).toBe("article");
+        if (state.content.kind === "article") {
+            expect(state.content.body).toBe("Hello");
+        }
     });
 });
 
@@ -282,10 +284,10 @@ describe("Union edge cases", () => {
         });
 
         const doc = new LoroDoc();
-        const mirror = new Mirror({ doc, schema: s });
-
-        mirror.setState((draft) => {
-            (draft as Record<string, unknown>).data = { type: "only", value: 42 };
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { data: { type: "only", value: 42 } },
         });
 
         expect(mirror.getState().data.type).toBe("only");
@@ -440,4 +442,31 @@ describe("Union edge cases", () => {
         }
     });
 
+    it("initialState populates union fields", () => {
+        // Regression: mergeInitialIntoBaseWithSchema coerced union fields to {}
+        // instead of merging the provided initialState data.
+        const s = schema({
+            content: schema.Union("kind", {
+                article: schema.LoroMap({ body: schema.String() }),
+                gallery: schema.LoroMap({
+                    count: schema.Number(),
+                }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: {
+                content: { kind: "article", body: "Hello from init" },
+            },
+        });
+
+        const state = mirror.getState();
+        expect(state.content.kind).toBe("article");
+        if (state.content.kind === "article") {
+            expect(state.content.body).toBe("Hello from init");
+        }
+    });
 });

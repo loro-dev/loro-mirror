@@ -526,17 +526,13 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
-        // Build initial state snapshot from the current document
+        // Stamp $cid and other metadata from the doc snapshot into the
+        // existing state without overwriting data populated by initialState.
         const currentDocState = this.buildRootStateSnapshot();
-        const newState = produce<InferType<S>>((draft) => {
-            Object.assign(
-                draft as unknown as Record<string, unknown>,
-                currentDocState,
-            );
-        })(this.state);
-
-        this.baseState = newState;
-        this.state = this.composeState(newState);
+        deepMergeSnapshot(
+            this.state as unknown as Record<string, unknown>,
+            currentDocState,
+        );
     }
 
     /**
@@ -2937,6 +2933,55 @@ function normalizeTreeJsonForMirror(input: unknown) {
     });
 }
 
+/**
+ * Recursively merge a doc snapshot into the current state so that metadata
+ * like $cid is stamped without overwriting data populated by initialState.
+ * For each key in the snapshot:
+ * - If the state has an object and the snapshot has an object, recurse and
+ *   stamp $cid from the snapshot.
+ * - If the state key is missing, use the snapshot value.
+ * - Otherwise keep the existing state value.
+ */
+function deepMergeSnapshot(
+    state: Record<string, unknown>,
+    snapshot: Record<string, unknown>,
+) {
+    for (const key of Object.keys(snapshot)) {
+        const sv = snapshot[key];
+        const tv = state[key];
+        if (isObject(sv) && isObject(tv)) {
+            // Stamp $cid from the snapshot object onto the state object
+            const cidDesc = Object.getOwnPropertyDescriptor(sv, CID_KEY);
+            if (cidDesc) {
+                defineCidProperty(tv, cidDesc.value as ContainerID);
+            }
+            deepMergeSnapshot(
+                tv as Record<string, unknown>,
+                sv as Record<string, unknown>,
+            );
+        } else if (Array.isArray(sv) && Array.isArray(tv)) {
+            // For arrays, recurse into matching elements to stamp $cid
+            for (let i = 0; i < Math.min(sv.length, tv.length); i++) {
+                if (isObject(sv[i]) && isObject(tv[i])) {
+                    const cidDesc = Object.getOwnPropertyDescriptor(
+                        sv[i],
+                        CID_KEY,
+                    );
+                    if (cidDesc) {
+                        defineCidProperty(tv[i], cidDesc.value as ContainerID);
+                    }
+                    deepMergeSnapshot(
+                        tv[i] as Record<string, unknown>,
+                        sv[i] as Record<string, unknown>,
+                    );
+                }
+            }
+        } else if (!(key in state)) {
+            state[key] = sv;
+        }
+    }
+}
+
 // Deep merge initialState into a base state with awareness of the provided root schema.
 // - Does not override values already present in base (doc/defaults take precedence)
 // - For Ignore fields, copies values verbatim into in-memory state only
@@ -2991,8 +3036,44 @@ function mergeInitialIntoBaseWithSchema(
             continue;
         }
         if (t === "loro-union") {
-            // Union is stored as a Map — ensure an object shape
+            // Union is stored as a Map — ensure an object shape and merge init data
             if (!(k in base) || !isObject(base[k])) base[k] = {};
+            const nestedBase = base[k] as Record<string, unknown>;
+            const nestedInit: Record<string, unknown> = isObject(initVal)
+                ? initVal
+                : {};
+            // Resolve the variant from the discriminant so we recurse
+            // with the correct variant schema
+            const unionSchema = fieldSchema as unknown as {
+                discriminant: string;
+                variants: Record<
+                    string,
+                    LoroMapSchema<Record<string, SchemaType>>
+                >;
+            };
+            const tag = nestedInit[unionSchema.discriminant] as
+                | string
+                | undefined;
+            if (tag) {
+                // Discriminant is not part of the variant definition — set it directly
+                nestedBase[unionSchema.discriminant] = tag;
+                const variantSchema = unionSchema.variants[tag];
+                if (variantSchema) {
+                    mergeInitialIntoBaseWithSchema(nestedBase, nestedInit, {
+                        type: "schema",
+                        definition: variantSchema.definition as Record<
+                            string,
+                            ContainerSchemaType
+                        >,
+                        options: {},
+                        getContainerType() {
+                            return "Map";
+                        },
+                    } as unknown as RootSchemaType<
+                        Record<string, ContainerSchemaType>
+                    >);
+                }
+            }
             continue;
         }
         if (t === "loro-list" || t === "loro-movable-list") {
