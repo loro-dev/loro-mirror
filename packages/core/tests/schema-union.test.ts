@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { LoroDoc } from "loro-crdt";
 import { schema, validateSchema, getDefaultValue } from "../src/index.js";
+import { Mirror } from "../src/core/mirror.js";
 import {
     isLoroUnionSchema,
     isContainerSchema,
@@ -96,5 +98,147 @@ describe("schema.Union", () => {
                 text: "",
             });
         });
+    });
+});
+
+describe("Mirror with Union schema", () => {
+    const blockSchema = schema.Union("type", {
+        paragraph: schema.LoroMap({ text: schema.String() }),
+        image: schema.LoroMap({ src: schema.String(), alt: schema.String() }),
+        heading: schema.LoroMap({
+            level: schema.Number(),
+            text: schema.String(),
+        }),
+    });
+
+    const docSchema = schema({
+        blocks: schema.LoroList(blockSchema, (b) => b.$cid),
+    });
+
+    let doc: LoroDoc;
+
+    beforeEach(() => {
+        doc = new LoroDoc();
+    });
+
+    it("sets initial state with union items", () => {
+        const mirror = new Mirror({
+            doc,
+            schema: docSchema,
+            initialState: { blocks: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push({ type: "paragraph", text: "Hello" });
+        });
+
+        const state = mirror.getState();
+        expect(state.blocks).toHaveLength(1);
+        expect(state.blocks[0].type).toBe("paragraph");
+        if (state.blocks[0].type === "paragraph") {
+            expect(state.blocks[0].text).toBe("Hello");
+        }
+    });
+
+    it("updates fields within the same variant", () => {
+        const mirror = new Mirror({
+            doc,
+            schema: docSchema,
+            initialState: { blocks: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push({ type: "paragraph", text: "Hello" });
+        });
+
+        const cidBefore = mirror.getState().blocks[0].$cid;
+
+        mirror.setState((draft) => {
+            draft.blocks[0] = {
+                type: "paragraph",
+                text: "Updated",
+                $cid: draft.blocks[0].$cid,
+            };
+        });
+
+        const state = mirror.getState();
+        expect(state.blocks[0].type).toBe("paragraph");
+        if (state.blocks[0].type === "paragraph") {
+            expect(state.blocks[0].text).toBe("Updated");
+        }
+        // $cid preserved — same container, just updated fields
+        expect(state.blocks[0].$cid).toBe(cidBefore);
+    });
+
+    it("switches variant by replacing container", () => {
+        const mirror = new Mirror({
+            doc,
+            schema: docSchema,
+            initialState: { blocks: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push({ type: "paragraph", text: "Hello" });
+        });
+
+        const cidBefore = mirror.getState().blocks[0].$cid;
+
+        mirror.setState((draft) => {
+            draft.blocks[0] = { type: "heading", level: 1, text: "Title" };
+        });
+
+        const state = mirror.getState();
+        expect(state.blocks[0].type).toBe("heading");
+        if (state.blocks[0].type === "heading") {
+            expect(state.blocks[0].level).toBe(1);
+            expect(state.blocks[0].text).toBe("Title");
+        }
+        // $cid changes — different container
+        expect(state.blocks[0].$cid).not.toBe(cidBefore);
+    });
+
+    it("supports multiple union items in a list", () => {
+        const mirror = new Mirror({
+            doc,
+            schema: docSchema,
+            initialState: { blocks: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push(
+                { type: "heading", level: 1, text: "Title" },
+                { type: "paragraph", text: "Body" },
+                { type: "image", src: "photo.png", alt: "A photo" },
+            );
+        });
+
+        const state = mirror.getState();
+        expect(state.blocks).toHaveLength(3);
+        expect(state.blocks[0].type).toBe("heading");
+        expect(state.blocks[1].type).toBe("paragraph");
+        expect(state.blocks[2].type).toBe("image");
+    });
+
+    it("union field at root level", () => {
+        const rootUnionSchema = schema({
+            content: schema.Union("kind", {
+                article: schema.LoroMap({ body: schema.String() }),
+                gallery: schema.LoroMap({
+                    images: schema.LoroList(schema.String()),
+                }),
+            }),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: rootUnionSchema,
+        });
+
+        mirror.setState((draft) => {
+            (draft as Record<string, unknown>).content = { kind: "article", body: "Hello" };
+        });
+
+        const state = mirror.getState();
+        expect(state.content.kind).toBe("article");
     });
 });

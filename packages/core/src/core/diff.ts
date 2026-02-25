@@ -13,6 +13,7 @@ import {
     isLoroMapSchema,
     isLoroMovableListSchema,
     isLoroTreeSchema,
+    isLoroUnionSchema,
     isRootSchemaType,
     LoroListSchema,
     LoroMapSchema,
@@ -100,6 +101,24 @@ type CommonListItemInfo = {
 type IdSelector<T> = (item: T) => string | undefined;
 
 /**
+ * If `schema` is a LoroUnionSchema, resolves to the active variant's
+ * LoroMapSchema by reading the discriminant from `value`.
+ * Returns `schema` unchanged for all other schema types.
+ */
+function resolveUnionVariantSchema(
+    schema: SchemaType | undefined,
+    value: unknown,
+): SchemaType | undefined {
+    if (!schema || !isLoroUnionSchema(schema) || !isObjectLike(value)) {
+        return schema;
+    }
+    const tag = (value as Record<string, unknown>)[
+        schema.discriminant
+    ] as string;
+    return schema.variants[tag] ?? schema;
+}
+
+/**
  * Diffs a container between two states
  *
  * @param doc The LoroDoc instance
@@ -117,7 +136,10 @@ export function diffContainer(
     schema: SchemaType | undefined,
     inferOptions?: InferContainerOptions,
 ): Change[] {
-    const effectiveInferOptions = applySchemaToInferOptions(schema, inferOptions);
+    const effectiveInferOptions = applySchemaToInferOptions(
+        schema,
+        inferOptions,
+    );
     const stateAndSchema = { oldState, newState, schema };
     if (containerId === "") {
         if (
@@ -152,7 +174,13 @@ export function diffContainer(
                 );
             }
 
-            const mapSchema = isLoroMapSchema(schema) ? schema : undefined;
+            // Resolve union schema to the active variant's LoroMapSchema
+            const resolvedSchema = isLoroUnionSchema(schema)
+                ? resolveUnionVariantSchema(schema, newState)
+                : schema;
+            const mapSchema = isLoroMapSchema(resolvedSchema)
+                ? resolvedSchema
+                : undefined;
 
             return diffMap(
                 doc,
@@ -571,7 +599,9 @@ export function diffMovableList<S extends ArrayLike>(
         const oldPositionsInNewOrder = newCommonIds.map((id) => {
             const pos = oldPosById.get(id);
             if (pos == null) {
-                throw new Error("Invariant violation: common id missing in old state");
+                throw new Error(
+                    "Invariant violation: common id missing in old state",
+                );
             }
             return pos;
         });
@@ -592,10 +622,13 @@ export function diffMovableList<S extends ArrayLike>(
             // Place `id` right before the already-processed "anchor" (the next id in new order).
             // This matches the standard LIS-based list diff strategy and avoids index drift when
             // earlier moves shift later indices.
-            const anchorId = i + 1 < newCommonIds.length ? newCommonIds[i + 1] : undefined;
+            const anchorId =
+                i + 1 < newCommonIds.length ? newCommonIds[i + 1] : undefined;
             const anchorIndex = anchorId ? idxOf.get(anchorId) : undefined;
             if (anchorId && anchorIndex == null) {
-                throw new Error("Invariant violation: anchor id missing in current order");
+                throw new Error(
+                    "Invariant violation: anchor id missing in current order",
+                );
             }
 
             // `toIndex` is defined in the list *after* the removal.
@@ -653,7 +686,10 @@ export function diffMovableList<S extends ArrayLike>(
 
     // 5) Updates (for items present in both states)
     for (const info of common) {
-        if (valuesEqual(itemSchema, info.oldItem, info.newItem, "deep-equality")) continue;
+        if (
+            valuesEqual(itemSchema, info.oldItem, info.newItem, "deep-equality")
+        )
+            continue;
 
         const movableList = doc.getMovableList(containerId);
         const currentItem = movableList.get(info.oldIndex);
@@ -795,7 +831,46 @@ export function diffListWithIdSelector<S extends ArrayLike>(
 
         const oldItem = oldInfo.item;
         const newItem = newInfo.item;
-        if (valuesEqual(itemSchema, oldItem, newItem, "deep-equality")) continue;
+        if (valuesEqual(itemSchema, oldItem, newItem, "deep-equality"))
+            continue;
+
+        // Union variant switch — replace entire container
+        if (
+            schema &&
+            isLoroUnionSchema(schema.itemSchema) &&
+            isObjectLike(oldItem) &&
+            isObjectLike(newItem)
+        ) {
+            const unionSchema = schema.itemSchema;
+            const oldTag = (oldItem as Record<string, unknown>)[
+                unionSchema.discriminant
+            ];
+            const newTag = (newItem as Record<string, unknown>)[
+                unionSchema.discriminant
+            ];
+            if (oldTag !== newTag) {
+                changes.push({
+                    container: containerId,
+                    key: oldInfo.index,
+                    value: undefined,
+                    kind: "delete",
+                });
+                changes.push(
+                    tryUpdateToContainer(
+                        {
+                            container: containerId,
+                            key: newInfo.newIndex,
+                            value: newItem,
+                            kind: "insert",
+                        },
+                        useContainer,
+                        schema?.itemSchema,
+                        inferOptions,
+                    ),
+                );
+                continue;
+            }
+        }
 
         const itemOnLoro = list.get(oldInfo.index);
         if (isContainer(itemOnLoro)) {
@@ -805,7 +880,8 @@ export function diffListWithIdSelector<S extends ArrayLike>(
                     oldItem,
                     newItem,
                     itemOnLoro.id,
-                    itemSchema,
+                    resolveUnionVariantSchema(schema?.itemSchema, newItem) ??
+                        schema?.itemSchema,
                     inferOptions,
                 ),
             );
@@ -873,7 +949,12 @@ export function diffList<S extends ArrayLike>(
     while (
         start < oldLen &&
         start < newLen &&
-        valuesEqual(itemSchema, oldState[start], newState[start], "reference-equality")
+        valuesEqual(
+            itemSchema,
+            oldState[start],
+            newState[start],
+            "reference-equality",
+        )
     ) {
         start++;
     }
@@ -883,7 +964,12 @@ export function diffList<S extends ArrayLike>(
     while (
         suffix < oldLen - start &&
         suffix < newLen - start &&
-        valuesEqual(itemSchema, oldState[oldLen - 1 - suffix], newState[newLen - 1 - suffix], "reference-equality")
+        valuesEqual(
+            itemSchema,
+            oldState[oldLen - 1 - suffix],
+            newState[newLen - 1 - suffix],
+            "reference-equality",
+        )
     ) {
         suffix++;
     }
@@ -895,7 +981,15 @@ export function diffList<S extends ArrayLike>(
     const overlap = Math.min(oldBlockLen, newBlockLen);
     for (let j = 0; j < overlap; j++) {
         const i = start + j;
-        if (valuesEqual(itemSchema, oldState[i], newState[i], "reference-equality")) continue;
+        if (
+            valuesEqual(
+                itemSchema,
+                oldState[i],
+                newState[i],
+                "reference-equality",
+            )
+        )
+            continue;
 
         const itemOnLoro = list.get(i);
         if (isContainer(itemOnLoro)) {
@@ -1016,7 +1110,7 @@ export function diffMovableListByIndex(
         if (!item || typeof item !== "object") return;
         const cid = (item as Record<string, unknown>)[CID_KEY];
         if (typeof cid === "string" && isContainerId(cid)) {
-            return cid
+            return cid;
         }
         return undefined;
     };
@@ -1055,7 +1149,8 @@ export function diffMovableListByIndex(
         if (n <= 1) return;
 
         let start = 0;
-        while (start < n && identityEquals(oldArr[start], newArr[start])) start++;
+        while (start < n && identityEquals(oldArr[start], newArr[start]))
+            start++;
         if (start === n) return;
 
         // Case A: element moved forward (from=start, to>start)
@@ -1128,7 +1223,12 @@ export function diffMovableListByIndex(
     while (
         start < oldLen &&
         start < newLen &&
-        valuesEqual(itemSchema, oldState[start], newState[start], "reference-equality")
+        valuesEqual(
+            itemSchema,
+            oldState[start],
+            newState[start],
+            "reference-equality",
+        )
     ) {
         start++;
     }
@@ -1138,7 +1238,12 @@ export function diffMovableListByIndex(
     while (
         suffix < oldLen - start &&
         suffix < newLen - start &&
-        valuesEqual(itemSchema, oldState[oldLen - 1 - suffix], newState[newLen - 1 - suffix], "reference-equality")
+        valuesEqual(
+            itemSchema,
+            oldState[oldLen - 1 - suffix],
+            newState[newLen - 1 - suffix],
+            "reference-equality",
+        )
     ) {
         suffix++;
     }
@@ -1150,7 +1255,15 @@ export function diffMovableListByIndex(
     const overlap = Math.min(oldBlockLen, newBlockLen);
     for (let j = 0; j < overlap; j++) {
         const i = start + j;
-        if (valuesEqual(itemSchema, oldState[i], newState[i], "reference-equality")) continue;
+        if (
+            valuesEqual(
+                itemSchema,
+                oldState[i],
+                newState[i],
+                "reference-equality",
+            )
+        )
+            continue;
 
         const itemOnLoro = list.get(i);
         const next = newState[i];
@@ -1280,7 +1393,12 @@ export function diffMap<S extends ObjectLike>(
             // If old item exists, we need to delete it
             if (key in oldStateObj && oldItem !== undefined) {
                 const childSchemaForDelete = getMapFieldSchema(schema, key);
-                if (!(childSchemaForDelete && childSchemaForDelete.type === "ignore")) {
+                if (
+                    !(
+                        childSchemaForDelete &&
+                        childSchemaForDelete.type === "ignore"
+                    )
+                ) {
                     changes.push({
                         container: containerId,
                         key,
@@ -1307,11 +1425,10 @@ export function diffMap<S extends ObjectLike>(
             childSchema,
             inferOptions,
         );
-        let containerType =
-            hasTransform(childSchema)
-                ? undefined
-                : (childSchema?.getContainerType() ??
-                  tryInferContainerType(newItem, childInferOptions));
+        let containerType = hasTransform(childSchema)
+            ? undefined
+            : (childSchema?.getContainerType() ??
+              tryInferContainerType(newItem, childInferOptions));
         if (
             childSchema?.getContainerType() &&
             containerType &&
@@ -1354,12 +1471,45 @@ export function diffMap<S extends ObjectLike>(
 
         // Item inside map has changed
         if (oldItem !== newItem) {
+            // Union variant switch — replace entire container
+            if (
+                isLoroUnionSchema(childSchema) &&
+                isObjectLike(oldItem) &&
+                isObjectLike(newItem)
+            ) {
+                const oldTag = (oldItem as Record<string, unknown>)[
+                    childSchema.discriminant
+                ];
+                const newTag = (newItem as Record<string, unknown>)[
+                    childSchema.discriminant
+                ];
+                if (oldTag !== newTag) {
+                    changes.push(
+                        insertChildToMap(
+                            containerId,
+                            key,
+                            newStateObj[key],
+                            applySchemaToInferOptions(
+                                childSchema,
+                                inferOptions,
+                            ),
+                        ),
+                    );
+                    continue;
+                }
+            }
+
             // The key was previously a container and new item is also a container
             if (
                 containerType &&
                 isValueOfContainerType(containerType, newItem) &&
                 isValueOfContainerType(containerType, oldItem)
             ) {
+                // Resolve union schema to active variant for recursion
+                const effectiveChildSchema =
+                    resolveUnionVariantSchema(childSchema, newItem) ??
+                    childSchema;
+
                 // the parent is the root container
                 if (containerId === "") {
                     const container = getRootContainerByType(
@@ -1384,7 +1534,7 @@ export function diffMap<S extends ObjectLike>(
                             oldStateObj[key],
                             newStateObj[key],
                             container.id,
-                            childSchema,
+                            effectiveChildSchema,
                             inferOptions,
                         ),
                     );
@@ -1405,7 +1555,10 @@ export function diffMap<S extends ObjectLike>(
                             containerId,
                             key,
                             newStateObj[key],
-                            applySchemaToInferOptions(childSchema, inferOptions),
+                            applySchemaToInferOptions(
+                                childSchema,
+                                inferOptions,
+                            ),
                         ),
                     );
                 } else {
@@ -1425,14 +1578,21 @@ export function diffMap<S extends ObjectLike>(
                             oldStateObj[key],
                             newStateObj[key],
                             child.id,
-                            childSchema,
+                            effectiveChildSchema,
                             inferOptions,
                         ),
                     );
                 }
             } else {
-                if (valuesEqual(childSchema, oldItem, newItem, "reference-equality")) {
-                    continue; 
+                if (
+                    valuesEqual(
+                        childSchema,
+                        oldItem,
+                        newItem,
+                        "reference-equality",
+                    )
+                ) {
+                    continue;
                 }
 
                 // The type or value of the child has changed

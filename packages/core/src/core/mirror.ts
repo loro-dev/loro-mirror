@@ -41,6 +41,7 @@ import {
     isLoroMapSchema,
     isLoroMovableListSchema,
     isLoroTreeSchema,
+    isLoroUnionSchema,
     LoroListSchema,
     LoroMapSchema,
     RootSchemaType,
@@ -436,7 +437,9 @@ export class Mirror<S extends SchemaType> {
 
         // Initialize ephemeral manager if store provided
         if (options.ephemeralStore) {
-            this.ephemeralManager = new EphemeralPatchManager(options.ephemeralStore);
+            this.ephemeralManager = new EphemeralPatchManager(
+                options.ephemeralStore,
+            );
             this.subscriptions.push(
                 this.ephemeralManager.subscribe(this.handleEphemeralEvent),
             );
@@ -502,6 +505,7 @@ export class Mirror<S extends SchemaType> {
                             "loro-text",
                             "loro-movable-list",
                             "loro-tree",
+                            "loro-union",
                         ].includes(fieldSchema.type)
                     ) {
                         const containerType =
@@ -590,17 +594,38 @@ export class Mirror<S extends SchemaType> {
         if (!container.isAttached) return;
 
         const parentSchema = this.getContainerSchema(container.id);
-        const parentLocalInfer = this.inferOptionsByContainerId.get(container.id);
+        const parentLocalInfer = this.inferOptionsByContainerId.get(
+            container.id,
+        );
 
         try {
             if (container.kind() === "Map") {
                 const map = container as LoroMap;
+                // Resolve union schema → variant map schema for child lookups
+                let effectiveMapSchema = parentSchema;
+                if (isLoroUnionSchema(parentSchema)) {
+                    const tag = map.get(parentSchema.discriminant);
+                    if (typeof tag === "string" && parentSchema.variants[tag]) {
+                        effectiveMapSchema = parentSchema.variants[tag];
+                    }
+                }
                 for (const key of map.keys()) {
                     const value = map.get(key);
                     if (isContainer(value)) {
                         let nestedSchema: ContainerSchemaType | undefined;
-                        if (parentSchema && isLoroMapSchema(parentSchema)) {
-                            const candidate = getMapFieldSchema(parentSchema, key);
+                        if (
+                            effectiveMapSchema &&
+                            isLoroMapSchema(effectiveMapSchema)
+                        ) {
+                            const candidate = this.getSchemaForMapKey(
+                                effectiveMapSchema as
+                                    | LoroMapSchema<Record<string, SchemaType>>
+                                    | LoroMapSchemaWithCatchall<
+                                          Record<string, SchemaType>,
+                                          SchemaType
+                                      >,
+                                key,
+                            );
                             if (candidate?.type === "any") {
                                 this.inferOptionsByContainerId.set(
                                     value.id,
@@ -738,7 +763,10 @@ export class Mirror<S extends SchemaType> {
             ...event,
             events: event.events.map((e) => {
                 const canon = this.rootPathById.get(e.target);
-                if (canon && (!Array.isArray(e.path) || e.path[0] !== canon[0])) {
+                if (
+                    canon &&
+                    (!Array.isArray(e.path) || e.path[0] !== canon[0])
+                ) {
                     return { ...e, path: canon } as typeof e;
                 }
                 return e;
@@ -762,7 +790,9 @@ export class Mirror<S extends SchemaType> {
                 },
                 getNodeDataCid: (treeId, nodeId) => {
                     try {
-                        const node = this.doc.getTree(treeId).getNodeByID(nodeId);
+                        const node = this.doc
+                            .getTree(treeId)
+                            .getNodeByID(nodeId);
                         return node ? node.data.id : undefined;
                     } catch {
                         return undefined;
@@ -780,7 +810,9 @@ export class Mirror<S extends SchemaType> {
         return nextState;
     }
 
-    private captureLocalDocEvent(callback: () => void): LoroEventBatch | undefined {
+    private captureLocalDocEvent(
+        callback: () => void,
+    ): LoroEventBatch | undefined {
         let captured: LoroEventBatch | undefined;
         const unsubscribe = this.doc.subscribe((event) => {
             if (event.by === "local") {
@@ -872,7 +904,9 @@ export class Mirror<S extends SchemaType> {
                             } else if (
                                 !schema &&
                                 parentLocalInfer &&
-                                !this.inferOptionsByContainerId.has(container.id)
+                                !this.inferOptionsByContainerId.has(
+                                    container.id,
+                                )
                             ) {
                                 this.inferOptionsByContainerId.set(
                                     container.id,
@@ -880,7 +914,10 @@ export class Mirror<S extends SchemaType> {
                                 );
                             }
 
-                            this.registerContainer(container.id, containerSchema);  
+                            this.registerContainer(
+                                container.id,
+                                containerSchema,
+                            );
 
                             if (
                                 schema &&
@@ -1082,7 +1119,7 @@ export class Mirror<S extends SchemaType> {
             let container: Container | null = null;
 
             // Create or get the container based on the schema type
-            if (type === "loro-map") {
+            if (type === "loro-map" || type === "loro-union") {
                 container = this.doc.getMap(keyStr);
             } else if (type === "loro-list") {
                 container = this.doc.getList(keyStr);
@@ -1146,9 +1183,9 @@ export class Mirror<S extends SchemaType> {
                         const childInfer =
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                    container.id,
-                                    fieldSchema,
-                                )
+                                      container.id,
+                                      fieldSchema,
+                                  )
                                 : undefined;
                         const inserted = this.insertContainerIntoMap(
                             map,
@@ -1202,9 +1239,9 @@ export class Mirror<S extends SchemaType> {
                             value,
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                    container.id,
-                                    fieldSchema,
-                                )
+                                      container.id,
+                                      fieldSchema,
+                                  )
                                 : undefined,
                         );
                     } else {
@@ -1249,9 +1286,9 @@ export class Mirror<S extends SchemaType> {
                             value,
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                    container.id,
-                                    fieldSchema,
-                                )
+                                      container.id,
+                                      fieldSchema,
+                                  )
                                 : undefined,
                         );
                     } else if (kind === "move") {
@@ -1270,36 +1307,38 @@ export class Mirror<S extends SchemaType> {
                             container.id,
                             key,
                         );
-	                        const infer =
-	                            fieldSchema?.type === "any"
-	                                ? this.getInferOptionsForChild(
-	                                    container.id,
-	                                    fieldSchema,
-	                                )
-	                                : !schema
-	                                    ? this.getInferOptionsForContainer(container.id)
-	                                    : undefined;
-	                        const [detachedContainer, _containerType] =
-	                            this.createContainerFromSchema(
-	                                schema,
-	                                value,
-	                                infer,
-	                            );
-	                        const newContainer = list.setContainer(
-	                            index,
-	                            detachedContainer,
-	                        );
+                        const infer =
+                            fieldSchema?.type === "any"
+                                ? this.getInferOptionsForChild(
+                                      container.id,
+                                      fieldSchema,
+                                  )
+                                : !schema
+                                  ? this.getInferOptionsForContainer(
+                                        container.id,
+                                    )
+                                  : undefined;
+                        const [detachedContainer, _containerType] =
+                            this.createContainerFromSchema(
+                                schema,
+                                value,
+                                infer,
+                            );
+                        const newContainer = list.setContainer(
+                            index,
+                            detachedContainer,
+                        );
 
-	                        if (!schema && infer) {
-	                            this.inferOptionsByContainerId.set(
-	                                newContainer.id,
-	                                infer,
-	                            );
-	                        }
-	                        this.registerContainer(newContainer.id, schema);
-	                        this.initializeContainer(newContainer, schema, value);
-	                        // Stamp $cid into pending state when replacing with a map container
-	                        this.stampCid(value, newContainer.id);
+                        if (!schema && infer) {
+                            this.inferOptionsByContainerId.set(
+                                newContainer.id,
+                                infer,
+                            );
+                        }
+                        this.registerContainer(newContainer.id, schema);
+                        this.initializeContainer(newContainer, schema, value);
+                        // Stamp $cid into pending state when replacing with a map container
+                        this.stampCid(value, newContainer.id);
                     } else {
                         throw new Error();
                     }
@@ -1666,8 +1705,9 @@ export class Mirror<S extends SchemaType> {
             containerType &&
             (!containerSchema || isValueOfContainerType(containerType, item))
         ) {
-            const childInfer =
-                containerSchema ? undefined : (effectiveInfer || baseInfer);
+            const childInfer = containerSchema
+                ? undefined
+                : effectiveInfer || baseInfer;
             this.insertContainerIntoList(
                 list,
                 containerSchema,
@@ -1757,10 +1797,7 @@ export class Mirror<S extends SchemaType> {
      */
     private handleEphemeralEvent = (event: EphemeralStoreChangeEvent) => {
         if (this.syncing) return;
-        if (
-            event.by === "local" &&
-            this.suppressLocalEphemeralEvents > 0
-        ) {
+        if (event.by === "local" && this.suppressLocalEphemeralEvents > 0) {
             return;
         }
         this.state = this.applyEphemeralDeltas(event.deltas);
@@ -1783,7 +1820,8 @@ export class Mirror<S extends SchemaType> {
      * No-op if there are no pending local ephemeral patches.
      */
     finalizeEphemeralPatches(): void {
-        if (!this.ephemeralManager || !this.ephemeralManager.hasLocalPatches) return;
+        if (!this.ephemeralManager || !this.ephemeralManager.hasLocalPatches)
+            return;
 
         this.syncing = true;
         try {
@@ -1832,7 +1870,8 @@ export class Mirror<S extends SchemaType> {
         childInferOptions?: InferContainerOptions,
     ) {
         const infer =
-            childInferOptions || (!schema ? this.getInferOptionsForContainer(map.id) : undefined);
+            childInferOptions ||
+            (!schema ? this.getInferOptionsForContainer(map.id) : undefined);
         const [detachedContainer, _containerType] =
             this.createContainerFromSchema(schema, value, infer);
         const insertedContainer = map.setContainer(key, detachedContainer);
@@ -1871,7 +1910,23 @@ export class Mirror<S extends SchemaType> {
             if (!isObject(value)) {
                 return;
             }
-            const mapSchema = schema?.type === "loro-map" ? schema : undefined;
+            // Resolve union schema to the concrete variant's LoroMapSchema
+            let resolvedSchema = schema;
+            if (isLoroUnionSchema(schema) && isObject(value)) {
+                const tag = (value as Record<string, unknown>)[
+                    schema.discriminant
+                ] as string;
+                if (tag && schema.variants[tag]) {
+                    resolvedSchema = schema.variants[tag];
+                }
+            }
+            const mapSchema = resolvedSchema as
+                | LoroMapSchema<Record<string, SchemaType>>
+                | LoroMapSchemaWithCatchall<
+                      Record<string, SchemaType>,
+                      SchemaType
+                  >
+                | undefined;
             const baseInfer = this.getInferOptionsForContainer(map.id);
             for (const [key, val] of Object.entries(value)) {
                 // Skip injected CID field
@@ -2054,7 +2109,8 @@ export class Mirror<S extends SchemaType> {
         childInferOptions?: InferContainerOptions,
     ) {
         const infer =
-            childInferOptions || (!schema ? this.getInferOptionsForContainer(list.id) : undefined);
+            childInferOptions ||
+            (!schema ? this.getInferOptionsForContainer(list.id) : undefined);
         const [detachedContainer, _containerType] =
             this.createContainerFromSchema(schema, value, infer);
         let insertedContainer: Container | undefined;
@@ -2275,7 +2331,10 @@ export class Mirror<S extends SchemaType> {
             this.baseState,
             normalized,
         );
-        this.state = this.applyNormalizedLoroEventToState(this.state, normalized);
+        this.state = this.applyNormalizedLoroEventToState(
+            this.state,
+            normalized,
+        );
         return true;
     }
 
@@ -2306,8 +2365,10 @@ export class Mirror<S extends SchemaType> {
             );
         }
 
-        const deltas = this.withSuppressedLocalEphemeralEvents(() =>
-            this.ephemeralManager?.writeValue(containerId, key, value) ?? [],
+        const deltas = this.withSuppressedLocalEphemeralEvents(
+            () =>
+                this.ephemeralManager?.writeValue(containerId, key, value) ??
+                [],
         );
         if (deltas.length === 0) return;
 
@@ -2403,20 +2464,20 @@ export class Mirror<S extends SchemaType> {
         const newState =
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
-                    const res = (
-                        updater as (
-                            state: InferType<S>,
-                        ) => InferType<S> | void
-                    )(draft as InferType<S>);
-                    if (res && res !== (draft as unknown)) {
-                        return res as unknown as typeof draft;
-                    }
-                })
+                      const res = (
+                          updater as (
+                              state: InferType<S>,
+                          ) => InferType<S> | void
+                      )(draft as InferType<S>);
+                      if (res && res !== (draft as unknown)) {
+                          return res as unknown as typeof draft;
+                      }
+                  })
                 : (Object.assign(
-                    {},
-                    this.state as unknown as Record<string, unknown>,
-                    updater as Record<string, unknown>,
-                ) as InferType<S>);
+                      {},
+                      this.state as unknown as Record<string, unknown>,
+                      updater as Record<string, unknown>,
+                  ) as InferType<S>);
 
         // Validate state if needed
         if (this.options.validateUpdates) {
@@ -2473,8 +2534,10 @@ export class Mirror<S extends SchemaType> {
 
             // Write ephemeral-eligible changes to EphemeralStore
             if (ephemeralChanges.length > 0) {
-                const deltas = this.withSuppressedLocalEphemeralEvents(() =>
-                    this.ephemeralManager?.writeChanges(ephemeralChanges) ?? [],
+                const deltas = this.withSuppressedLocalEphemeralEvents(
+                    () =>
+                        this.ephemeralManager?.writeChanges(ephemeralChanges) ??
+                        [],
                 );
                 // Schedule debounced finalization
                 this.ephemeralManager.scheduleFinalizeAfter(
@@ -2523,16 +2586,16 @@ export class Mirror<S extends SchemaType> {
             const m = c as LoroMap;
             const obj: MirrorStateObject = {};
             defineCidProperty(obj, c.id);
-                for (const k of m.keys()) {
-                    const v = m.get(k);
-                    if (isContainer(v)) {
-                        obj[k] = this.containerToMirrorState(v);
-                    } else {
-                        // Decode primitive values using field schema
-                        const fieldSchema = getChildSchema(schema, k);
-                        obj[k] = applyDecode(fieldSchema, v) as MirrorState;
-                    }
+            for (const k of m.keys()) {
+                const v = m.get(k);
+                if (isContainer(v)) {
+                    obj[k] = this.containerToMirrorState(v);
+                } else {
+                    // Decode primitive values using field schema
+                    const fieldSchema = getChildSchema(schema, k);
+                    obj[k] = applyDecode(fieldSchema, v) as MirrorState;
                 }
+            }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
             const arr: MirrorState[] = [];
@@ -2733,7 +2796,55 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         childKey: string | number,
     ): SchemaType | undefined {
-        return getChildSchema(this.getContainerSchema(containerId), childKey);
+        const containerSchema = this.getContainerSchema(containerId);
+
+        if (!containerSchema) {
+            return undefined;
+        }
+
+        // Resolve union → variant map schema for child key lookups
+        if (isLoroUnionSchema(containerSchema)) {
+            const container = this.doc.getContainerById(containerId);
+            if (container && container.kind() === "Map") {
+                const map = container as LoroMap;
+                const tag = map.get(containerSchema.discriminant);
+                if (typeof tag === "string" && containerSchema.variants[tag]) {
+                    const variantSchema = containerSchema.variants[tag];
+                    return this.getSchemaForMapKey(
+                        variantSchema as
+                            | LoroMapSchema<Record<string, SchemaType>>
+                            | LoroMapSchemaWithCatchall<
+                                  Record<string, SchemaType>,
+                                  SchemaType
+                              >,
+                        String(childKey),
+                    );
+                }
+            }
+            return undefined;
+        }
+
+        if (isLoroMapSchema(containerSchema)) {
+            return this.getSchemaForMapKey(
+                containerSchema as
+                    | LoroMapSchema<Record<string, SchemaType>>
+                    | LoroMapSchemaWithCatchall<
+                          Record<string, SchemaType>,
+                          SchemaType
+                      >,
+                String(childKey),
+            );
+        } else if (
+            isLoroListSchema(containerSchema) ||
+            isLoroMovableListSchema(containerSchema)
+        ) {
+            return containerSchema.itemSchema;
+        } else if (isLoroTreeSchema(containerSchema)) {
+            // Tree nodes' data map schema
+            return containerSchema.nodeSchema;
+        }
+
+        return undefined;
     }
 
     /* Get all container IDs registered with the mirror */
@@ -2750,7 +2861,9 @@ export class Mirror<S extends SchemaType> {
 export function toNormalizedJson(doc: LoroDoc) {
     const withEnumerableCid = doc.toJsonWithReplacer((_k, v) => {
         if (isContainer(v) && v.kind() === "Tree") {
-            return normalizeTreeJsonForMirror(v.toJSON()) as unknown as typeof v;
+            return normalizeTreeJsonForMirror(
+                v.toJSON(),
+            ) as unknown as typeof v;
         }
 
         if (isContainer(v) && v.kind() === "Map") {
@@ -2875,6 +2988,11 @@ function mergeInitialIntoBaseWithSchema(
             } as unknown as RootSchemaType<
                 Record<string, ContainerSchemaType>
             >);
+            continue;
+        }
+        if (t === "loro-union") {
+            // Union is stored as a Map — ensure an object shape
+            if (!(k in base) || !isObject(base[k])) base[k] = {};
             continue;
         }
         if (t === "loro-list" || t === "loro-movable-list") {
