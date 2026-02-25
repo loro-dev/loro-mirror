@@ -77,8 +77,9 @@ export interface AnySchemaType extends BaseSchemaType {
 /**
  * String schema type
  */
-export interface StringSchemaType<T extends string = string>
-    extends BaseSchemaType {
+export interface StringSchemaType<
+    T extends string = string,
+> extends BaseSchemaType {
     type: "string";
     _t: T;
 }
@@ -107,8 +108,9 @@ export interface IgnoreSchemaType extends BaseSchemaType {
 /**
  * Loro Map schema type
  */
-export interface LoroMapSchema<T extends Record<string, SchemaType>>
-    extends BaseSchemaType {
+export interface LoroMapSchema<
+    T extends Record<string, SchemaType>,
+> extends BaseSchemaType {
     type: "loro-map";
     definition: SchemaDefinition<T>;
 }
@@ -140,8 +142,9 @@ export interface LoroListSchema<T extends SchemaType> extends BaseSchemaType {
 /**
  * Loro Movable List schema type
  */
-export interface LoroMovableListSchema<T extends SchemaType>
-    extends BaseSchemaType {
+export interface LoroMovableListSchema<
+    T extends SchemaType,
+> extends BaseSchemaType {
     type: "loro-movable-list";
     itemSchema: T;
     idSelector?: (item: unknown) => string;
@@ -159,17 +162,35 @@ export interface LoroTextSchemaType extends BaseSchemaType {
  *
  * Represents a tree where each node has a `data` map described by `nodeSchema`.
  */
-export interface LoroTreeSchema<T extends Record<string, SchemaType>>
-    extends BaseSchemaType {
+export interface LoroTreeSchema<
+    T extends Record<string, SchemaType>,
+> extends BaseSchemaType {
     type: "loro-tree";
     nodeSchema: LoroMapSchema<T>;
 }
 
 /**
+ * Loro Union (discriminated union) schema type.
+ *
+ * Each variant is a LoroMap. The discriminant key is auto-injected
+ * into each variant's inferred type with the variant name as its
+ * string literal value.
+ */
+export interface LoroUnionSchema<
+    D extends string,
+    V extends Record<string, LoroMapSchema<Record<string, SchemaType>>>,
+> extends BaseSchemaType {
+    type: "loro-union";
+    discriminant: D;
+    variants: V;
+}
+
+/**
  * Root schema type
  */
-export interface RootSchemaType<T extends Record<string, ContainerSchemaType>>
-    extends BaseSchemaType {
+export interface RootSchemaType<
+    T extends Record<string, ContainerSchemaType>,
+> extends BaseSchemaType {
     type: "schema";
     definition: RootSchemaDefinition<T>;
 }
@@ -189,6 +210,10 @@ export type SchemaType =
     | LoroMovableListSchema<SchemaType>
     | LoroTextSchemaType
     | LoroTreeSchema<Record<string, SchemaType>>
+    | LoroUnionSchema<
+          string,
+          Record<string, LoroMapSchema<Record<string, SchemaType>>>
+      >
     | RootSchemaType<Record<string, ContainerSchemaType>>;
 
 export type ContainerSchemaType =
@@ -197,7 +222,11 @@ export type ContainerSchemaType =
     | LoroListSchema<SchemaType>
     | LoroMovableListSchema<SchemaType>
     | LoroTextSchemaType
-    | LoroTreeSchema<Record<string, SchemaType>>;
+    | LoroTreeSchema<Record<string, SchemaType>>
+    | LoroUnionSchema<
+          string,
+          Record<string, LoroMapSchema<Record<string, SchemaType>>>
+      >;
 
 /**
  * Schema definition type
@@ -205,8 +234,8 @@ export type ContainerSchemaType =
 export type RootSchemaDefinition<
     T extends Record<string, ContainerSchemaType>,
 > = {
-        [K in keyof T]: T[K];
-    };
+    [K in keyof T]: T[K];
+};
 
 /**
  * Schema definition type
@@ -225,87 +254,136 @@ type IsSchemaRequired<S extends SchemaType> = S extends {
 }
     ? true
     : S extends { options: { required: false } }
-    ? false
-    : S extends { options: { required?: undefined } }
-    ? true
-    : S extends { options: {} }
-    ? true
-    : true;
+      ? false
+      : S extends { options: { required?: undefined } }
+        ? true
+        : S extends { options: {} }
+          ? true
+          : true;
+
+/**
+ * Helper: Infer a single union variant's type, injecting the discriminant field.
+ */
+type InferUnionVariant<
+    D extends string,
+    K extends string,
+    M extends Record<string, SchemaType>,
+> = { [P in D]: K } & { [F in keyof M]: InferType<M[F]> } & { $cid: string };
+
+/**
+ * Helper: Distribute over all variants to produce a discriminated union type.
+ */
+type InferUnionType<
+    D extends string,
+    V extends Record<string, LoroMapSchema<Record<string, SchemaType>>>,
+> = {
+    [K in keyof V]: V[K] extends LoroMapSchema<infer M>
+        ? InferUnionVariant<D, K & string, M>
+        : never;
+}[keyof V];
+
+/**
+ * Helper: Input variant type ($cid optional, fields use InferInputType).
+ */
+type InferInputUnionVariant<
+    D extends string,
+    K extends string,
+    M extends Record<string, SchemaType>,
+> = { [P in D]: K } & { [F in keyof M]: InferInputType<M[F]> } & {
+    $cid?: string;
+};
+
+/**
+ * Helper: Distribute over all variants for input (setState) types.
+ */
+type InferInputUnionType<
+    D extends string,
+    V extends Record<string, LoroMapSchema<Record<string, SchemaType>>>,
+> = {
+    [K in keyof V]: V[K] extends LoroMapSchema<infer M>
+        ? InferInputUnionVariant<D, K & string, M>
+        : never;
+}[keyof V];
 
 /**
  * Infer the JavaScript type from a schema type.
  */
-export type InferType<S extends SchemaType> =
-    S extends { transform: TransformDefinition<infer _C, infer D> }
+export type InferType<S extends SchemaType> = S extends {
+    transform: TransformDefinition<infer _C, infer D>;
+}
     ? WithTransformStartupOptionality<D, S & SchemaType>
     : S extends StringSchemaType
-    ? InferStringType<S>
-    : S extends NumberSchemaType
-    ? InferNumberType<S>
-    : S extends BooleanSchemaType
-    ? InferBooleanType<S>
-    : IsSchemaRequired<S> extends false
-    ? S extends AnySchemaType
-    ? unknown
-    : S extends IgnoreSchemaType
-    ? unknown
-    : S extends LoroTextSchemaType
-    ? string | undefined
-    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
-    ? keyof M extends never
-    ?
-    | ({ [key: string]: InferType<C> } & {
-        $cid: string;
-    })
-    | undefined
-    :
-    | (({ [K in keyof M]: InferType<M[K]> } & {
-        [K in Exclude<
-            string,
-            keyof M
-        >]: InferType<C>;
-    }) & { $cid: string })
-    | undefined
-    : S extends LoroMapSchema<infer M>
-    ?
-    | ({ [K in keyof M]: InferType<M[K]> } & {
-        $cid: string;
-    })
-    | undefined
-    : S extends LoroListSchema<infer I>
-    ? Array<InferType<I>> | undefined
-    : S extends LoroMovableListSchema<infer I>
-    ? Array<InferType<I>> | undefined
-    : S extends LoroTreeSchema<infer M>
-    ? Array<InferTreeNodeTypeWithCid<M>> | undefined
-    : S extends RootSchemaType<infer R>
-    ?
-    | { [K in keyof R]: InferType<R[K]> }
-    | undefined
-    : never
-    : S extends IgnoreSchemaType
-    ? unknown
-    : S extends LoroTextSchemaType
-    ? string
-    : S extends AnySchemaType
-    ? unknown
-    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
-    ? keyof M extends never
-    ? { [key: string]: InferType<C> } & { $cid: string }
-    : ({ [K in keyof M]: InferType<M[K]> } & {
-        [K in Exclude<string, keyof M>]: InferType<C>;
-    }) & { $cid: string }
-    : S extends LoroMapSchema<infer M>
-    ? { [K in keyof M]: InferType<M[K]> } & { $cid: string }
-    : S extends LoroListSchema<infer I>
-    ? Array<InferType<I>>
-    : S extends LoroMovableListSchema<infer I>
-    ? Array<InferType<I>>
-    : S extends LoroTreeSchema<infer M>
-    ? Array<InferTreeNodeTypeWithCid<M>>
-    : S extends RootSchemaType<infer R>
-    ? { [K in keyof R]: InferType<R[K]> }
-    : never;
+      ? InferStringType<S>
+      : S extends NumberSchemaType
+        ? InferNumberType<S>
+        : S extends BooleanSchemaType
+          ? InferBooleanType<S>
+          : IsSchemaRequired<S> extends false
+            ? S extends AnySchemaType
+                ? unknown
+                : S extends IgnoreSchemaType
+                  ? unknown
+                  : S extends LoroTextSchemaType
+                    ? string | undefined
+                    : S extends LoroUnionSchema<infer D, infer V>
+                      ? InferUnionType<D, V> | undefined
+                      : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+                        ? keyof M extends never
+                            ?
+                                  | ({ [key: string]: InferType<C> } & {
+                                        $cid: string;
+                                    })
+                                  | undefined
+                            :
+                                  | (({ [K in keyof M]: InferType<M[K]> } & {
+                                        [K in Exclude<
+                                            string,
+                                            keyof M
+                                        >]: InferType<C>;
+                                    }) & { $cid: string })
+                                  | undefined
+                        : S extends LoroMapSchema<infer M>
+                          ?
+                                | ({ [K in keyof M]: InferType<M[K]> } & {
+                                      $cid: string;
+                                  })
+                                | undefined
+                          : S extends LoroListSchema<infer I>
+                            ? Array<InferType<I>> | undefined
+                            : S extends LoroMovableListSchema<infer I>
+                              ? Array<InferType<I>> | undefined
+                              : S extends LoroTreeSchema<infer M>
+                                ? Array<InferTreeNodeTypeWithCid<M>> | undefined
+                                : S extends RootSchemaType<infer R>
+                                  ?
+                                        | { [K in keyof R]: InferType<R[K]> }
+                                        | undefined
+                                  : never
+            : S extends IgnoreSchemaType
+              ? unknown
+              : S extends LoroTextSchemaType
+                ? string
+                : S extends AnySchemaType
+                  ? unknown
+                  : S extends LoroUnionSchema<infer D, infer V>
+                    ? InferUnionType<D, V>
+                    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+                      ? keyof M extends never
+                          ? { [key: string]: InferType<C> } & { $cid: string }
+                          : ({ [K in keyof M]: InferType<M[K]> } & {
+                                [K in Exclude<string, keyof M>]: InferType<C>;
+                            }) & { $cid: string }
+                      : S extends LoroMapSchema<infer M>
+                        ? { [K in keyof M]: InferType<M[K]> } & { $cid: string }
+                        : S extends LoroListSchema<infer I>
+                          ? Array<InferType<I>>
+                          : S extends LoroMovableListSchema<infer I>
+                            ? Array<InferType<I>>
+                            : S extends LoroTreeSchema<infer M>
+                              ? Array<InferTreeNodeTypeWithCid<M>>
+                              : S extends RootSchemaType<infer R>
+                                ? { [K in keyof R]: InferType<R[K]> }
+                                : never;
 
 /**
  * Infer the JavaScript type from a schema definition
@@ -318,84 +396,95 @@ export type InferSchemaType<T extends Record<string, SchemaType>> = {
  * Infer the input (write) type for setState updates.
  * Identical to InferType<S> except that for any LoroMap shape, the `$cid` field is optional.
  */
-export type InferInputType<S extends SchemaType> =
-    S extends { transform: TransformDefinition<infer _C, infer D> }
+export type InferInputType<S extends SchemaType> = S extends {
+    transform: TransformDefinition<infer _C, infer D>;
+}
     ? WithTransformStartupOptionality<D, S & SchemaType>
     : S extends StringSchemaType
-    ? InferStringType<S>
-    : S extends NumberSchemaType
-    ? InferNumberType<S>
-    : S extends BooleanSchemaType
-    ? InferBooleanType<S>
-    : IsSchemaRequired<S> extends false
-    ? S extends AnySchemaType
-    ? unknown
-    : S extends IgnoreSchemaType
-    ? unknown
-    : S extends LoroTextSchemaType
-    ? string | undefined
-    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
-    ? keyof M extends never
-    ?
-    | ({ [key: string]: InferInputType<C> } & {
-        $cid?: string;
-    })
-    | undefined
-    :
-    | (({ [K in keyof M]: InferInputType<M[K]> } & {
-        [K in Exclude<
-            string,
-            keyof M
-        >]: InferInputType<C>;
-    }) & { $cid?: string })
-    | undefined
-    : S extends LoroMapSchema<infer M>
-    ?
-    | ({ [K in keyof M]: InferInputType<M[K]> } & {
-        $cid?: string;
-    })
-    | undefined
-    : S extends LoroListSchema<infer I>
-    ? Array<InferInputType<I>> | undefined
-    : S extends LoroMovableListSchema<infer I>
-    ? Array<InferInputType<I>> | undefined
-    : S extends LoroTreeSchema<infer M>
-    ? Array<InferInputTreeNodeType<M>> | undefined
-    : S extends RootSchemaType<infer R>
-    ?
-    | { [K in keyof R]: InferInputType<R[K]> }
-    | undefined
-    : never
-    : S extends IgnoreSchemaType
-    ? unknown
-    : S extends LoroTextSchemaType
-    ? string
-    : S extends AnySchemaType
-    ? unknown
-    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
-    ? keyof M extends never
-    ? { [key: string]: InferInputType<C> } & {
-        $cid?: string;
-    }
-    : ({ [K in keyof M]: InferInputType<M[K]> } & {
-        [K in Exclude<
-            string,
-            keyof M
-        >]: InferInputType<C>;
-    }) & { $cid?: string }
-    : S extends LoroMapSchema<infer M>
-    ? { [K in keyof M]: InferInputType<M[K]> } & {
-        $cid?: string;
-    }
-    : S extends LoroListSchema<infer I>
-    ? Array<InferInputType<I>>
-    : S extends LoroMovableListSchema<infer I>
-    ? Array<InferInputType<I>>
-    : S extends LoroTreeSchema<infer M>
-    ? Array<InferInputTreeNodeType<M>>
-    : S extends RootSchemaType<infer R>
-    ? { [K in keyof R]: InferInputType<R[K]> }
-    : never;
+      ? InferStringType<S>
+      : S extends NumberSchemaType
+        ? InferNumberType<S>
+        : S extends BooleanSchemaType
+          ? InferBooleanType<S>
+          : IsSchemaRequired<S> extends false
+            ? S extends AnySchemaType
+                ? unknown
+                : S extends IgnoreSchemaType
+                  ? unknown
+                  : S extends LoroTextSchemaType
+                    ? string | undefined
+                    : S extends LoroUnionSchema<infer D, infer V>
+                      ? InferInputUnionType<D, V> | undefined
+                      : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+                        ? keyof M extends never
+                            ?
+                                  | ({ [key: string]: InferInputType<C> } & {
+                                        $cid?: string;
+                                    })
+                                  | undefined
+                            :
+                                  | (({
+                                        [K in keyof M]: InferInputType<M[K]>;
+                                    } & {
+                                        [K in Exclude<
+                                            string,
+                                            keyof M
+                                        >]: InferInputType<C>;
+                                    }) & { $cid?: string })
+                                  | undefined
+                        : S extends LoroMapSchema<infer M>
+                          ?
+                                | ({ [K in keyof M]: InferInputType<M[K]> } & {
+                                      $cid?: string;
+                                  })
+                                | undefined
+                          : S extends LoroListSchema<infer I>
+                            ? Array<InferInputType<I>> | undefined
+                            : S extends LoroMovableListSchema<infer I>
+                              ? Array<InferInputType<I>> | undefined
+                              : S extends LoroTreeSchema<infer M>
+                                ? Array<InferInputTreeNodeType<M>> | undefined
+                                : S extends RootSchemaType<infer R>
+                                  ?
+                                        | {
+                                              [K in keyof R]: InferInputType<
+                                                  R[K]
+                                              >;
+                                          }
+                                        | undefined
+                                  : never
+            : S extends IgnoreSchemaType
+              ? unknown
+              : S extends LoroTextSchemaType
+                ? string
+                : S extends AnySchemaType
+                  ? unknown
+                  : S extends LoroUnionSchema<infer D, infer V>
+                    ? InferInputUnionType<D, V>
+                    : S extends LoroMapSchemaWithCatchall<infer M, infer C>
+                      ? keyof M extends never
+                          ? { [key: string]: InferInputType<C> } & {
+                                $cid?: string;
+                            }
+                          : ({ [K in keyof M]: InferInputType<M[K]> } & {
+                                [K in Exclude<
+                                    string,
+                                    keyof M
+                                >]: InferInputType<C>;
+                            }) & { $cid?: string }
+                      : S extends LoroMapSchema<infer M>
+                        ? { [K in keyof M]: InferInputType<M[K]> } & {
+                              $cid?: string;
+                          }
+                        : S extends LoroListSchema<infer I>
+                          ? Array<InferInputType<I>>
+                          : S extends LoroMovableListSchema<infer I>
+                            ? Array<InferInputType<I>>
+                            : S extends LoroTreeSchema<infer M>
+                              ? Array<InferInputTreeNodeType<M>>
+                              : S extends RootSchemaType<infer R>
+                                ? { [K in keyof R]: InferInputType<R[K]> }
+                                : never;
 
 /**
  * Helper: Infer the node type for a tree schema
