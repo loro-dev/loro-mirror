@@ -181,12 +181,14 @@ export function valuesEqual(
 }
 
 export function defineCidProperty(target: unknown, cid: ContainerID) {
-    if (
-        !isObject(target) ||
-        Object.prototype.hasOwnProperty.call(target, CID_KEY)
-    )
-        return;
-    Object.defineProperty(target, CID_KEY, { value: cid });
+    if (!isObject(target)) return;
+    const existing = Object.getOwnPropertyDescriptor(target, CID_KEY);
+    if (existing && !existing.configurable) return;
+    Object.defineProperty(target, CID_KEY, {
+        value: cid,
+        enumerable: false,
+        configurable: true,
+    });
 }
 
 /**
