@@ -6,6 +6,7 @@ import {
     isLoroUnionSchema,
     isContainerSchema,
 } from "../src/schema/validators.js";
+import type { LoroUnionSchema } from "../src/index.js";
 
 describe("schema.Union", () => {
     const blockSchema = schema.Union("type", {
@@ -240,5 +241,137 @@ describe("Mirror with Union schema", () => {
 
         const state = mirror.getState();
         expect(state.content.kind).toBe("article");
+    });
+});
+
+describe("Union edge cases", () => {
+    it("union with nested containers inside variants", () => {
+        const s = schema({
+            items: schema.LoroList(
+                schema.Union("type", {
+                    rich: schema.LoroMap({ content: schema.LoroText() }),
+                    plain: schema.LoroMap({ text: schema.String() }),
+                }),
+                (item) => item.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { items: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.items.push({ type: "rich", content: "Hello world" });
+        });
+
+        const state = mirror.getState();
+        expect(state.items[0].type).toBe("rich");
+        if (state.items[0].type === "rich") {
+            expect(state.items[0].content).toBe("Hello world");
+        }
+    });
+
+    it("union with single variant", () => {
+        const s = schema({
+            data: schema.Union("type", {
+                only: schema.LoroMap({ value: schema.Number() }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({ doc, schema: s });
+
+        mirror.setState((draft) => {
+            (draft as Record<string, unknown>).data = { type: "only", value: 42 };
+        });
+
+        expect(mirror.getState().data.type).toBe("only");
+        if (mirror.getState().data.type === "only") {
+            expect(mirror.getState().data.value).toBe(42);
+        }
+    });
+
+    it("adding new items to a list of unions", () => {
+        const s = schema({
+            blocks: schema.LoroList(
+                schema.Union("type", {
+                    text: schema.LoroMap({ body: schema.String() }),
+                    divider: schema.LoroMap({}),
+                }),
+                (b) => b.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { blocks: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push({ type: "text", body: "First" });
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push({ type: "divider" });
+            draft.blocks.push({ type: "text", body: "Second" });
+        });
+
+        const state = mirror.getState();
+        expect(state.blocks).toHaveLength(3);
+        expect(state.blocks[0].type).toBe("text");
+        expect(state.blocks[1].type).toBe("divider");
+        expect(state.blocks[2].type).toBe("text");
+    });
+
+    it("removing union items from a list", () => {
+        const s = schema({
+            blocks: schema.LoroList(
+                schema.Union("type", {
+                    a: schema.LoroMap({ x: schema.Number() }),
+                    b: schema.LoroMap({ y: schema.String() }),
+                }),
+                (b) => b.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { blocks: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push(
+                { type: "a", x: 1 },
+                { type: "b", y: "hello" },
+                { type: "a", x: 2 },
+            );
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.splice(1, 1);
+        });
+
+        const state = mirror.getState();
+        expect(state.blocks).toHaveLength(2);
+        expect(state.blocks[0].type).toBe("a");
+        expect(state.blocks[1].type).toBe("a");
+    });
+
+    it("exports union types from public API", () => {
+        const u = schema.Union("type", {
+            a: schema.LoroMap({ x: schema.Number() }),
+        });
+        const _guard: boolean = isLoroUnionSchema(u);
+        expect(_guard).toBe(true);
+        // Verify the type is accessible (compile-time check)
+        const _typeCheck: LoroUnionSchema<string, Record<string, never>> = u as never;
+        void _typeCheck;
     });
 });
