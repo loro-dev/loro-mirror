@@ -262,13 +262,24 @@ type IsSchemaRequired<S extends SchemaType> = S extends {
           : true;
 
 /**
+ * Distributive simplifier: flattens intersections and distributes over unions.
+ */
+type Simplify<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
+
+/**
  * Helper: Infer a single union variant's type, injecting the discriminant field.
  */
 type InferUnionVariant<
     D extends string,
     K extends string,
     M extends Record<string, SchemaType>,
-> = { [P in D]: K } & { [F in keyof M]: InferType<M[F]> } & { $cid: string };
+> = {
+    [F in D | keyof M]: F extends D
+        ? K
+        : F extends keyof M
+        ? InferType<M[F]>
+        : never;
+} & { $cid: string };
 
 /**
  * Helper: Distribute over all variants to produce a discriminated union type.
@@ -276,11 +287,13 @@ type InferUnionVariant<
 type InferUnionType<
     D extends string,
     V extends Record<string, LoroMapSchema<Record<string, SchemaType>>>,
-> = {
-    [K in keyof V]: V[K] extends LoroMapSchema<infer M>
-        ? InferUnionVariant<D, K & string, M>
-        : never;
-}[keyof V];
+> = Simplify<
+    {
+        [K in keyof V]: V[K] extends LoroMapSchema<infer M>
+            ? InferUnionVariant<D, K & string, M>
+            : never;
+    }[keyof V]
+>;
 
 /**
  * Helper: Input variant type ($cid optional, fields use InferInputType).
@@ -289,9 +302,13 @@ type InferInputUnionVariant<
     D extends string,
     K extends string,
     M extends Record<string, SchemaType>,
-> = { [P in D]: K } & { [F in keyof M]: InferInputType<M[F]> } & {
-    $cid?: string;
-};
+> = {
+    [F in D | keyof M]: F extends D
+        ? K
+        : F extends keyof M
+        ? InferInputType<M[F]>
+        : never;
+} & { $cid?: string };
 
 /**
  * Helper: Distribute over all variants for input (setState) types.
@@ -299,11 +316,13 @@ type InferInputUnionVariant<
 type InferInputUnionType<
     D extends string,
     V extends Record<string, LoroMapSchema<Record<string, SchemaType>>>,
-> = {
-    [K in keyof V]: V[K] extends LoroMapSchema<infer M>
-        ? InferInputUnionVariant<D, K & string, M>
-        : never;
-}[keyof V];
+> = Simplify<
+    {
+        [K in keyof V]: V[K] extends LoroMapSchema<infer M>
+            ? InferInputUnionVariant<D, K & string, M>
+            : never;
+    }[keyof V]
+>;
 
 /**
  * Infer the JavaScript type from a schema type.
