@@ -374,4 +374,70 @@ describe("Union edge cases", () => {
         const _typeCheck: LoroUnionSchema<string, Record<string, never>> = u as never;
         void _typeCheck;
     });
+
+    it("variant switch with simultaneous insert before does not corrupt list", () => {
+        // Regression: variant-switch delete used oldInfo.index which becomes
+        // stale after phase-1/2 deletions and insertions shift the list.
+        const s = schema({
+            blocks: schema.LoroList(
+                schema.Union("type", {
+                    paragraph: schema.LoroMap({ text: schema.String() }),
+                    heading: schema.LoroMap({
+                        level: schema.Number(),
+                        text: schema.String(),
+                    }),
+                }),
+                (b) => b.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { blocks: [] },
+            checkStateConsistency: true,
+        });
+
+        // Start with two paragraph items
+        mirror.setState((draft) => {
+            draft.blocks.push(
+                { type: "paragraph", text: "A" },
+                { type: "paragraph", text: "B" },
+            );
+        });
+
+        const cidB = mirror.getState().blocks[1].$cid;
+
+        // In one update: insert a new item at the front AND switch B's variant.
+        // The insert shifts indices, exposing the stale-index bug.
+        mirror.setState((draft) => {
+            draft.blocks.splice(0, 0, {
+                type: "paragraph",
+                text: "New",
+            });
+            // B is now at index 2 (was 1) after the splice
+            draft.blocks[2] = {
+                type: "heading",
+                level: 2,
+                text: "B-heading",
+                $cid: cidB,
+            };
+        });
+
+        const state = mirror.getState();
+        expect(state.blocks).toHaveLength(3);
+        expect(state.blocks[0].type).toBe("paragraph");
+        expect(state.blocks[1].type).toBe("paragraph");
+        // Verify it's A that survived, not the old B
+        if (state.blocks[1].type === "paragraph") {
+            expect(state.blocks[1].text).toBe("A");
+        }
+        expect(state.blocks[2].type).toBe("heading");
+        if (state.blocks[2].type === "heading") {
+            expect(state.blocks[2].level).toBe(2);
+            expect(state.blocks[2].text).toBe("B-heading");
+        }
+    });
+
 });

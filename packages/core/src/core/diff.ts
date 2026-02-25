@@ -851,7 +851,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
             if (oldTag !== newTag) {
                 changes.push({
                     container: containerId,
-                    key: oldInfo.index,
+                    key: newInfo.newIndex,
                     value: undefined,
                     kind: "delete",
                 });
