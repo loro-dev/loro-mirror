@@ -387,6 +387,7 @@ Loro Mirror uses a typed schema to map your app state to Loro containers. Common
 - `schema.LoroMap(definition, options?)`: object (`LoroMap`)
 - `schema.LoroList(itemSchema, idSelector?, options?)`: list (`LoroList`)
 - `schema.LoroMovableList(itemSchema, idSelector, options?)`: movable list that emits move ops (requires `idSelector`)
+- `schema.Union(discriminant, variants, options?)`: discriminated union of `LoroMap` variants
 - `schema.LoroTree(nodeSchema, options?)`: hierarchical tree (`LoroTree`) with per-node `data` map
 
 Tree nodes have the shape `{ id?: string; data: T; children: Node<T>[] }`. Define a tree by passing a node `LoroMap` schema:
