@@ -11,6 +11,7 @@ import {
     LoroMovableListSchema,
     LoroTextSchemaType,
     LoroTreeSchema,
+    LoroUnionSchema,
     RootSchemaType,
     SchemaType,
 } from "./types.js";
@@ -108,6 +109,16 @@ export function isAnySchema(schema?: SchemaType): schema is AnySchemaType {
 }
 
 /**
+ * Type guard for LoroUnionSchema
+ */
+export function isLoroUnionSchema<
+    D extends string,
+    V extends Record<string, LoroMapSchema<Record<string, SchemaType>>>,
+>(schema?: SchemaType): schema is LoroUnionSchema<D, V> {
+    return !!schema && (schema as BaseSchemaType).type === "loro-union";
+}
+
+/**
  * Check if a schema is for a Loro container
  */
 export function isContainerSchema(
@@ -119,7 +130,8 @@ export function isContainerSchema(
             schema.type === "loro-list" ||
             schema.type === "loro-text" ||
             schema.type === "loro-movable-list" ||
-            schema.type === "loro-tree")
+            schema.type === "loro-tree" ||
+            schema.type === "loro-union")
     );
 }
 
@@ -334,6 +346,39 @@ export function validateSchema<S extends SchemaType>(
             }
             break;
 
+        case "loro-union": {
+            if (!isObject(value)) {
+                errors.push("Value must be an object");
+                break;
+            }
+            if (!isLoroUnionSchema(schema)) break;
+
+            const tag = (value as Record<string, unknown>)[
+                schema.discriminant
+            ];
+            if (typeof tag !== "string") {
+                errors.push(
+                    `Discriminant "${schema.discriminant}" must be a string`,
+                );
+                break;
+            }
+
+            const variantSchema = schema.variants[tag];
+            if (!variantSchema) {
+                const allowed = Object.keys(schema.variants).join(", ");
+                errors.push(
+                    `Unknown variant "${tag}" for discriminant "${schema.discriminant}". Allowed: ${allowed}`,
+                );
+                break;
+            }
+
+            const variantResult = validateSchema(variantSchema, value);
+            if (!variantResult.valid && variantResult.errors) {
+                errors.push(...variantResult.errors);
+            }
+            break;
+        }
+
         default:
             errors.push(
                 `Unknown schema type: ${actualType}`
@@ -523,6 +568,9 @@ export function getDefaultValue<S extends SchemaType>(
             }
             return {} as InferType<S>;
         }
+
+        case "loro-union":
+            return undefined;
 
         default:
             return undefined;
