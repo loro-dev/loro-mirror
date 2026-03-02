@@ -79,6 +79,31 @@ describe("schema.Union", () => {
             expect(result.valid).toBe(false);
             expect(result.errors?.[0]).toContain("text");
         });
+
+        it("rejects discriminant key in variant definition at schema creation", () => {
+            expect(() => {
+                schema.Union("type", {
+                    bad: schema.LoroMap({ type: schema.String(), value: schema.Number() }),
+                });
+            }).toThrow(/must not contain the discriminant key/);
+        });
+
+        it("rejects discriminant key in variant definition at validation time", () => {
+            // Construct manually to bypass builder check
+            const badUnion = {
+                type: "loro-union" as const,
+                discriminant: "kind",
+                variants: {
+                    bad: schema.LoroMap({ kind: schema.String() }),
+                },
+                options: {},
+                getContainerType: () => "Map" as const,
+            };
+
+            const result = validateSchema(badUnion, { kind: "bad" });
+            expect(result.valid).toBe(false);
+            expect(result.errors?.[0]).toContain("must not contain the discriminant key");
+        });
     });
 
     describe("default values", () => {
@@ -242,6 +267,76 @@ describe("Mirror with Union schema", () => {
         expect(state.content.kind).toBe("article");
         if (state.content.kind === "article") {
             expect(state.content.body).toBe("Hello");
+        }
+    });
+
+    it("root-level union update within same variant preserves nested containers", () => {
+        const rootUnionSchema = schema({
+            content: schema.Union("kind", {
+                article: schema.LoroMap({
+                    body: schema.String(),
+                    tags: schema.LoroList(schema.String()),
+                }),
+                gallery: schema.LoroMap({
+                    count: schema.Number(),
+                }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: rootUnionSchema,
+            initialState: {
+                content: { kind: "article", body: "", tags: [] },
+            },
+        });
+
+        mirror.setState((draft) => {
+            if (draft.content.kind === "article") {
+                draft.content.body = "Hello";
+                draft.content.tags.push("a", "b");
+            }
+        });
+
+        const state = mirror.getState();
+        expect(state.content.kind).toBe("article");
+        if (state.content.kind === "article") {
+            expect(state.content.body).toBe("Hello");
+            expect(state.content.tags).toEqual(["a", "b"]);
+        }
+    });
+
+    it("root-level union variant switch produces correct state", () => {
+        const rootUnionSchema = schema({
+            content: schema.Union("kind", {
+                article: schema.LoroMap({ body: schema.String() }),
+                gallery: schema.LoroMap({
+                    count: schema.Number(),
+                }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: rootUnionSchema,
+            initialState: {
+                content: { kind: "article", body: "Hello" },
+            },
+            checkStateConsistency: true,
+        });
+
+        // Switch variant at root level: article -> gallery
+        mirror.setState((draft) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (draft as any).content = { kind: "gallery", count: 5 };
+        });
+
+        const state = mirror.getState();
+        expect(state.content.kind).toBe("gallery");
+        if (state.content.kind === "gallery") {
+            expect(state.content.count).toBe(5);
         }
     });
 });
@@ -468,5 +563,123 @@ describe("Union edge cases", () => {
         if (state.content.kind === "article") {
             expect(state.content.body).toBe("Hello from init");
         }
+    });
+
+    it("$cid descriptor is configurable so it can be overwritten", () => {
+        const s = schema({
+            blocks: schema.LoroList(
+                schema.Union("type", {
+                    paragraph: schema.LoroMap({ text: schema.String() }),
+                }),
+                (b) => b.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { blocks: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.blocks.push({ type: "paragraph", text: "Hello" });
+        });
+
+        const item = mirror.getState().blocks[0];
+        const descriptor = Object.getOwnPropertyDescriptor(item, "$cid");
+        expect(descriptor).toBeDefined();
+        expect(descriptor!.configurable).toBe(true);
+        expect(descriptor!.enumerable).toBe(false);
+    });
+
+    it("initialState discriminant is persisted to Loro doc", () => {
+        const s = schema({
+            content: schema.Union("kind", {
+                article: schema.LoroMap({ body: schema.String() }),
+                gallery: schema.LoroMap({
+                    count: schema.Number(),
+                }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+
+        // Mirror writes the discriminant to Loro even without a setState call
+        const mirror1 = new Mirror({
+            doc,
+            schema: s,
+            initialState: {
+                content: { kind: "gallery", count: 0 },
+            },
+        });
+        mirror1.dispose();
+
+        // Verify discriminant is in the doc
+        expect(doc.getMap("content").get("kind")).toBe("gallery");
+    });
+
+    it("existing doc discriminant is preserved when new Mirror has different initialState", () => {
+        const s = schema({
+            content: schema.Union("kind", {
+                article: schema.LoroMap({ body: schema.String() }),
+                gallery: schema.LoroMap({
+                    count: schema.Number(),
+                }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+
+        // First mirror writes gallery data into doc
+        const mirror1 = new Mirror({
+            doc,
+            schema: s,
+            initialState: {
+                content: { kind: "gallery", count: 0 },
+            },
+        });
+        mirror1.setState((draft) => {
+            if (draft.content.kind === "gallery") {
+                draft.content.count = 10;
+            }
+        });
+        expect(mirror1.getState().content.kind).toBe("gallery");
+        mirror1.dispose();
+
+        // Second mirror with different initialState should see the
+        // existing doc data, not the new initialState's discriminant
+        const mirror2 = new Mirror({
+            doc,
+            schema: s,
+            initialState: {
+                content: { kind: "article", body: "Override attempt" },
+            },
+        });
+
+        expect(mirror2.getState().content.kind).toBe("gallery");
+        mirror2.dispose();
+    });
+
+    it("$cid is stamped on union containers from doc snapshot", () => {
+        const s = schema({
+            content: schema.Union("kind", {
+                article: schema.LoroMap({ body: schema.String() }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: {
+                content: { kind: "article", body: "Test" },
+            },
+        });
+
+        const state = mirror.getState();
+        expect(state.content.$cid).toBeDefined();
+        expect(typeof state.content.$cid).toBe("string");
+        mirror.dispose();
     });
 });

@@ -33,6 +33,7 @@ import {
     getRootContainerByType,
     insertChildToMap,
     applySchemaToInferOptions,
+    isObject,
     isObjectLike,
     isStateAndSchemaOfType,
     isValueOfContainerType,
@@ -109,13 +110,11 @@ function resolveUnionVariantSchema(
     schema: SchemaType | undefined,
     value: unknown,
 ): SchemaType | undefined {
-    if (!schema || !isLoroUnionSchema(schema) || !isObjectLike(value)) {
+    if (!schema || !isLoroUnionSchema(schema) || !isObject(value)) {
         return schema;
     }
-    const tag = (value as Record<string, unknown>)[
-        schema.discriminant
-    ] as string;
-    return schema.variants[tag] ?? schema;
+    const tag = value[schema.discriminant] as string;
+    return schema.variants[tag];
 }
 
 /**
@@ -838,16 +837,12 @@ export function diffListWithIdSelector<S extends ArrayLike>(
         if (
             schema &&
             isLoroUnionSchema(schema.itemSchema) &&
-            isObjectLike(oldItem) &&
-            isObjectLike(newItem)
+            isObject(oldItem) &&
+            isObject(newItem)
         ) {
             const unionSchema = schema.itemSchema;
-            const oldTag = (oldItem as Record<string, unknown>)[
-                unionSchema.discriminant
-            ];
-            const newTag = (newItem as Record<string, unknown>)[
-                unionSchema.discriminant
-            ];
+            const oldTag = oldItem[unionSchema.discriminant];
+            const newTag = newItem[unionSchema.discriminant];
             if (oldTag !== newTag) {
                 changes.push({
                     container: containerId,
@@ -1474,25 +1469,26 @@ export function diffMap<S extends ObjectLike>(
             // Union variant switch — replace entire container
             if (
                 isLoroUnionSchema(childSchema) &&
-                isObjectLike(oldItem) &&
-                isObjectLike(newItem)
+                isObject(oldItem) &&
+                isObject(newItem)
             ) {
-                const oldTag = (oldItem as Record<string, unknown>)[
-                    childSchema.discriminant
-                ];
-                const newTag = (newItem as Record<string, unknown>)[
-                    childSchema.discriminant
-                ];
+                const oldTag = oldItem[childSchema.discriminant];
+                const newTag = newItem[childSchema.discriminant];
                 if (oldTag !== newTag) {
+                    const variantSchema =
+                        resolveUnionVariantSchema(childSchema, newItem) ??
+                        childSchema;
                     changes.push(
-                        insertChildToMap(
-                            containerId,
-                            key,
-                            newStateObj[key],
-                            applySchemaToInferOptions(
-                                childSchema,
-                                inferOptions,
-                            ),
+                        tryUpdateToContainer(
+                            {
+                                container: containerId,
+                                key,
+                                value: newStateObj[key],
+                                kind: "set",
+                            },
+                            true,
+                            variantSchema,
+                            inferOptions,
                         ),
                     );
                     continue;

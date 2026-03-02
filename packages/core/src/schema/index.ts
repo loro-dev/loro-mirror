@@ -368,6 +368,19 @@ schema.Union = function <
     variants: V,
     options?: O,
 ): LoroUnionSchema<D, V> & { options: O } {
+    for (const [variantName, variantSchema] of Object.entries(variants)) {
+        if (
+            Object.prototype.hasOwnProperty.call(
+                variantSchema.definition,
+                discriminant,
+            )
+        ) {
+            throw new Error(
+                `Union variant "${variantName}" must not contain the discriminant key "${discriminant}" in its definition. ` +
+                    `The discriminant is managed automatically by the union.`,
+            );
+        }
+    }
     return {
         type: "loro-union" as const,
         discriminant,

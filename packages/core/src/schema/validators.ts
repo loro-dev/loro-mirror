@@ -353,9 +353,24 @@ export function validateSchema<S extends SchemaType>(
             }
             if (!isLoroUnionSchema(schema)) break;
 
-            const tag = (value as Record<string, unknown>)[
-                schema.discriminant
-            ];
+            // Structural check: no variant definition should contain the discriminant key
+            for (const [variantName, variant] of Object.entries(
+                schema.variants,
+            )) {
+                if (
+                    Object.prototype.hasOwnProperty.call(
+                        variant.definition,
+                        schema.discriminant,
+                    )
+                ) {
+                    errors.push(
+                        `Union variant "${variantName}" must not contain the discriminant key "${schema.discriminant}" in its definition`,
+                    );
+                }
+            }
+            if (errors.length > 0) break;
+
+            const tag = value[schema.discriminant];
             if (typeof tag !== "string") {
                 errors.push(
                     `Discriminant "${schema.discriminant}" must be a string`,

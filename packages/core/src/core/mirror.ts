@@ -432,7 +432,35 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
-        this.baseState = baseState as InferType<S>;
+        // Persist union discriminants to the Loro doc when initialState
+        // provides them and the doc doesn't already have them.
+        //
+        // Unlike regular primitive fields (where losing an initialState default
+        // just means falling back to the schema default), the discriminant is
+        // structural metadata that determines which variant schema interprets
+        // the rest of the map's data. Without it in the doc, a fresh Mirror on
+        // the same doc would have no way to know which variant is active,
+        // making the stored fields semantically ambiguous.
+        if (this.schema && this.schema.type === "schema") {
+            const rootDef = (
+                this.schema as RootSchemaType<
+                    Record<string, ContainerSchemaType>
+                >
+            ).definition;
+            for (const key in rootDef) {
+                const fieldSchema = rootDef[key];
+                if (!isLoroUnionSchema(fieldSchema)) continue;
+                const stateVal = baseState[key];
+                if (!isObject(stateVal)) continue;
+                const tag = stateVal[fieldSchema.discriminant];
+                if (typeof tag !== "string") continue;
+                const map = this.doc.getMap(key);
+                if (map.get(fieldSchema.discriminant) === undefined) {
+                    map.set(fieldSchema.discriminant, tag);
+                }
+            }
+        }
+
         this.state = baseState as InferType<S>;
 
         // Initialize ephemeral manager if store provided
@@ -1909,9 +1937,7 @@ export class Mirror<S extends SchemaType> {
             // Resolve union schema to the concrete variant's LoroMapSchema
             let resolvedSchema = schema;
             if (isLoroUnionSchema(schema) && isObject(value)) {
-                const tag = (value as Record<string, unknown>)[
-                    schema.discriminant
-                ] as string;
+                const tag = value[schema.discriminant] as string;
                 if (tag && schema.variants[tag]) {
                     resolvedSchema = schema.variants[tag];
                 }
@@ -2204,7 +2230,15 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Schema for this container (optional)
-        const schema = this.getContainerSchema(map.id);
+        let schema = this.getContainerSchema(map.id);
+
+        // Resolve union schema to the active variant's LoroMapSchema
+        if (schema && isLoroUnionSchema(schema)) {
+            const tag = value[schema.discriminant] as string | undefined;
+            if (tag && schema.variants[tag]) {
+                schema = schema.variants[tag];
+            }
+        }
 
         // Stamp $cid on the pending value
         if (schema && isObject(value)) {
@@ -2893,7 +2927,10 @@ function restoreCidDescriptors(value: unknown): unknown {
             if (!descriptor || descriptor.enumerable) {
                 const cidValue = obj[CID_KEY];
                 delete obj[CID_KEY];
-                Object.defineProperty(obj, CID_KEY, { value: cidValue });
+                Object.defineProperty(obj, CID_KEY, {
+                    value: cidValue,
+                    configurable: true,
+                });
             }
         }
         return obj;
@@ -3051,12 +3088,19 @@ function mergeInitialIntoBaseWithSchema(
                     LoroMapSchema<Record<string, SchemaType>>
                 >;
             };
-            const tag = nestedInit[unionSchema.discriminant] as
+            const existingTag = nestedBase[unionSchema.discriminant] as
                 | string
                 | undefined;
+            const initTag = nestedInit[unionSchema.discriminant] as
+                | string
+                | undefined;
+            // Prefer existing tag over initial — don't overwrite if already set
+            const tag = existingTag ?? initTag;
             if (tag) {
-                // Discriminant is not part of the variant definition — set it directly
-                nestedBase[unionSchema.discriminant] = tag;
+                if (!existingTag) {
+                    // Discriminant is not part of the variant definition — set it directly
+                    nestedBase[unionSchema.discriminant] = tag;
+                }
                 const variantSchema = unionSchema.variants[tag];
                 if (variantSchema) {
                     mergeInitialIntoBaseWithSchema(nestedBase, nestedInit, {
