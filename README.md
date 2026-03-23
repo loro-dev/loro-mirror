@@ -372,8 +372,11 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 - `setState(updater, options?)`: Update state and sync to Loro. Runs synchronously.
     - **`updater`**: either a partial object to shallow-merge or a function that may mutate a draft (Immer-style) or return a new state object.
     - **`options`**: `{ tags?: string | string[] }` – arbitrary tags attached to this update; delivered to subscribers in metadata.
+- `setStateWithEphemeralPatch(updater, options?)`: Like `setState`, but routes eligible changes through an `EphemeralStore` instead of writing to LoroDoc. See [Ephemeral Patches](#ephemeral-patches).
+    - **`options`**: same as `setState` plus `{ finalizeTimeout?: number }` (default 50 000 ms).
+- `finalizeEphemeralPatches()`: Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
 - `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
-    - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when produced locally, `BIDIRECTIONAL` for manual/initial syncs.
+    - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when produced locally, `FROM_EPHEMERAL` when state changed due to an EphemeralStore update, `BIDIRECTIONAL` for manual/initial syncs.
     - **`tags`**: `string[] | undefined` – tags provided via `setState`.
 - `dispose()`: Unsubscribe internal listeners and clear subscribers.
 - `checkStateConsistency()`: Manually trigger the consistency assertion described above.
@@ -389,7 +392,8 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 
 - `SyncDirection`:
     - `FROM_LORO` – applied due to incoming `LoroDoc` changes
-    - `TO_LORO` – applied due to local `setState`
+    - `TO_LORO` – applied due to local `setState` or `setStateWithEphemeralPatch`
+    - `FROM_EPHEMERAL` – state recomposed due to an EphemeralStore change (local or remote)
     - `BIDIRECTIONAL` – initial/manual sync context
 - `UpdateMetadata`: `{ direction: SyncDirection; tags?: string[] }`
 - `SetStateOptions`: `{ tags?: string | string[] }`
@@ -432,6 +436,40 @@ mirror.setState(
     },
     { tags: ["ui:add"] },
 );
+
+### Ephemeral Patches
+
+For high-frequency temporary changes (dragging, resizing, scrubbing), use `setStateWithEphemeralPatch` to avoid polluting LoroDoc history:
+
+```ts
+import { LoroDoc, EphemeralStore } from "loro-crdt";
+
+const doc = new LoroDoc();
+const eph = new EphemeralStore();
+const mirror = new Mirror({ doc, schema: todoSchema, ephemeralStore: eph });
+
+// Network sync for ephemeral state (your responsibility)
+eph.subscribeLocalUpdates((bytes) => channel.send(bytes));
+channel.on("ephemeral", (bytes) => eph.apply(bytes));
+
+// During drag — intermediate positions go to EphemeralStore, not LoroDoc
+mirror.setStateWithEphemeralPatch(
+    (s) => { s.todos[0].x = e.clientX; },
+    { finalizeTimeout: 1_000 },
+);
+
+// On mouseup — commit to LoroDoc immediately
+mirror.finalizeEphemeralPatches();
+```
+
+**What goes where:**
+
+| Change type | Destination |
+|---|---|
+| Primitive value on an existing key of an existing Map | `EphemeralStore` |
+| New Map / new key / container value / List·Text·Tree ops | `LoroDoc` directly |
+
+See the [core package README](./packages/core/README.md#ephemeral-patches) for full details.
 
 ### How `$cid` Works
 

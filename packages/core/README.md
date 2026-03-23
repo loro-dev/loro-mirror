@@ -83,8 +83,10 @@ Trees are advanced usage; see Advanced: Trees at the end.
     - getState(): Current state
     - setState(updater | partial, options?): Mutate a draft or return a new object. Runs synchronously so downstream logic can immediately read the latest state.
         - options: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string }` — tags surface in subscriber metadata; commit metadata is forwarded to the underlying Loro commit.
+    - setStateWithEphemeralPatch(updater, options?): Like `setState`, but routes **eligible** changes to an `EphemeralStore` instead of LoroDoc. See [Ephemeral Patches](#ephemeral-patches) below.
+    - finalizeEphemeralPatches(): Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
     - subscribe((state, metadata) => void): Subscribe; returns unsubscribe
-        - metadata: `{ direction: FROM_LORO | TO_LORO; tags?: string[] }`
+        - metadata: `{ direction: FROM_LORO | TO_LORO | FROM_EPHEMERAL; tags?: string[] }`
     - dispose(): Remove all subscriptions
 
 Types: `SyncDirection`, `UpdateMetadata`, `SetStateOptions`.
@@ -128,6 +130,76 @@ Reserved key `$cid`:
 - `validateSchema(schema, value)` — returns `{ valid: boolean; errors?: string[] }`
 - `getDefaultValue(schema)` — default value inferred from schema/options
 - `toNormalizedJson(doc)` — JSON matching Mirror’s state shape (e.g., Tree `meta` -> `data`)
+
+## Ephemeral Patches
+
+When users drag or scale canvas elements, syncing every intermediate position through LoroDoc creates redundant editing history. `setStateWithEphemeralPatch` solves this by routing temporary changes through an `EphemeralStore` for real-time sync, then committing once to LoroDoc when the operation ends.
+
+### Setup
+
+```ts
+import { LoroDoc, EphemeralStore } from "loro-crdt";
+import { Mirror, schema } from "loro-mirror";
+
+const doc = new LoroDoc();
+const eph = new EphemeralStore();
+
+const mirror = new Mirror({
+    doc,
+    schema: mySchema,
+    ephemeralStore: eph, // enables setStateWithEphemeralPatch
+});
+
+// Network sync for ephemeral state (your responsibility)
+eph.subscribeLocalUpdates((bytes) => channel.send(bytes));
+channel.on("ephemeral", (bytes) => eph.apply(bytes));
+```
+
+### What goes where
+
+| Change type | Destination | Example |
+|---|---|---|
+| Primitive value on an **existing key** of an **existing Map** | `EphemeralStore` | `s.items[0].x = 100` |
+| New Map, new key, container value | `LoroDoc` | `s.items.push({...})` |
+| List / Text / Tree operations | `LoroDoc` | `s.items.splice(...)` |
+
+### Usage
+
+```ts
+// During drag — called on every mousemove (~60fps)
+// Only x/y go to EphemeralStore; LoroDoc stays clean.
+mirror.setStateWithEphemeralPatch(
+    (s) => {
+        s.items[i].x = e.clientX;
+        s.items[i].y = e.clientY;
+    },
+    { finalizeTimeout: 1_000 }, // auto-commit after 1s of inactivity
+);
+
+// On mouseup — commit to LoroDoc immediately
+mirror.finalizeEphemeralPatches();
+```
+
+### Finalization
+
+Ephemeral values are committed to LoroDoc when:
+
+1. The debounced `finalizeTimeout` expires (default: 50 000 ms). The timer resets on each `setStateWithEphemeralPatch` call, so it only fires after the user stops updating.
+2. You call `finalizeEphemeralPatches()` manually (e.g. on `mouseup`).
+
+On finalize, only values that still match what **this peer** last wrote are committed. If a remote peer overwrote a value in the EphemeralStore, it is skipped to prevent stale writes.
+
+### Subscriber direction
+
+Subscribers receive `direction: "FROM_EPHEMERAL"` when state changes due to an EphemeralStore update (local or remote). Use this to distinguish ephemeral changes from permanent LoroDoc changes:
+
+```ts
+mirror.subscribe((state, { direction }) => {
+    if (direction === "FROM_EPHEMERAL") {
+        // Lightweight update — no LoroDoc history created
+    }
+});
+```
 
 ## Advanced: Trees
 
