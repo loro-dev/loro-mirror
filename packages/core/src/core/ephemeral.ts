@@ -16,6 +16,7 @@ import {
     LoroMovableList,
 } from "loro-crdt";
 import type { Change } from "./mirror.js";
+import { CID_KEY } from "../constants.js";
 
 /**
  * Context needed from Mirror for path resolution.
@@ -159,15 +160,24 @@ export class EphemeralPatchManager {
                 hasChanges = true;
             }
 
-            // Immutably clone each segment along the path
+            // Immutably clone each segment along the path, preserving non-enumerable $cid
             let node: unknown = composed;
             for (let i = 0; i < path.length; i++) {
                 const seg = path[i];
                 const parent = node as Record<string | number, unknown>;
                 const child = parent[seg];
-                const clone = Array.isArray(child)
-                    ? [...child]
-                    : { ...(child as Record<string, unknown>) };
+                let clone: unknown;
+                if (Array.isArray(child)) {
+                    clone = [...child];
+                } else {
+                    const obj = child as Record<string, unknown>;
+                    clone = { ...obj };
+                    // Preserve non-enumerable $cid property (set via defineCidProperty)
+                    const cid = (obj as Record<string | symbol, unknown>)[CID_KEY];
+                    if (cid !== undefined) {
+                        Object.defineProperty(clone, CID_KEY, { value: cid });
+                    }
+                }
                 parent[seg] = clone;
                 node = clone;
             }

@@ -878,8 +878,9 @@ export class Mirror<S extends SchemaType> {
 
         this.syncing = true;
         try {
-            // Find the differences between current Loro base state and new state
-            const currentDocState = this.baseState;
+            // Diff against the composed state (not baseState) so that remote
+            // ephemeral overlay values are not treated as local changes.
+            const currentDocState = this.state;
 
             const changes = diffContainer(
                 this.doc,
@@ -1774,16 +1775,13 @@ export class Mirror<S extends SchemaType> {
             } finally {
                 this.syncing = false;
             }
-            this.baseState = stripUndefined(newState);
+            // Rebuild baseState from LoroDoc to avoid absorbing ephemeral values
+            // from newState (which was derived from the composed state).
+            this.baseState = this.buildRootStateSnapshot() as unknown as InferType<S>;
         }
 
         // Write ephemeral-eligible changes to EphemeralStore
         this.ephemeralManager!.writeChanges(ephemeralChanges, this.ephemeralCtx);
-
-        // If LoroDoc changes were made, recompute baseState from LoroDoc
-        if (loroChanges.length > 0) {
-            this.baseState = stripUndefined(newState);
-        }
 
         // Compose final state
         this.state = this.composeState(this.baseState);
@@ -2357,9 +2355,12 @@ export class Mirror<S extends SchemaType> {
         // Refresh in-memory state from Doc to capture assigned IDs (e.g., TreeIDs)
         // and any canonical normalization (like Tree meta->data mapping).
         this.updateLoro(newState, options);
-        // Strip undefined values from the state to match LoroDoc behavior
-        // (undefined values are treated as non-existent fields)
-        this.baseState = stripUndefined(newState);
+        // Rebuild baseState from LoroDoc to avoid absorbing ephemeral overlay values.
+        // newState was derived from the composed state and may contain ephemeral fields
+        // that should not leak into baseState.
+        this.baseState = this.ephemeralManager
+            ? (this.buildRootStateSnapshot() as unknown as InferType<S>)
+            : stripUndefined(newState);
         this.state = this.composeState(this.baseState);
         const shouldCheck = this.options.checkStateConsistency;
         if (shouldCheck) {

@@ -778,3 +778,109 @@ describe("Debounce behavior", () => {
         mirror.dispose();
     });
 });
+
+describe("Remote ephemeral isolation", () => {
+    it("should not commit remote ephemeral values when setState changes a different field", () => {
+        const { doc, eph, mirror } = createSimpleSetup();
+
+        // Remote peer writes x=200 to EphemeralStore
+        const canvasContainerId = doc.getMap("canvas").id;
+        eph.set(canvasContainerId, { x: 200 } as any);
+
+        // State should show the ephemeral overlay
+        expect(mirror.getState().canvas.x).toBe(200);
+
+        // Local peer changes a DIFFERENT field via regular setState
+        mirror.setState((s) => {
+            s.canvas.y = 50;
+        });
+
+        // y should be committed to LoroDoc
+        expect(doc.getMap("canvas").toJSON().y).toBe(50);
+        // x should NOT have been committed — it's a remote ephemeral value
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        // State should still show the ephemeral overlay for x
+        expect(mirror.getState().canvas.x).toBe(200);
+        expect(mirror.getState().canvas.y).toBe(50);
+
+        mirror.dispose();
+    });
+
+    it("should not leak ephemeral values into baseState after mixed changes", () => {
+        const { doc, eph, mirror } = createTestSetup();
+
+        // Ephemeral change on item[0].x + structural change (push new item)
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.items[0].x = 999;
+                s.items.push({ x: 50, y: 50, name: "item3" } as any);
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // item3 should be in LoroDoc (structural change)
+        expect(doc.getList("items").toJSON().length).toBe(3);
+        // item[0].x should NOT be in LoroDoc (ephemeral)
+        expect(doc.getList("items").toJSON()[0].x).toBe(0);
+        // State should show ephemeral value
+        expect(mirror.getState().items[0].x).toBe(999);
+
+        // Now if the ephemeral store clears, baseState should still have x=0
+        const item0 = doc.getList("items").get(0) as any;
+        eph.delete(item0.id);
+
+        // After clearing ephemeral, x should revert to LoroDoc value
+        expect(mirror.getState().items[0].x).toBe(0);
+
+        mirror.dispose();
+    });
+});
+
+describe("$cid preservation", () => {
+    it("should preserve $cid on map objects after ephemeral compose", () => {
+        const { mirror } = createSimpleSetup();
+
+        // Verify $cid exists before ephemeral patch
+        const stateBefore = mirror.getState();
+        expect((stateBefore.canvas as any).$cid).toBeDefined();
+        const cidBefore = (stateBefore.canvas as any).$cid;
+
+        // Apply ephemeral patch
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.canvas.x = 50;
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // $cid should still be present on the composed state
+        const stateAfter = mirror.getState();
+        expect((stateAfter.canvas as any).$cid).toBeDefined();
+        expect((stateAfter.canvas as any).$cid).toBe(cidBefore);
+
+        mirror.dispose();
+    });
+
+    it("should preserve $cid on list item maps after ephemeral compose", () => {
+        const { mirror } = createTestSetup();
+
+        // Get $cid from first item
+        const cidBefore = (mirror.getState().items[0] as any).$cid;
+        expect(cidBefore).toBeDefined();
+
+        // Apply ephemeral patch on list item
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.items[0].x = 42;
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // $cid should be preserved
+        const cidAfter = (mirror.getState().items[0] as any).$cid;
+        expect(cidAfter).toBe(cidBefore);
+
+        mirror.dispose();
+    });
+});
