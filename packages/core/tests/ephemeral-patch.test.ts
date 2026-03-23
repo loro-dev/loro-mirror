@@ -1755,3 +1755,115 @@ describe("EphemeralPatchManager edge cases", () => {
         });
     });
 });
+
+describe("Regression: remote ephemeral not committed by unrelated local ephemeral", () => {
+    it("should not finalize remote ephemeral values into LoroDoc", () => {
+        const doc = new LoroDoc();
+        const eph = new EphemeralStore();
+        const testSchema = schema({
+            items: schema.LoroList(
+                schema.LoroMap({
+                    x: schema.Number(),
+                    y: schema.Number(),
+                }),
+            ),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            ephemeralStore: eph,
+        });
+
+        // Initialize an item
+        mirror.setState({ items: [{ x: 0, y: 0 }] } as never);
+        const itemCid = mirror.getState().items[0].$cid;
+
+        // Simulate a remote ephemeral write: x = 200
+        const remoteEph = new EphemeralStore();
+        remoteEph.set(itemCid, { x: 200 });
+        const bytes = remoteEph.encodeAll();
+        eph.apply(bytes);
+
+        // State should now show x = 200 from remote ephemeral
+        expect(mirror.getState().items[0].x).toBe(200);
+
+        // Local ephemeral update only touches y
+        mirror.setStateWithEphemeralPatch((s) => {
+            s.items[0].y = 100;
+        });
+
+        expect(mirror.getState().items[0].x).toBe(200);
+        expect(mirror.getState().items[0].y).toBe(100);
+
+        // Finalize — should NOT commit remote x=200 into LoroDoc
+        mirror.finalizeEphemeralPatches();
+
+        // Check LoroDoc directly
+        const loroMap = doc.getList("items").get(0) as LoroMap;
+        expect(loroMap.get("y")).toBe(100); // local was committed
+        expect(loroMap.get("x")).toBe(0);   // remote was NOT committed
+    });
+});
+
+describe("Regression: schema.Ignore() fields preserved with ephemeralStore", () => {
+    it("should not drop Ignore fields on setState when ephemeralStore is set", () => {
+        const doc = new LoroDoc();
+        const eph = new EphemeralStore();
+        // IgnoreSchemaType isn't in the ContainerSchemaType union at the type level,
+        // but it works at runtime — use `as never` to bypass the type constraint.
+        const testSchema = schema({
+            name: schema.LoroText(),
+            cache: schema.Ignore({ defaultValue: { hits: 42 } }) as never,
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            ephemeralStore: eph,
+        });
+
+        const state = mirror.getState() as Record<string, unknown>;
+        expect(state.cache).toEqual({ hits: 42 });
+
+        // Normal setState that doesn't touch cache
+        mirror.setState({ name: "hello" } as never);
+
+        // cache should still be preserved
+        const updated = mirror.getState() as Record<string, unknown>;
+        expect(updated.cache).toEqual({ hits: 42 });
+    });
+
+    it("should not drop Ignore fields during ephemeral updates", () => {
+        const doc = new LoroDoc();
+        const eph = new EphemeralStore();
+        const testSchema = schema({
+            items: schema.LoroList(
+                schema.LoroMap({
+                    x: schema.Number(),
+                }),
+            ),
+            cache: schema.Ignore({ defaultValue: "important" }) as never,
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            ephemeralStore: eph,
+        });
+
+        // Add an item
+        mirror.setState({ items: [{ x: 0 }] } as never);
+        expect((mirror.getState() as Record<string, unknown>).cache).toBe("important");
+
+        // Ephemeral update
+        mirror.setStateWithEphemeralPatch(((s: Record<string, unknown>) => {
+            (s.items as Array<Record<string, unknown>>)[0].x = 50;
+        }) as never);
+        expect((mirror.getState() as Record<string, unknown>).cache).toBe("important");
+
+        // Finalize
+        mirror.finalizeEphemeralPatches();
+        expect((mirror.getState() as Record<string, unknown>).cache).toBe("important");
+    });
+});

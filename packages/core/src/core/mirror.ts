@@ -1745,10 +1745,11 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
-        // Diff against baseState to get all changes relative to LoroDoc
+        // Diff against the composed state (base + ephemeral overlay) so that
+        // pre-existing remote ephemeral values are NOT re-emitted as local changes.
         const changes = diffContainer(
             this.doc,
-            this.baseState,
+            this.state,
             newState,
             "",
             this.schema,
@@ -1777,7 +1778,9 @@ export class Mirror<S extends SchemaType> {
             }
             // Rebuild baseState from LoroDoc to avoid absorbing ephemeral values
             // from newState (which was derived from the composed state).
-            this.baseState = this.buildRootStateSnapshot() as unknown as InferType<S>;
+            this.baseState = this.buildRootStateSnapshot(
+                this.baseState as unknown as Record<string, unknown>,
+            ) as unknown as InferType<S>;
         }
 
         // Write ephemeral-eligible changes to EphemeralStore
@@ -1824,7 +1827,9 @@ export class Mirror<S extends SchemaType> {
             this.ephemeralManager.finalize(this.doc);
 
             // Update baseState from LoroDoc
-            this.baseState = this.buildRootStateSnapshot() as unknown as InferType<S>;
+            this.baseState = this.buildRootStateSnapshot(
+                this.baseState as unknown as Record<string, unknown>,
+            ) as unknown as InferType<S>;
             this.state = this.composeState(this.baseState);
             this.notifySubscribers(SyncDirection.TO_LORO);
         } finally {
@@ -2359,7 +2364,9 @@ export class Mirror<S extends SchemaType> {
         // newState was derived from the composed state and may contain ephemeral fields
         // that should not leak into baseState.
         this.baseState = this.ephemeralManager
-            ? (this.buildRootStateSnapshot() as unknown as InferType<S>)
+            ? (this.buildRootStateSnapshot(
+                this.baseState as unknown as Record<string, unknown>,
+            ) as unknown as InferType<S>)
             : stripUndefined(newState);
         this.state = this.composeState(this.baseState);
         const shouldCheck = this.options.checkStateConsistency;
@@ -2373,11 +2380,12 @@ export class Mirror<S extends SchemaType> {
 
     checkStateConsistency() {
         const state = this.state;
-        if (!deepEqual(state, this.buildRootStateSnapshot())) {
+        const prevState = this.baseState as unknown as Record<string, unknown>;
+        if (!deepEqual(state, this.buildRootStateSnapshot(prevState))) {
             console.error(
                 "State diverged",
                 JSON.stringify(state, null, 2),
-                JSON.stringify(this.buildRootStateSnapshot(), null, 2),
+                JSON.stringify(this.buildRootStateSnapshot(prevState), null, 2),
             );
             throw new Error("[InternalError] State diverged");
         }
@@ -2470,7 +2478,14 @@ export class Mirror<S extends SchemaType> {
         return c.toJSON();
     }
 
-    private buildRootStateSnapshot(): Record<string, unknown> {
+    /**
+     * Build a state snapshot from LoroDoc.
+     * When `prevState` is provided, Ignore fields are preserved from it
+     * (they only exist in memory and are not backed by LoroDoc).
+     */
+    private buildRootStateSnapshot(
+        prevState?: Record<string, unknown>,
+    ): Record<string, unknown> {
         if (!this.schema || this.schema.type !== "schema") {
             // Fallback to previous normalization if no schema
             return toNormalizedJson(this.doc) as Record<string, unknown>;
@@ -2482,6 +2497,13 @@ export class Mirror<S extends SchemaType> {
         >;
         for (const key in rootSchema.definition) {
             const fieldSchema = rootSchema.definition[key];
+            // Preserve Ignore fields from previous state — they are memory-only
+            if ((fieldSchema as { type: string }).type === "ignore") {
+                if (prevState && key in prevState) {
+                    root[key] = prevState[key];
+                }
+                continue;
+            }
             const containerType = schemaToContainerType(fieldSchema);
             if (!containerType) continue;
             const container = getRootContainerByType(
