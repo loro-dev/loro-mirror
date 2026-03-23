@@ -993,7 +993,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     // --- Changes that MUST go to LoroDoc ---
 
     it("push new item to list → LoroDoc", () => {
-        const { doc, eph, mirror } = createRichSetup();
+        const { doc, mirror } = createRichSetup();
 
         mirror.setStateWithEphemeralPatch((s) => {
             s.items.push({ x: 50, y: 60, name: "newItem" } as any);
@@ -1033,7 +1033,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     // --- Mixed: some go to Eph, some to LoroDoc ---
 
     it("mixed: primitive on existing key → Eph, new list item → LoroDoc", () => {
-        const { doc, eph, mirror } = createRichSetup();
+        const { doc, mirror } = createRichSetup();
 
         mirror.setStateWithEphemeralPatch(
             (s) => {
@@ -1318,22 +1318,18 @@ describe("EphemeralPatchManager edge cases", () => {
             )).toBe(false);
         });
 
-        it("should reject change with object value", () => {
+        it("should reject change with object or array value", () => {
             const { manager } = createManager();
             const doc = createDocWithMap();
             const mapId = doc.getMap("root").id;
 
+            // object value
             expect(manager.isEligible(
                 { kind: "set", container: mapId, key: "x", value: { nested: true } } as any,
                 doc,
             )).toBe(false);
-        });
 
-        it("should reject change with array value", () => {
-            const { manager } = createManager();
-            const doc = createDocWithMap();
-            const mapId = doc.getMap("root").id;
-
+            // array value (also typeof "object")
             expect(manager.isEligible(
                 { kind: "set", container: mapId, key: "x", value: [1, 2] } as any,
                 doc,
@@ -1738,11 +1734,12 @@ describe("EphemeralPatchManager edge cases", () => {
                 rootPathById: new Map([[mapId, ["root"]]]),
             };
 
+            let callbackFired = false;
             manager.writeChanges(
                 [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
                 ctx,
             );
-            manager.scheduleFinalizeAfter(100, () => {});
+            manager.scheduleFinalizeAfter(100, () => { callbackFired = true; });
 
             expect(manager.hasLocalPatches).toBe(true);
 
@@ -1750,10 +1747,9 @@ describe("EphemeralPatchManager edge cases", () => {
 
             expect(manager.hasLocalPatches).toBe(false);
 
-            // Timer should not fire
-            let timerFired = false;
+            // Scheduled callback should not fire after dispose
             vi.advanceTimersByTime(200);
-            expect(timerFired).toBe(false);
+            expect(callbackFired).toBe(false);
 
             vi.useRealTimers();
         });
