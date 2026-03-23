@@ -267,7 +267,7 @@ For more React patterns (selectors, actions, provider), see `packages/react/READ
 
 - Use an `idSelector` whenever list items have stable IDs to get efficient moves instead of delete+insert.
 - `setState` accepts an updater that either mutates a draft or returns a new object — use whichever style you prefer.
-- Subscriptions receive `{ direction: FROM_LORO | TO_LORO, tags?: string[] }` to help you attribute changes.
+- Subscriptions receive `{ direction: FROM_LORO | TO_LORO | FROM_EPHEMERAL, tags?: string[] }` to help you attribute changes.
 
 ## License
 

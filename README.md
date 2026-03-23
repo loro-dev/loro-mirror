@@ -396,7 +396,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - `FROM_EPHEMERAL` – state recomposed due to an EphemeralStore change (local or remote)
     - `BIDIRECTIONAL` – initial/manual sync context
 - `UpdateMetadata`: `{ direction: SyncDirection; tags?: string[] }`
-- `SetStateOptions`: `{ tags?: string | string[] }`
+- `SetStateOptions`: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string }`
 
 ### Example
 
@@ -436,6 +436,7 @@ mirror.setState(
     },
     { tags: ["ui:add"] },
 );
+```
 
 ### Ephemeral Patches
 
