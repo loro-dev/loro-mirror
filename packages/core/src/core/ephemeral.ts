@@ -15,6 +15,9 @@ import {
     LoroMap,
     LoroMovableList,
 } from "loro-crdt";
+
+/** The value type accepted by EphemeralStore.set() */
+type EphemeralValue = Parameters<EphemeralStore["set"]>[1];
 import type { Change } from "./mirror.js";
 import { CID_KEY } from "../constants.js";
 
@@ -91,7 +94,7 @@ export class EphemeralPatchManager {
                 currentPatch = {};
             }
             currentPatch[key] = value;
-            this.store.set(containerId, currentPatch as any);
+            this.store.set(containerId, currentPatch as EphemeralValue);
 
             // Track local writes
             let localEntry = this.localValues.get(containerId);
@@ -236,7 +239,7 @@ export class EphemeralPatchManager {
                     for (const k of remainingKeys) {
                         remaining[k] = currentPatch[k];
                     }
-                    this.store.set(containerId, remaining as any);
+                    this.store.set(containerId, remaining as EphemeralValue);
                 }
             }
         }
