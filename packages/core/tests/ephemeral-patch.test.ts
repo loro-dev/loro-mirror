@@ -416,3 +416,365 @@ describe("setState still works with ephemeralStore", () => {
         mirror.dispose();
     });
 });
+
+describe("Drag-and-drop simulation", () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("should handle a full drag lifecycle: start → move → move → end (finalize)", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createTestSetup();
+        const TIMEOUT = 500;
+
+        // --- drag start: first move ---
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.items[0].x = 5;
+                s.items[0].y = 5;
+            },
+            { finalizeTimeout: TIMEOUT },
+        );
+
+        expect(mirror.getState().items[0].x).toBe(5);
+        expect(mirror.getState().items[0].y).toBe(5);
+        expect(doc.getList("items").toJSON()[0].x).toBe(0); // not in doc yet
+
+        // --- mid-drag: rapid moves ---
+        for (let i = 1; i <= 20; i++) {
+            vi.advanceTimersByTime(20); // 20ms between frames (~50fps)
+            mirror.setStateWithEphemeralPatch(
+                (s) => {
+                    s.items[0].x = 5 + i * 10;
+                    s.items[0].y = 5 + i * 5;
+                },
+                { finalizeTimeout: TIMEOUT },
+            );
+        }
+
+        // After 20 moves, state should reflect final drag position
+        expect(mirror.getState().items[0].x).toBe(205);
+        expect(mirror.getState().items[0].y).toBe(105);
+        // LoroDoc should still have original — debounce keeps resetting
+        expect(doc.getList("items").toJSON()[0].x).toBe(0);
+
+        // --- drag end: wait for debounce to finalize ---
+        vi.advanceTimersByTime(TIMEOUT);
+
+        // Now LoroDoc should have the final position
+        expect(doc.getList("items").toJSON()[0].x).toBe(205);
+        expect(doc.getList("items").toJSON()[0].y).toBe(105);
+        // State should remain consistent
+        expect(mirror.getState().items[0].x).toBe(205);
+        expect(mirror.getState().items[0].y).toBe(105);
+
+        mirror.dispose();
+    });
+
+    it("should keep LoroDoc clean during rapid moves and only write once on finalize", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createSimpleSetup();
+        const TIMEOUT = 1000;
+
+        const initialVersion = doc.oplogVersion();
+
+        // Simulate 50 rapid moves
+        for (let i = 0; i < 50; i++) {
+            mirror.setStateWithEphemeralPatch(
+                (s) => {
+                    s.canvas.x = i * 4;
+                    s.canvas.y = i * 3;
+                },
+                { finalizeTimeout: TIMEOUT },
+            );
+            vi.advanceTimersByTime(16); // ~60fps
+        }
+
+        // LoroDoc should be unchanged during the entire drag
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+        expect(doc.getMap("canvas").toJSON().y).toBe(0);
+
+        // Mirror state should reflect the latest
+        expect(mirror.getState().canvas.x).toBe(196);
+        expect(mirror.getState().canvas.y).toBe(147);
+
+        // Finalize
+        vi.advanceTimersByTime(TIMEOUT);
+
+        // Now LoroDoc should have the final value
+        expect(doc.getMap("canvas").toJSON().x).toBe(196);
+        expect(doc.getMap("canvas").toJSON().y).toBe(147);
+
+        mirror.dispose();
+    });
+
+    it("should support manual finalize on drag end (mouseup) before timeout", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createSimpleSetup();
+        const TIMEOUT = 5000;
+
+        // Drag moves
+        for (let i = 0; i < 10; i++) {
+            mirror.setStateWithEphemeralPatch(
+                (s) => {
+                    s.canvas.x = (i + 1) * 20;
+                    s.canvas.y = (i + 1) * 15;
+                },
+                { finalizeTimeout: TIMEOUT },
+            );
+            vi.advanceTimersByTime(16);
+        }
+
+        // LoroDoc still untouched
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        // Mouse-up: manually finalize immediately
+        mirror.finalizeEphemeralPatches();
+
+        expect(doc.getMap("canvas").toJSON().x).toBe(200);
+        expect(doc.getMap("canvas").toJSON().y).toBe(150);
+
+        // After timeout, nothing should break (timer was cleared by manual finalize)
+        vi.advanceTimersByTime(TIMEOUT);
+
+        // Values remain correct
+        expect(doc.getMap("canvas").toJSON().x).toBe(200);
+        expect(mirror.getState().canvas.x).toBe(200);
+
+        mirror.dispose();
+    });
+
+    it("should handle multi-element drag (move two items simultaneously)", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createTestSetup();
+        const TIMEOUT = 500;
+
+        // Drag both items at once
+        for (let i = 0; i < 10; i++) {
+            mirror.setStateWithEphemeralPatch(
+                (s) => {
+                    s.items[0].x = (i + 1) * 10;
+                    s.items[0].y = (i + 1) * 10;
+                    s.items[1].x = 10 + (i + 1) * 5;
+                    s.items[1].y = 20 + (i + 1) * 5;
+                },
+                { finalizeTimeout: TIMEOUT },
+            );
+            vi.advanceTimersByTime(16);
+        }
+
+        // Both items moved in state
+        expect(mirror.getState().items[0].x).toBe(100);
+        expect(mirror.getState().items[0].y).toBe(100);
+        expect(mirror.getState().items[1].x).toBe(60);
+        expect(mirror.getState().items[1].y).toBe(70);
+
+        // LoroDoc unchanged
+        expect(doc.getList("items").toJSON()[0].x).toBe(0);
+        expect(doc.getList("items").toJSON()[1].x).toBe(10);
+
+        // Finalize
+        vi.advanceTimersByTime(TIMEOUT);
+
+        expect(doc.getList("items").toJSON()[0].x).toBe(100);
+        expect(doc.getList("items").toJSON()[0].y).toBe(100);
+        expect(doc.getList("items").toJSON()[1].x).toBe(60);
+        expect(doc.getList("items").toJSON()[1].y).toBe(70);
+
+        mirror.dispose();
+    });
+
+    it("should handle sequential drags (drag, release, drag again)", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createSimpleSetup();
+        const TIMEOUT = 500;
+
+        // First drag
+        for (let i = 0; i < 5; i++) {
+            mirror.setStateWithEphemeralPatch(
+                (s) => {
+                    s.canvas.x = (i + 1) * 10;
+                },
+                { finalizeTimeout: TIMEOUT },
+            );
+            vi.advanceTimersByTime(16);
+        }
+
+        // Finalize first drag
+        mirror.finalizeEphemeralPatches();
+        expect(doc.getMap("canvas").toJSON().x).toBe(50);
+
+        // Second drag from finalized position
+        for (let i = 0; i < 5; i++) {
+            mirror.setStateWithEphemeralPatch(
+                (s) => {
+                    s.canvas.x = 50 + (i + 1) * 10;
+                },
+                { finalizeTimeout: TIMEOUT },
+            );
+            vi.advanceTimersByTime(16);
+        }
+
+        // LoroDoc should still be at 50 (first drag finalized value)
+        expect(doc.getMap("canvas").toJSON().x).toBe(50);
+        // State should be at latest drag position
+        expect(mirror.getState().canvas.x).toBe(100);
+
+        // Finalize second drag
+        vi.advanceTimersByTime(TIMEOUT);
+        expect(doc.getMap("canvas").toJSON().x).toBe(100);
+
+        mirror.dispose();
+    });
+});
+
+describe("Debounce behavior", () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("should reset the debounce timer on each ephemeral call", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createSimpleSetup();
+        const TIMEOUT = 200;
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 10; },
+            { finalizeTimeout: TIMEOUT },
+        );
+
+        // Advance 150ms (within timeout), make another call
+        vi.advanceTimersByTime(150);
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 20; },
+            { finalizeTimeout: TIMEOUT },
+        );
+
+        // Advance another 150ms — 300ms total since first call, but only 150ms since second
+        vi.advanceTimersByTime(150);
+        expect(doc.getMap("canvas").toJSON().x).toBe(0); // still not finalized
+
+        // Advance another 50ms — 200ms since second call
+        vi.advanceTimersByTime(50);
+        expect(doc.getMap("canvas").toJSON().x).toBe(20); // finalized with latest value
+
+        mirror.dispose();
+    });
+
+    it("should use default timeout when not specified", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createSimpleSetup();
+
+        // Call without finalizeTimeout — should use 50_000ms default
+        mirror.setStateWithEphemeralPatch((s) => {
+            s.canvas.x = 42;
+        });
+
+        // State should be updated immediately
+        expect(mirror.getState().canvas.x).toBe(42);
+        // LoroDoc should not be updated yet
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        // Manual finalize confirms the ephemeral value is pending
+        mirror.finalizeEphemeralPatches();
+        expect(doc.getMap("canvas").toJSON().x).toBe(42);
+
+        mirror.dispose();
+    });
+
+    it("should auto-finalize after default timeout via timer", () => {
+        vi.useFakeTimers();
+        const doc = new LoroDoc();
+        const eph = new EphemeralStore();
+        const testSchema = schema({
+            canvas: schema.LoroMap({
+                x: schema.Number(),
+                y: schema.Number(),
+            }),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            ephemeralStore: eph,
+            initialState: {
+                canvas: { x: 0, y: 0 },
+            },
+        });
+
+        mirror.setState((s) => {
+            s.canvas.x = 0;
+            s.canvas.y = 0;
+        });
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 42; },
+            { finalizeTimeout: 1000 },
+        );
+
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        vi.advanceTimersByTime(1001);
+        expect(doc.getMap("canvas").toJSON().x).toBe(42);
+
+        mirror.dispose();
+    });
+
+    it("should not finalize after dispose even when timer was pending", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createSimpleSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 99; },
+            { finalizeTimeout: 500 },
+        );
+
+        mirror.dispose();
+
+        // Timer fires after dispose — should NOT write to doc
+        vi.advanceTimersByTime(1000);
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        // No errors thrown
+    });
+
+    it("should handle resize simulation (width+height dragging)", () => {
+        vi.useFakeTimers();
+        const { doc, mirror } = createSimpleSetup();
+        const TIMEOUT = 300;
+
+        // Simulate resize by dragging bottom-right corner
+        for (let i = 0; i < 30; i++) {
+            mirror.setStateWithEphemeralPatch(
+                (s) => {
+                    s.canvas.width = 100 + (i + 1) * 5;
+                    s.canvas.height = 100 + (i + 1) * 3;
+                },
+                { finalizeTimeout: TIMEOUT },
+            );
+            vi.advanceTimersByTime(16);
+        }
+
+        // State reflects resize
+        expect(mirror.getState().canvas.width).toBe(250);
+        expect(mirror.getState().canvas.height).toBe(190);
+        // LoroDoc untouched
+        expect(doc.getMap("canvas").toJSON().width).toBe(100);
+        expect(doc.getMap("canvas").toJSON().height).toBe(100);
+
+        // x, y should be untouched
+        expect(mirror.getState().canvas.x).toBe(0);
+        expect(mirror.getState().canvas.y).toBe(0);
+
+        // Finalize via timeout
+        vi.advanceTimersByTime(TIMEOUT);
+        expect(doc.getMap("canvas").toJSON().width).toBe(250);
+        expect(doc.getMap("canvas").toJSON().height).toBe(190);
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+        expect(doc.getMap("canvas").toJSON().y).toBe(0);
+
+        mirror.dispose();
+    });
+});
