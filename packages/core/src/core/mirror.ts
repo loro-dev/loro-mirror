@@ -2379,13 +2379,16 @@ export class Mirror<S extends SchemaType> {
     }
 
     checkStateConsistency() {
-        const state = this.state;
-        const prevState = this.baseState as unknown as Record<string, unknown>;
-        if (!deepEqual(state, this.buildRootStateSnapshot(prevState))) {
+        // Compare baseState (doc-only + Ignore) against a fresh doc snapshot.
+        // Using this.state would include the ephemeral overlay and always diverge
+        // when ephemeral patches are active.
+        const base = this.baseState as unknown as Record<string, unknown>;
+        const snapshot = this.buildRootStateSnapshot(base);
+        if (!deepEqual(base, snapshot)) {
             console.error(
                 "State diverged",
-                JSON.stringify(state, null, 2),
-                JSON.stringify(this.buildRootStateSnapshot(prevState), null, 2),
+                JSON.stringify(base, null, 2),
+                JSON.stringify(snapshot, null, 2),
             );
             throw new Error("[InternalError] State diverged");
         }
