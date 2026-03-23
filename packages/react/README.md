@@ -263,6 +263,34 @@ addTodo('New todo');
 - `$cid` is always available on `LoroMap` state and mirrors the underlying Loro container id.
 - Use `$cid` for React `key` and as the list `idSelector` for stable identity across edits and moves: `schema.LoroList(item, x => x.$cid)`.
 
+### Ephemeral Patches
+
+For high-frequency temporary changes (dragging, resizing), pass `ephemeralStore` and use the ephemeral helpers to avoid polluting LoroDoc history:
+
+```tsx
+import { EphemeralStore } from "loro-crdt";
+
+const eph = new EphemeralStore();
+
+// With useLoroStore
+const { state, setStateWithEphemeralPatch, finalizeEphemeralPatches } =
+    useLoroStore({ doc, schema: mySchema, ephemeralStore: eph });
+
+// During drag
+setStateWithEphemeralPatch(
+    (s) => { s.items[i].x = e.clientX; },
+    { finalizeTimeout: 1_000 },
+);
+
+// On mouseup
+finalizeEphemeralPatches();
+```
+
+With `createLoroContext`, the provider accepts `ephemeralStore` and two extra hooks are available:
+
+- `useLoroEphemeralAction(updater, deps)` — like `useLoroAction`, but routes eligible changes through EphemeralStore
+- `useLoroFinalizeEphemeral()` — returns a callback that commits pending ephemeral patches
+
 ## License
 
 MIT

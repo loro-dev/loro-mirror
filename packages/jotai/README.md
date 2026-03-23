@@ -98,6 +98,40 @@ function TodoApp() {
 - Use `$cid` as a stable list selector and React key:
   `schema.LoroList(item, x => x.$cid)` and `<li key={todo.$cid}>`.
 
+### Ephemeral Patches
+
+For high-frequency temporary changes, use `loroMirrorAtoms` (instead of `loroMirrorAtom`) to get ephemeral patch support:
+
+```tsx
+import { EphemeralStore } from 'loro-crdt';
+import { loroMirrorAtoms } from 'loro-mirror-jotai';
+
+const { stateAtom, ephemeralAtom, finalizeAtom } = loroMirrorAtoms({
+    doc,
+    schema: canvasSchema,
+    ephemeralStore: new EphemeralStore(),
+});
+
+function Canvas() {
+    const [state] = useAtom(stateAtom);
+    const ephemeralUpdate = useSetAtom(ephemeralAtom);
+    const finalize = useSetAtom(finalizeAtom);
+
+    const onDrag = (x: number, y: number) => {
+        ephemeralUpdate({
+            updater: (s) => { s.items[0].x = x; s.items[0].y = y; },
+            options: { finalizeTimeout: 1_000 },
+        });
+    };
+
+    const onDragEnd = () => finalize();
+}
+```
+
+- `stateAtom` — same read/write atom as `loroMirrorAtom` returns; reflects both LoroDoc and ephemeral state
+- `ephemeralAtom` — write-only; routes eligible changes through EphemeralStore
+- `finalizeAtom` — write-only; commits pending ephemeral patches to LoroDoc
+
 ## License
 
 [MIT](./LICENSE)
