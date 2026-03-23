@@ -153,12 +153,12 @@ const { state, setState, store } = useLoroStore({
   throwOnValidationError,
   debug,
 });
+```
 
 Notes on updates:
 
 - `setState` from `useLoroStore` and the setter from `useLoroState` run synchronously; subsequent code can read the updated state immediately.
 - `useLoroCallback` and `useLoroAction` return synchronous functions that call `setState` under the hood.
-```
 
 ### `useLoroValue`
 
@@ -254,14 +254,14 @@ const addTodo = useLoroAction(
   [/* dependencies */]
 );
 
+// Usage
+addTodo('New todo');
+```
+
 ### `$cid` and list keys/selectors
 
 - `$cid` is always available on `LoroMap` state and mirrors the underlying Loro container id.
 - Use `$cid` for React `key` and as the list `idSelector` for stable identity across edits and moves: `schema.LoroList(item, x => x.$cid)`.
-
-// Usage
-addTodo('New todo');
-```
 
 ## License
 

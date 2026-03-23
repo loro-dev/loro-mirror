@@ -80,7 +80,7 @@ function TodoApp() {
         addTodo({text: "New todo", status: "todo"})
       }}>Add Todo</button>
       <ul>
-        {state.todos.map((todo) => (
+        {todos.map((todo) => (
           <li key={todo.$cid /* stable key from Loro container id */}>
             {todo.text}: {todo.status}
           </li>
