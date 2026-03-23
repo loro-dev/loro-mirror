@@ -1,6 +1,7 @@
 import { Mirror, SyncDirection, UpdateMetadata } from "../src/core/mirror.js";
+import { EphemeralPatchManager, PathResolverContext } from "../src/core/ephemeral.js";
 import { schema } from "../src/schema/index.js";
-import { LoroDoc, EphemeralStore } from "loro-crdt";
+import { LoroDoc, EphemeralStore, ContainerID, LoroMap, LoroList } from "loro-crdt";
 import { describe, expect, it, vi, afterEach } from "vitest";
 
 function createTestSetup() {
@@ -1244,5 +1245,517 @@ describe("$cid preservation", () => {
         expect(cidAfter).toBe(cidBefore);
 
         mirror.dispose();
+    });
+});
+
+describe("EphemeralPatchManager edge cases", () => {
+    function createManager() {
+        const store = new EphemeralStore();
+        const manager = new EphemeralPatchManager(store);
+        return { store, manager };
+    }
+
+    function createDocWithMap() {
+        const doc = new LoroDoc();
+        const map = doc.getMap("root");
+        map.set("x", 0);
+        map.set("y", 0);
+        doc.commit();
+        return doc;
+    }
+
+    describe("isEligible edge cases", () => {
+        it("should reject change with kind 'delete'", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "delete", container: mapId, key: "x", index: 0 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change with empty container", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+
+            expect(manager.isEligible(
+                { kind: "set", container: "", key: "x", value: 1 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change with no container", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+
+            expect(manager.isEligible(
+                { kind: "set", key: "x", value: 1 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change without a key property", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "set", container: mapId, value: 1 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change with numeric key", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "set", container: mapId, key: 0, value: 1 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change with object value", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "set", container: mapId, key: "x", value: { nested: true } } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change with array value", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "set", container: mapId, key: "x", value: [1, 2] } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change on a non-existent key", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "set", container: mapId, key: "nonexistent", value: 1 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change targeting a List container", () => {
+            const { manager } = createManager();
+            const doc = new LoroDoc();
+            const list = doc.getList("myList");
+            list.push(1);
+            doc.commit();
+
+            expect(manager.isEligible(
+                { kind: "insert", container: list.id, key: "0", value: 99 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should reject change with invalid container ID", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+
+            expect(manager.isEligible(
+                { kind: "set", container: "invalid:container:id" as ContainerID, key: "x", value: 1 } as any,
+                doc,
+            )).toBe(false);
+        });
+
+        it("should accept null value on existing key", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "set", container: mapId, key: "x", value: null } as any,
+                doc,
+            )).toBe(true);
+        });
+
+        it("should accept 'insert' kind on existing Map key", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            expect(manager.isEligible(
+                { kind: "insert", container: mapId, key: "x", value: 42 } as any,
+                doc,
+            )).toBe(true);
+        });
+    });
+
+    describe("compose edge cases", () => {
+        it("should return base when store is empty", () => {
+            const { manager } = createManager();
+            const doc = new LoroDoc();
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map(),
+            };
+
+            const base = { a: 1 };
+            expect(manager.compose(base, ctx)).toBe(base); // same reference
+        });
+
+        it("should skip fields that are not objects in store", () => {
+            const { store, manager } = createManager();
+            const doc = new LoroDoc();
+            const map = doc.getMap("root");
+            map.set("x", 0);
+            doc.commit();
+
+            // Put a non-object "field" into the store
+            store.set(map.id, null as any);
+
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([[map.id, ["root"]]]),
+            };
+
+            const base = { root: { x: 0 } };
+            // Should not crash, just return base
+            const result = manager.compose(base, ctx);
+            expect(result).toBe(base);
+        });
+
+        it("should skip when path is not resolvable", () => {
+            const { store, manager } = createManager();
+            const doc = new LoroDoc();
+
+            // Use a fake container ID that doesn't exist
+            const fakeId = "cid:fake@0" as ContainerID;
+            store.set(fakeId, { x: 100 } as any);
+
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map(), // no path for fakeId
+            };
+
+            const base = { x: 0 };
+            const result = manager.compose(base, ctx);
+            expect(result).toBe(base); // unchanged
+        });
+
+        it("should skip when navigation hits a non-object value", () => {
+            const { store, manager } = createManager();
+            const doc = new LoroDoc();
+            const map = doc.getMap("settings");
+            const nested = map.setContainer("theme", new LoroMap());
+            nested.set("color", "red");
+            doc.commit();
+
+            // Store a patch on the nested container
+            store.set(nested.id, { color: "blue" } as any);
+
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([
+                    [map.id, ["settings"]],
+                    [nested.id, ["settings", "theme"]],
+                ]),
+            };
+
+            // Create a base where "settings" is a primitive (not an object), so navigation fails
+            const base = { settings: "not-an-object" };
+            const result = manager.compose(base, ctx);
+            expect(result).toBe(base); // unchanged
+        });
+
+        it("should not clone when ephemeral values already match base", () => {
+            const { store, manager } = createManager();
+            const doc = new LoroDoc();
+            const map = doc.getMap("root");
+            map.set("x", 42);
+            doc.commit();
+
+            // Store a patch with the same value
+            store.set(map.id, { x: 42 } as any);
+
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([[map.id, ["root"]]]),
+            };
+
+            const base = { root: { x: 42 } };
+            const result = manager.compose(base, ctx);
+            expect(result).toBe(base); // same reference — no clone needed
+        });
+
+        it("should handle array segments in path (list items via tree walk)", () => {
+            const { store, manager } = createManager();
+            const doc = new LoroDoc();
+            const list = doc.getList("items");
+            const itemMap = list.insertContainer(0, new LoroMap());
+            itemMap.set("x", 0);
+            doc.commit();
+
+            store.set(itemMap.id, { x: 99 } as any);
+
+            // Only register the list in rootPathById — let resolvePath walk up to discover the index
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([
+                    [list.id, ["items"]],
+                ]),
+            };
+
+            const base = { items: [{ x: 0 }] };
+            const result = manager.compose(base, ctx);
+            expect(result.items[0].x).toBe(99);
+            // Original unchanged
+            expect(base.items[0].x).toBe(0);
+        });
+    });
+
+    describe("finalize edge cases", () => {
+        it("should return false when no local patches exist", () => {
+            const { manager } = createManager();
+            const doc = createDocWithMap();
+
+            expect(manager.finalize(doc)).toBe(false);
+        });
+
+        it("should handle finalize when ephemeral store was externally cleared", () => {
+            const { store, manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([[mapId, ["root"]]]),
+            };
+
+            // Write a change
+            manager.writeChanges(
+                [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
+                ctx,
+            );
+
+            // Externally clear the store (simulates remote overwrite or clear)
+            store.delete(mapId);
+
+            // Finalize — ephemeral value was cleared, so it should not commit
+            const result = manager.finalize(doc);
+            // x should still be 0
+            expect(doc.getMap("root").toJSON().x).toBe(0);
+            expect(result).toBe(false);
+        });
+
+        it("should preserve remaining keys when only some are finalized", () => {
+            const { store, manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([[mapId, ["root"]]]),
+            };
+
+            // Write local change on x only
+            manager.writeChanges(
+                [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
+                ctx,
+            );
+
+            // Add a remote ephemeral value on y (not tracked as local)
+            const currentPatch = store.get(mapId) as Record<string, unknown>;
+            store.set(mapId, { ...currentPatch, y: 999 } as any);
+
+            // Finalize
+            manager.finalize(doc);
+
+            // x was local, should be committed
+            expect(doc.getMap("root").toJSON().x).toBe(50);
+            // y was remote-only — should remain in EphemeralStore, NOT committed
+            expect(doc.getMap("root").toJSON().y).toBe(0);
+            // y should remain in the store
+            const remaining = store.get(mapId) as Record<string, unknown>;
+            expect(remaining).toBeDefined();
+            expect(remaining.y).toBe(999);
+        });
+    });
+
+    describe("resolvePath fallback (container tree walk)", () => {
+        it("should resolve path by walking up container parents", () => {
+            const doc = new LoroDoc();
+            const store = new EphemeralStore();
+            const manager = new EphemeralPatchManager(store);
+
+            // Create a nested structure: root Map → "color" Map → {value: "red"}
+            const root = doc.getMap("root");
+            const colorMap = root.setContainer("color", new LoroMap());
+            colorMap.set("value", "red");
+            doc.commit();
+
+            // Only register the root in rootPathById
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([[root.id, ["root"]]]),
+            };
+
+            // Write ephemeral change on the nested container (not in rootPathById)
+            store.set(colorMap.id, { value: "blue" } as any);
+
+            const base = { root: { color: { value: "red" } } };
+            const result = manager.compose(base, ctx);
+            expect(result.root.color.value).toBe("blue");
+        });
+
+        it("should resolve path through List parent", () => {
+            const doc = new LoroDoc();
+            const store = new EphemeralStore();
+            const manager = new EphemeralPatchManager(store);
+
+            // Create: root list → item map { x: 0 }
+            const list = doc.getList("items");
+            const itemMap = list.insertContainer(0, new LoroMap());
+            itemMap.set("x", 0);
+            doc.commit();
+
+            // Only register the list in rootPathById (not the item map)
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([[list.id, ["items"]]]),
+            };
+
+            store.set(itemMap.id, { x: 42 } as any);
+
+            const base = { items: [{ x: 0 }] };
+            const result = manager.compose(base, ctx);
+            expect(result.items[0].x).toBe(42);
+        });
+
+        it("should return undefined for container whose root is not in rootPathById", () => {
+            const doc = new LoroDoc();
+            const store = new EphemeralStore();
+            const manager = new EphemeralPatchManager(store);
+
+            // Create a standalone map not connected to any root path
+            const orphan = doc.getMap("orphan");
+            orphan.set("x", 0);
+            doc.commit();
+
+            // Empty rootPathById — nothing is registered
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map(),
+            };
+
+            store.set(orphan.id, { x: 99 } as any);
+
+            const base = { orphan: { x: 0 } };
+            const result = manager.compose(base, ctx);
+            // Should be unchanged since path can't be resolved
+            expect(result).toBe(base);
+        });
+    });
+
+    describe("subscribe", () => {
+        it("should forward store subscription and return unsubscribe", () => {
+            const { store, manager } = createManager();
+            const doc = new LoroDoc();
+            const map = doc.getMap("root");
+            map.set("x", 0);
+            doc.commit();
+
+            let called = 0;
+            const unsub = manager.subscribe(() => { called++; });
+
+            store.set(map.id, { x: 1 } as any);
+            expect(called).toBeGreaterThan(0);
+
+            const prev = called;
+            unsub();
+            store.set(map.id, { x: 2 } as any);
+            expect(called).toBe(prev);
+        });
+    });
+
+    describe("scheduleFinalizeAfter and clearTimer", () => {
+        afterEach(() => { vi.useRealTimers(); });
+
+        it("should call callback after timeout", () => {
+            vi.useFakeTimers();
+            const { manager } = createManager();
+
+            let finalized = false;
+            manager.scheduleFinalizeAfter(100, () => { finalized = true; });
+
+            vi.advanceTimersByTime(50);
+            expect(finalized).toBe(false);
+            vi.advanceTimersByTime(51);
+            expect(finalized).toBe(true);
+        });
+
+        it("should reset timer on repeated calls", () => {
+            vi.useFakeTimers();
+            const { manager } = createManager();
+
+            let count = 0;
+            manager.scheduleFinalizeAfter(100, () => { count++; });
+            vi.advanceTimersByTime(80);
+            manager.scheduleFinalizeAfter(100, () => { count++; });
+            vi.advanceTimersByTime(80);
+            expect(count).toBe(0);
+            vi.advanceTimersByTime(21);
+            expect(count).toBe(1);
+        });
+
+        it("clearTimer should prevent callback", () => {
+            vi.useFakeTimers();
+            const { manager } = createManager();
+
+            let called = false;
+            manager.scheduleFinalizeAfter(100, () => { called = true; });
+            manager.clearTimer();
+            vi.advanceTimersByTime(200);
+            expect(called).toBe(false);
+        });
+    });
+
+    describe("dispose", () => {
+        it("should clear all internal state", () => {
+            vi.useFakeTimers();
+            const { store, manager } = createManager();
+            const doc = createDocWithMap();
+            const mapId = doc.getMap("root").id;
+
+            const ctx: PathResolverContext = {
+                doc,
+                rootPathById: new Map([[mapId, ["root"]]]),
+            };
+
+            manager.writeChanges(
+                [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
+                ctx,
+            );
+            manager.scheduleFinalizeAfter(100, () => {});
+
+            expect(manager.hasLocalPatches).toBe(true);
+
+            manager.dispose();
+
+            expect(manager.hasLocalPatches).toBe(false);
+
+            // Timer should not fire
+            let timerFired = false;
+            vi.advanceTimersByTime(200);
+            expect(timerFired).toBe(false);
+
+            vi.useRealTimers();
+        });
     });
 });
