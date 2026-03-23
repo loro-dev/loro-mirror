@@ -837,6 +837,368 @@ describe("Remote ephemeral isolation", () => {
     });
 });
 
+describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", () => {
+    /**
+     * Helper with a richer schema:
+     *   settings: LoroMap { title: String, darkMode: Boolean, count: Number }
+     *   items: LoroList(LoroMap { x: Number, y: Number, name: String })
+     *   notes: LoroText
+     */
+    function createRichSetup() {
+        const doc = new LoroDoc();
+        const eph = new EphemeralStore();
+        const testSchema = schema({
+            settings: schema.LoroMap({
+                title: schema.String({ defaultValue: "Docs" }),
+                darkMode: schema.Boolean({ defaultValue: false }),
+                count: schema.Number({ defaultValue: 0 }),
+            }),
+            items: schema.LoroList(
+                schema.LoroMap({
+                    x: schema.Number(),
+                    y: schema.Number(),
+                    name: schema.String(),
+                }),
+            ),
+            notes: schema.LoroText(),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            ephemeralStore: eph,
+        });
+
+        // Initialize LoroDoc with all values
+        mirror.setState({
+            settings: { title: "Docs", darkMode: false, count: 0 },
+            items: [
+                { x: 0, y: 0, name: "item1" },
+                { x: 10, y: 20, name: "item2" },
+            ],
+            notes: "",
+        } as any);
+
+        return { doc, eph, mirror };
+    }
+
+    // --- Changes that MUST go to EphemeralStore ---
+
+    it("number value change on existing Map key → Eph", () => {
+        const { doc, eph, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.settings.count = 42; },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // State updated
+        expect(mirror.getState().settings.count).toBe(42);
+        // LoroDoc unchanged
+        expect(doc.getMap("settings").toJSON().count).toBe(0);
+        // EphemeralStore has it
+        const allStates = eph.getAllStates();
+        const settingsKey = Object.keys(allStates).find(k => {
+            const p = allStates[k] as Record<string, unknown>;
+            return p && "count" in p;
+        });
+        expect(settingsKey).toBeDefined();
+        expect((allStates[settingsKey!] as Record<string, unknown>).count).toBe(42);
+
+        mirror.dispose();
+    });
+
+    it("string value change on existing Map key → Eph", () => {
+        const { doc, eph, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.settings.title = "New Title"; },
+            { finalizeTimeout: 50_000 },
+        );
+
+        expect(mirror.getState().settings.title).toBe("New Title");
+        expect(doc.getMap("settings").toJSON().title).toBe("Docs");
+
+        const allStates = eph.getAllStates();
+        const settingsKey = Object.keys(allStates).find(k => {
+            const p = allStates[k] as Record<string, unknown>;
+            return p && "title" in p;
+        });
+        expect(settingsKey).toBeDefined();
+
+        mirror.dispose();
+    });
+
+    it("boolean value change on existing Map key → Eph", () => {
+        const { doc, eph, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.settings.darkMode = true; },
+            { finalizeTimeout: 50_000 },
+        );
+
+        expect(mirror.getState().settings.darkMode).toBe(true);
+        expect(doc.getMap("settings").toJSON().darkMode).toBe(false);
+
+        const allStates = eph.getAllStates();
+        const settingsKey = Object.keys(allStates).find(k => {
+            const p = allStates[k] as Record<string, unknown>;
+            return p && "darkMode" in p;
+        });
+        expect(settingsKey).toBeDefined();
+
+        mirror.dispose();
+    });
+
+    it("null value on existing Map key → Eph", () => {
+        const { doc, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { (s.settings as any).title = null; },
+            { finalizeTimeout: 50_000 },
+        );
+
+        expect(mirror.getState().settings.title).toBe(null);
+        expect(doc.getMap("settings").toJSON().title).toBe("Docs");
+
+        mirror.dispose();
+    });
+
+    it("primitive change on list item's existing Map key → Eph", () => {
+        const { doc, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.items[0].x = 999;
+                s.items[0].name = "moved";
+                s.items[1].y = 888;
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        expect(mirror.getState().items[0].x).toBe(999);
+        expect(mirror.getState().items[0].name).toBe("moved");
+        expect(mirror.getState().items[1].y).toBe(888);
+
+        // LoroDoc untouched
+        const docItems = doc.getList("items").toJSON();
+        expect(docItems[0].x).toBe(0);
+        expect(docItems[0].name).toBe("item1");
+        expect(docItems[1].y).toBe(20);
+
+        mirror.dispose();
+    });
+
+    // --- Changes that MUST go to LoroDoc ---
+
+    it("push new item to list → LoroDoc", () => {
+        const { doc, eph, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch((s) => {
+            s.items.push({ x: 50, y: 60, name: "newItem" } as any);
+        });
+
+        expect(doc.getList("items").toJSON().length).toBe(3);
+        expect(doc.getList("items").toJSON()[2].name).toBe("newItem");
+
+        mirror.dispose();
+    });
+
+    it("delete item from list → LoroDoc", () => {
+        const { doc, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch((s) => {
+            s.items.splice(0, 1);
+        });
+
+        expect(doc.getList("items").toJSON().length).toBe(1);
+        expect(doc.getList("items").toJSON()[0].name).toBe("item2");
+
+        mirror.dispose();
+    });
+
+    it("LoroText change → LoroDoc", () => {
+        const { doc, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch((s) => {
+            (s as any).notes = "Hello world";
+        });
+
+        expect(doc.getText("notes").toString()).toBe("Hello world");
+
+        mirror.dispose();
+    });
+
+    // --- Mixed: some go to Eph, some to LoroDoc ---
+
+    it("mixed: primitive on existing key → Eph, new list item → LoroDoc", () => {
+        const { doc, eph, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.items[0].x = 500;                             // → Eph
+                s.items.push({ x: 0, y: 0, name: "new" } as any); // → LoroDoc
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // New item committed to LoroDoc
+        expect(doc.getList("items").toJSON().length).toBe(3);
+        // Existing key change NOT in LoroDoc
+        expect(doc.getList("items").toJSON()[0].x).toBe(0);
+        // State reflects both
+        expect(mirror.getState().items[0].x).toBe(500);
+        expect(mirror.getState().items.length).toBe(3);
+
+        mirror.dispose();
+    });
+
+    it("mixed: multiple Map key changes → Eph, text change → LoroDoc", () => {
+        const { doc, mirror } = createRichSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.settings.count = 77;         // → Eph
+                s.settings.darkMode = true;     // → Eph
+                (s as any).notes = "Updated";   // → LoroDoc
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // Text committed to LoroDoc
+        expect(doc.getText("notes").toString()).toBe("Updated");
+        // Map values NOT in LoroDoc
+        expect(doc.getMap("settings").toJSON().count).toBe(0);
+        expect(doc.getMap("settings").toJSON().darkMode).toBe(false);
+        // State shows all changes
+        expect(mirror.getState().settings.count).toBe(77);
+        expect(mirror.getState().settings.darkMode).toBe(true);
+        expect(mirror.getState().notes).toBe("Updated");
+
+        mirror.dispose();
+    });
+});
+
+describe("finalizeEphemeralPatches flushes all pending to LoroDoc", () => {
+    it("should flush all local ephemeral values to LoroDoc immediately", () => {
+        const { doc, eph, mirror } = createSimpleSetup();
+
+        // Multiple ephemeral patches
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 50; s.canvas.y = 75; },
+            { finalizeTimeout: 50_000 },
+        );
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.width = 200; s.canvas.height = 150; },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // Nothing in LoroDoc yet
+        const docBefore = doc.getMap("canvas").toJSON();
+        expect(docBefore.x).toBe(0);
+        expect(docBefore.width).toBe(100);
+
+        // Flush
+        mirror.finalizeEphemeralPatches();
+
+        // All values now in LoroDoc
+        const docAfter = doc.getMap("canvas").toJSON();
+        expect(docAfter.x).toBe(50);
+        expect(docAfter.y).toBe(75);
+        expect(docAfter.width).toBe(200);
+        expect(docAfter.height).toBe(150);
+
+        // EphemeralStore should be empty for this container
+        const canvasId = doc.getMap("canvas").id;
+        expect(eph.get(canvasId)).toBeUndefined();
+
+        // State still correct
+        const state = mirror.getState();
+        expect(state.canvas.x).toBe(50);
+        expect(state.canvas.width).toBe(200);
+
+        mirror.dispose();
+    });
+
+    it("should flush ephemeral values from multiple containers", () => {
+        const { doc, eph, mirror } = createTestSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => {
+                s.items[0].x = 100;
+                s.items[0].y = 200;
+                s.items[1].x = 300;
+                s.items[1].y = 400;
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // LoroDoc untouched
+        expect(doc.getList("items").toJSON()[0].x).toBe(0);
+        expect(doc.getList("items").toJSON()[1].x).toBe(10);
+
+        // Flush all at once
+        mirror.finalizeEphemeralPatches();
+
+        // All values committed
+        expect(doc.getList("items").toJSON()[0].x).toBe(100);
+        expect(doc.getList("items").toJSON()[0].y).toBe(200);
+        expect(doc.getList("items").toJSON()[1].x).toBe(300);
+        expect(doc.getList("items").toJSON()[1].y).toBe(400);
+
+        mirror.dispose();
+    });
+
+    it("should be idempotent (second call is a no-op)", () => {
+        const { doc, mirror } = createSimpleSetup();
+
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 42; },
+            { finalizeTimeout: 50_000 },
+        );
+
+        mirror.finalizeEphemeralPatches();
+        const versionAfterFirst = doc.oplogVersion().toJSON();
+
+        // Second call should be a no-op
+        mirror.finalizeEphemeralPatches();
+        const versionAfterSecond = doc.oplogVersion().toJSON();
+
+        expect(versionAfterFirst).toEqual(versionAfterSecond);
+        expect(doc.getMap("canvas").toJSON().x).toBe(42);
+
+        mirror.dispose();
+    });
+
+    it("after flush, subsequent ephemeral patches start clean", () => {
+        const { doc, mirror } = createSimpleSetup();
+
+        // First round of ephemeral patches
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 50; },
+            { finalizeTimeout: 50_000 },
+        );
+        mirror.finalizeEphemeralPatches();
+        expect(doc.getMap("canvas").toJSON().x).toBe(50);
+
+        // Second round
+        mirror.setStateWithEphemeralPatch(
+            (s) => { s.canvas.x = 100; },
+            { finalizeTimeout: 50_000 },
+        );
+
+        // LoroDoc should still be at 50 (new patch not flushed yet)
+        expect(doc.getMap("canvas").toJSON().x).toBe(50);
+        // State shows latest
+        expect(mirror.getState().canvas.x).toBe(100);
+
+        mirror.finalizeEphemeralPatches();
+        expect(doc.getMap("canvas").toJSON().x).toBe(100);
+
+        mirror.dispose();
+    });
+});
+
 describe("$cid preservation", () => {
     it("should preserve $cid on map objects after ephemeral compose", () => {
         const { mirror } = createSimpleSetup();
