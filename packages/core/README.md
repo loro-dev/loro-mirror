@@ -135,6 +135,21 @@ Reserved key `$cid`:
 
 When users drag or scale canvas elements, syncing every intermediate position through LoroDoc creates redundant editing history. `setStateWithEphemeralPatch` solves this by routing temporary changes through an `EphemeralStore` for real-time sync, then committing once to LoroDoc when the operation ends.
 
+### How it works
+
+Mirror composes its state from two sources:
+
+```
+MirrorState = LoroDoc state + EphemeralStore overlay
+```
+
+When you call `setStateWithEphemeralPatch`, Mirror diffs your new state against the current composed state and classifies each change:
+
+- **Ephemeral-eligible** (primitive value on an existing Map key) → written to `EphemeralStore`
+- **Everything else** (new keys, container ops, list/text/tree changes) → written to `LoroDoc`
+
+Because LoroDoc and EphemeralStore are independent, `ephemeralStore` is fully optional — peers that don't configure it still sync normally via LoroDoc. They will see final values after `finalizeEphemeralPatches()`, but not intermediate ephemeral changes. Peers that do share an EphemeralStore channel see real-time intermediate updates as well.
+
 ### Setup
 
 ```ts
