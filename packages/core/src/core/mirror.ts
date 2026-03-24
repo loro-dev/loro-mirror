@@ -42,11 +42,15 @@ import {
     isLoroTreeSchema,
     LoroListSchema,
     LoroMapSchema,
-    LoroMapSchemaWithCatchall,
     RootSchemaType,
     SchemaType,
     validateSchema,
 } from "../schema/index.js";
+import {
+    getChildContainerSchema,
+    getChildSchema,
+    getMapFieldSchema,
+} from "../schema/resolver.js";
 import {
     deepEqual,
     inferContainerTypeFromValue,
@@ -61,8 +65,6 @@ import {
     applyDecode,
     applyEncode,
     decodeNestedJsonValues,
-    getMapFieldSchema,
-    getListItemSchema,
     safeStringify,
 } from "./utils.js";
 import { diffContainer, diffTree } from "./diff.js";
@@ -597,15 +599,7 @@ export class Mirror<S extends SchemaType> {
                     if (isContainer(value)) {
                         let nestedSchema: ContainerSchemaType | undefined;
                         if (parentSchema && isLoroMapSchema(parentSchema)) {
-                            const candidate = this.getSchemaForMapKey(
-                                parentSchema as
-                                | LoroMapSchema<Record<string, SchemaType>>
-                                | LoroMapSchemaWithCatchall<
-                                    Record<string, SchemaType>,
-                                    SchemaType
-                                >,
-                                key,
-                            );
+                            const candidate = getMapFieldSchema(parentSchema, key);
                             if (candidate?.type === "any") {
                                 this.inferOptionsByContainerId.set(
                                     value.id,
@@ -774,18 +768,10 @@ export class Mirror<S extends SchemaType> {
                     }
                 },
                 getSchemaForKey: (containerId, mapKey) => {
-                    if (mapKey !== undefined) {
-                        return this.getSchemaForChild(containerId, mapKey);
-                    }
-                    const containerSchema = this.getContainerSchema(containerId);
-                    if (
-                        containerSchema &&
-                        (isLoroListSchema(containerSchema) ||
-                            isLoroMovableListSchema(containerSchema))
-                    ) {
-                        return containerSchema.itemSchema;
-                    }
-                    return undefined;
+                    return getChildSchema(
+                        this.getContainerSchema(containerId),
+                        mapKey,
+                    );
                 },
             },
         ) as unknown as InferType<S>;
@@ -1881,21 +1867,14 @@ export class Mirror<S extends SchemaType> {
             if (!isObject(value)) {
                 return;
             }
-            const mapSchema = schema as
-                | LoroMapSchema<Record<string, SchemaType>>
-                | LoroMapSchemaWithCatchall<
-                    Record<string, SchemaType>,
-                    SchemaType
-                >
-                | undefined;
             const baseInfer = this.getInferOptionsForContainer(map.id);
             for (const [key, val] of Object.entries(value)) {
                 // Skip injected CID field
                 if (key === CID_KEY) continue;
                 // Skip undefined values - treat them as non-existent fields
                 if (val === undefined) continue;
-                if (mapSchema) {
-                    const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
+                if (schema?.type === "loro-map") {
+                    const fieldSchema = getMapFieldSchema(schema, key);
 
                     if (fieldSchema?.type === "any") {
                         const infer = this.getInferOptionsForChild(
@@ -2222,13 +2201,7 @@ export class Mirror<S extends SchemaType> {
         if (key === CID_KEY) return; // Ignore CID in writes
         // Check if this field should be a container according to schema
         if (schema && schema.type === "loro-map") {
-            const mapSchema = schema as
-                | LoroMapSchema<Record<string, SchemaType>>
-                | LoroMapSchemaWithCatchall<
-                    Record<string, SchemaType>,
-                    SchemaType
-                >;
-            const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
+            const fieldSchema = getMapFieldSchema(schema, key);
             if (fieldSchema && fieldSchema.type === "ignore") {
                 // Skip ignore fields: they live only in mirrored state
                 return;
@@ -2544,23 +2517,23 @@ export class Mirror<S extends SchemaType> {
             const m = c as LoroMap;
             const obj: MirrorStateObject = {};
             defineCidProperty(obj, c.id);
-            for (const k of m.keys()) {
-                const v = m.get(k);
-                if (isContainer(v)) {
-                    obj[k] = this.containerToMirrorState(v);
-                } else {
-                    // Decode primitive values using field schema
-                    const fieldSchema = getMapFieldSchema(schema, k);
-                    obj[k] = applyDecode(fieldSchema, v) as MirrorState;
+                for (const k of m.keys()) {
+                    const v = m.get(k);
+                    if (isContainer(v)) {
+                        obj[k] = this.containerToMirrorState(v);
+                    } else {
+                        // Decode primitive values using field schema
+                        const fieldSchema = getChildSchema(schema, k);
+                        obj[k] = applyDecode(fieldSchema, v) as MirrorState;
+                    }
                 }
-            }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
             const arr: MirrorState[] = [];
             const l = c as unknown as LoroList | LoroMovableList;
             const len = l.length;
             // Get item schema for decoding list items
-            const itemSchema = getListItemSchema(schema);
+            const itemSchema = getChildSchema(schema);
             for (let i = 0; i < len; i++) {
                 const v = l.get(i);
                 if (isContainer(v)) {
@@ -2734,27 +2707,6 @@ export class Mirror<S extends SchemaType> {
         return applySchemaToInferOptions(childSchema, base) || base;
     }
 
-    private getSchemaForMapKey(
-        schema:
-            | LoroMapSchema<Record<string, SchemaType>>
-            | LoroMapSchemaWithCatchall<Record<string, SchemaType>, SchemaType>
-            | undefined,
-        key: string,
-    ): SchemaType | undefined {
-        if (!schema) return undefined;
-        if (Object.prototype.hasOwnProperty.call(schema.definition, key)) {
-            return schema.definition[key];
-        }
-        const withCatchall = schema as LoroMapSchemaWithCatchall<
-            Record<string, SchemaType>,
-            SchemaType
-        > & { catchallType?: SchemaType };
-        if (withCatchall.catchallType) {
-            return withCatchall.catchallType;
-        }
-        return undefined;
-    }
-
     private getContainerSchema(
         containerId: ContainerID,
     ): ContainerSchemaType | undefined {
@@ -2765,46 +2717,17 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         childKey: string | number,
     ): ContainerSchemaType | undefined {
-        const containerSchema = this.getSchemaForChild(containerId, childKey);
-
-        if (!containerSchema || !isContainerSchema(containerSchema)) {
-            return undefined;
-        }
-
-        return containerSchema;
+        return getChildContainerSchema(
+            this.getContainerSchema(containerId),
+            childKey,
+        );
     }
 
     private getSchemaForChild(
         containerId: ContainerID,
         childKey: string | number,
     ): SchemaType | undefined {
-        const containerSchema = this.getContainerSchema(containerId);
-
-        if (!containerSchema) {
-            return undefined;
-        }
-
-        if (isLoroMapSchema(containerSchema)) {
-            return this.getSchemaForMapKey(
-                containerSchema as
-                | LoroMapSchema<Record<string, SchemaType>>
-                | LoroMapSchemaWithCatchall<
-                    Record<string, SchemaType>,
-                    SchemaType
-                >,
-                String(childKey),
-            );
-        } else if (
-            isLoroListSchema(containerSchema) ||
-            isLoroMovableListSchema(containerSchema)
-        ) {
-            return containerSchema.itemSchema;
-        } else if (isLoroTreeSchema(containerSchema)) {
-            // Tree nodes' data map schema
-            return containerSchema.nodeSchema;
-        }
-
-        return undefined;
+        return getChildSchema(this.getContainerSchema(containerId), childKey);
     }
 
     /* Get all container IDs registered with the mirror */

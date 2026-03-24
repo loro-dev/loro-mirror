@@ -8,6 +8,7 @@ import {
     SchemaType,
     TransformDefinition,
 } from "../schema/index.js";
+import { getChildSchema } from "../schema/resolver.js";
 import { Change, InferContainerOptions } from "./mirror.js";
 import { CID_KEY } from "../constants.js";
 
@@ -86,8 +87,7 @@ export function decodeNestedJsonValues(
         case "loro-map": {
             if (!isObject(json)) return json;
             for (const key of Object.keys(json)) {
-                const fieldSchema =
-                    schema.definition?.[key] ?? ("catchallType" in schema ? schema.catchallType : undefined);
+                const fieldSchema = getChildSchema(schema, key);
                 json[key] = decodeNestedJsonValues(json[key], fieldSchema);
             }
             return json;
@@ -95,7 +95,7 @@ export function decodeNestedJsonValues(
         case "loro-list":
         case "loro-movable-list": {
             if (!Array.isArray(json)) return json;
-            const itemSchema = schema.itemSchema;
+            const itemSchema = getChildSchema(schema);
             for (let i = 0; i < json.length; i++) {
                 json[i] = decodeNestedJsonValues(json[i], itemSchema);
             }
@@ -103,7 +103,7 @@ export function decodeNestedJsonValues(
         }
         case "loro-tree": {
             if (!Array.isArray(json)) return json;
-            const nodeSchema = schema.nodeSchema;
+            const nodeSchema = getChildSchema(schema);
             const walk = (nodes: unknown[]) => {
                 for (const node of nodes) {
                     if (node != null && typeof node == "object") {
@@ -140,45 +140,6 @@ export function applyEncode(
     }
     const transform = getTransform(schema);
     return transform ? transform.encode(domainValue) : domainValue;
-}
-
-/**
- * Get schema for a field in a map. Handles catchall fallback.
- */
-export function getMapFieldSchema(
-    schema: SchemaType | undefined,
-    key: string,
-): SchemaType | undefined {
-    if (!schema) return undefined;
-    if (schema.type === "loro-map") {
-        const mapSchema = schema as {
-            definition?: Record<string, SchemaType>;
-            catchallType?: SchemaType;
-        };
-        const fieldSchema = mapSchema.definition?.[key];
-        if (fieldSchema) return fieldSchema;
-        return mapSchema.catchallType;
-    }
-    if (schema.type === "schema") {
-        const rootSchema = schema as {
-            definition?: Record<string, SchemaType>;
-        };
-        return rootSchema.definition?.[key];
-    }
-    return undefined;
-}
-
-/**
- * Get item schema for a list or movable list.
- */
-export function getListItemSchema(
-    schema: SchemaType | undefined,
-): SchemaType | undefined {
-    if (!schema) return undefined;
-    if (schema.type === "loro-list" || schema.type === "loro-movable-list") {
-        return (schema as { itemSchema?: SchemaType }).itemSchema;
-    }
-    return undefined;
 }
 
 /**
