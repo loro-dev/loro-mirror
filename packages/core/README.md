@@ -48,7 +48,7 @@ store.setState((s) => {
 
 // Subscribe
 const unsubscribe = store.subscribe((next, { direction }) => {
-    // direction: "FROM_LORO" | "TO_LORO"
+    // direction: "FROM_LORO" | "TO_LORO" | "FROM_EPHEMERAL" | "BIDIRECTIONAL"
 });
 ```
 
@@ -85,7 +85,8 @@ Trees are advanced usage; see Advanced: Trees at the end.
         - options: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }` — tags surface in subscriber metadata; commit metadata is forwarded to the underlying Loro commit; `finalizeTimeout` controls the debounce delay before ephemeral values auto-commit.
     - finalizeEphemeralPatches(): Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
     - subscribe((state, metadata) => void): Subscribe; returns unsubscribe
-        - metadata: `{ direction: FROM_LORO | TO_LORO | FROM_EPHEMERAL; tags?: string[] }`
+        - metadata: `{ direction: FROM_LORO | TO_LORO | FROM_EPHEMERAL | BIDIRECTIONAL; tags?: string[] }`
+        - `TO_LORO` means a local write started from Mirror APIs. It does not mean the change definitely went only to `LoroDoc`; with `ephemeralStore`, it may go to `EphemeralStore`, `LoroDoc`, or both.
     - dispose(): Remove all subscriptions
 
 Types: `SyncDirection`, `UpdateMetadata`, `SetStateOptions`.

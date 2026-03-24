@@ -83,7 +83,8 @@ export enum SyncDirection {
     FROM_LORO = "FROM_LORO",
 
     /**
-     * Changes going from application state to Loro
+     * Local state changes initiated through Mirror APIs.
+     * Historical name: the write may end up in LoroDoc, EphemeralStore, or both.
      */
     TO_LORO = "TO_LORO",
 

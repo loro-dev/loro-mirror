@@ -374,7 +374,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`options`**: `{ tags?: string | string[]; finalizeTimeout?: number }` – tags are delivered to subscribers in metadata; `finalizeTimeout` (default 50 000 ms) controls the debounce delay before ephemeral values auto-commit.
 - `finalizeEphemeralPatches()`: Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
 - `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
-    - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when produced locally, `FROM_EPHEMERAL` when state changed due to an EphemeralStore update, `BIDIRECTIONAL` for manual/initial syncs.
+    - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when a local Mirror write changed state, `FROM_EPHEMERAL` when state changed due to an EphemeralStore update, `BIDIRECTIONAL` for manual/initial syncs.
     - **`tags`**: `string[] | undefined` – tags provided via `setState`.
 - `dispose()`: Unsubscribe internal listeners and clear subscribers.
 - `checkStateConsistency()`: Manually trigger the consistency assertion described above.
@@ -390,7 +390,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 
 - `SyncDirection`:
     - `FROM_LORO` – applied due to incoming `LoroDoc` changes
-    - `TO_LORO` – applied due to local `setState`
+    - `TO_LORO` – applied due to a local Mirror write such as `setState`, `patchEphemeral`, or `finalizeEphemeralPatches`; the write may go to `LoroDoc`, `EphemeralStore`, or both
     - `FROM_EPHEMERAL` – state recomposed due to an EphemeralStore change (local or remote)
     - `BIDIRECTIONAL` – initial/manual sync context
 - `UpdateMetadata`: `{ direction: SyncDirection; tags?: string[] }`
