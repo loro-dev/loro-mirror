@@ -148,16 +148,29 @@ export interface MirrorOptions<S extends SchemaType> {
      * Optional `EphemeralStore` (from `loro-crdt`) for syncing temporary state
      * without polluting LoroDoc editing history.
      *
-     * When provided, {@link Mirror.setStateWithEphemeralPatch} becomes available.
-     * Temporary changes (e.g. during a drag or resize) are stored in the
-     * EphemeralStore for real-time sync, then committed to LoroDoc after a
-     * debounced timeout or a manual {@link Mirror.finalizeEphemeralPatches} call.
+     * **Setting this changes how {@link Mirror.setState} works:** when
+     * present, `setState` automatically classifies each change and routes
+     * eligible ones (primitive values on existing Map keys) to the
+     * EphemeralStore instead of LoroDoc. Structural changes (new keys,
+     * containers, list/text/tree ops) still go to LoroDoc as usual.
+     *
+     * State returned by {@link Mirror.getState} is always the composed
+     * result: `LoroDoc state + EphemeralStore overlay`. Callers don't need
+     * to be aware of where each value lives.
+     *
+     * Ephemeral values are committed to LoroDoc when the
+     * {@link SetStateOptions.finalizeTimeout | finalizeTimeout} expires
+     * (default 50 000 ms) or when {@link Mirror.finalizeEphemeralPatches}
+     * is called manually (e.g. on `mouseup`).
      *
      * Network sync of the EphemeralStore is the caller's responsibility:
      * ```ts
      * eph.subscribeLocalUpdates((bytes) => channel.send(bytes));
      * channel.on("ephemeral", (bytes) => eph.apply(bytes));
      * ```
+     *
+     * @see {@link Mirror.setState} for routing rules and examples
+     * @see {@link Mirror.finalizeEphemeralPatches} for committing ephemeral values
      */
     ephemeralStore?: EphemeralStore;
 }
@@ -277,6 +290,24 @@ export interface SetStateOptions {
      * Optional message forwarded to the underlying Loro commit metadata.
      */
     message?: string;
+    /**
+     * Debounce delay (in ms) before ephemeral values are automatically
+     * committed to LoroDoc. The timer resets on every `setState` call that
+     * produces ephemeral changes, so it only fires after the user stops
+     * updating.
+     *
+     * Has no effect when no `ephemeralStore` is configured.
+     *
+     * Typical values:
+     * - `1_000` (1 s) — drag/resize interactions where you want quick persistence
+     * - `50_000` (50 s, default) — long-lived ephemeral state (e.g. cursor position)
+     *
+     * To commit immediately instead of waiting, call
+     * {@link Mirror.finalizeEphemeralPatches}.
+     *
+     * @default 50_000
+     */
+    finalizeTimeout?: number;
 }
 
 type ContainerRegistry = Map<
@@ -1640,171 +1671,6 @@ export class Mirror<S extends SchemaType> {
     };
 
     /**
-     * Update state with ephemeral patches for temporary real-time sync.
-     *
-     * Use this instead of {@link setState} for high-frequency, temporary changes
-     * (e.g. dragging an element, resizing, scrubbing a slider) where you want
-     * real-time sync via `EphemeralStore` without creating editing history in LoroDoc.
-     *
-     * Requires `ephemeralStore` to be set in {@link MirrorOptions}.
-     *
-     * ### How changes are routed
-     *
-     * Each change produced by the updater is classified automatically:
-     *
-     * | Condition | Destination |
-     * |---|---|
-     * | Primitive value change on an **existing key** of an **existing Map** | → `EphemeralStore` (no LoroDoc write) |
-     * | New Map / new key / container value / List·Text·Tree ops | → `LoroDoc` directly |
-     *
-     * This means structural changes (adding items, creating containers) always
-     * go to LoroDoc immediately, while simple value tweaks stay ephemeral.
-     *
-     * ### Finalization
-     *
-     * Ephemeral values are committed to LoroDoc when:
-     * 1. The debounced `finalizeTimeout` expires (default: 50 000 ms), or
-     * 2. You call {@link finalizeEphemeralPatches} manually (e.g. on `mouseup`).
-     *
-     * On finalize, only values still matching what this peer last wrote are
-     * committed — if a remote peer overwrote a value in the EphemeralStore,
-     * it is skipped to avoid stale writes.
-     *
-     * ### Example
-     *
-     * ```ts
-     * // During drag (called on every mousemove)
-     * mirror.setStateWithEphemeralPatch(
-     *   (s) => { s.items[i].x = e.clientX; s.items[i].y = e.clientY; },
-     *   { finalizeTimeout: 1_000 },
-     * );
-     *
-     * // On mouseup — commit immediately
-     * mirror.finalizeEphemeralPatches();
-     * ```
-     *
-     * @param updater - Immer-style draft mutator, return-new-state function, or partial object.
-     * @param options - Standard {@link SetStateOptions} plus optional `finalizeTimeout` (ms).
-     * @throws If `ephemeralStore` was not provided in MirrorOptions.
-     */
-    setStateWithEphemeralPatch(
-        updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
-        options?: SetStateOptions & { finalizeTimeout?: number },
-    ): void;
-    setStateWithEphemeralPatch(
-        updater: (state: InferType<S>) => void,
-        options?: SetStateOptions & { finalizeTimeout?: number },
-    ): void;
-    setStateWithEphemeralPatch(
-        updater: Partial<InferInputType<S>>,
-        options?: SetStateOptions & { finalizeTimeout?: number },
-    ): void;
-    setStateWithEphemeralPatch(
-        updater:
-            | ((state: InferType<S>) => InferType<S> | InferInputType<S> | void)
-            | ((state: Readonly<InferInputType<S>>) => InferInputType<S>)
-            | Partial<InferInputType<S>>,
-        options?: SetStateOptions & { finalizeTimeout?: number },
-    ): void {
-        if (!this.ephemeralManager) {
-            throw new Error(
-                "setStateWithEphemeralPatch requires an ephemeralStore in MirrorOptions",
-            );
-        }
-        if (this.syncing) return;
-
-        // Calculate new state using the composed state (base + ephemeral) as input,
-        // so the user sees and mutates the full composed state
-        const newState =
-            typeof updater === "function"
-                ? produce<InferType<S>>(this.state, (draft) => {
-                    const res = (
-                        updater as (
-                            state: InferType<S>,
-                        ) => InferType<S> | void
-                    )(draft as InferType<S>);
-                    if (res && res !== (draft as unknown)) {
-                        return res as unknown as typeof draft;
-                    }
-                })
-                : (Object.assign(
-                    {},
-                    this.state as unknown as Record<string, unknown>,
-                    updater as Record<string, unknown>,
-                ) as InferType<S>);
-
-        // Validate state if needed
-        if (this.options.validateUpdates) {
-            const validation =
-                this.schema && validateSchema(this.schema, newState);
-            if (validation && !validation.valid) {
-                const errorMessage = `State validation failed: ${validation.errors?.join(
-                    ", ",
-                )}`;
-                throw new Error(errorMessage);
-            }
-        }
-
-        // Diff against the composed state (base + ephemeral overlay) so that
-        // pre-existing remote ephemeral values are NOT re-emitted as local changes.
-        const changes = diffContainer(
-            this.doc,
-            this.state,
-            newState,
-            "",
-            this.schema,
-            this.options?.inferOptions,
-        );
-
-        // Classify changes into ephemeral-eligible vs LoroDoc
-        const ephemeralChanges: Change[] = [];
-        const loroChanges: Change[] = [];
-
-        for (const change of changes) {
-            if (this.ephemeralManager!.isEligible(change, this.doc)) {
-                ephemeralChanges.push(change);
-            } else {
-                loroChanges.push(change);
-            }
-        }
-
-        // Apply non-ephemeral changes directly to LoroDoc
-        if (loroChanges.length > 0) {
-            this.syncing = true;
-            try {
-                this.applyChangesToLoro(loroChanges, newState, options);
-            } finally {
-                this.syncing = false;
-            }
-            // Rebuild baseState from LoroDoc to avoid absorbing ephemeral values
-            // from newState (which was derived from the composed state).
-            this.baseState = this.buildRootStateSnapshot(
-                this.baseState as unknown as Record<string, unknown>,
-            ) as unknown as InferType<S>;
-        }
-
-        // Write ephemeral-eligible changes to EphemeralStore
-        this.ephemeralManager!.writeChanges(ephemeralChanges);
-
-        // Compose final state
-        this.state = this.composeState(this.baseState);
-
-        // Reset debounce timer for finalization
-        this.ephemeralManager!.scheduleFinalizeAfter(
-            options?.finalizeTimeout,
-            () => this.finalizeEphemeralPatches(),
-        );
-
-        // Notify subscribers
-        const tags = options?.tags
-            ? Array.isArray(options.tags)
-                ? options.tags
-                : [options.tags]
-            : undefined;
-        this.notifySubscribers(SyncDirection.TO_LORO, tags);
-    }
-
-    /**
      * Immediately commit all pending ephemeral patches to LoroDoc.
      *
      * Call this when the temporary operation ends (e.g. on `mouseup` after a drag)
@@ -1827,9 +1693,7 @@ export class Mirror<S extends SchemaType> {
             this.ephemeralManager.finalize(this.doc);
 
             // Update baseState from LoroDoc
-            this.baseState = this.buildRootStateSnapshot(
-                this.baseState as unknown as Record<string, unknown>,
-            ) as unknown as InferType<S>;
+            this.baseState = this.rebuildBaseState();
             this.state = this.composeState(this.baseState);
             this.notifySubscribers(SyncDirection.TO_LORO);
         } finally {
@@ -2288,14 +2152,55 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Update state and propagate changes to Loro.
+     * Update state and propagate changes.
      *
-     * - If `updater` is an object, it will shallow-merge into the current state.
-     * - If `updater` is a function, it may EITHER:
-     *   - mutate a draft (Immer-style), OR
-     *   - return a brand new immutable state object.
+     * `updater` may be:
+     * - An **object** — shallow-merged into the current state.
+     * - A **function** — receives a mutable Immer draft (mutate in place)
+     *   or returns a new immutable state object.
      *
-     * This supports both immutable and mutative update styles without surprises.
+     * ---
+     *
+     * ### Behavior depends on `ephemeralStore` configuration
+     *
+     * **Without `ephemeralStore`** (default) — all changes are written to
+     * LoroDoc synchronously. This is the standard path for persistent edits.
+     *
+     * **With `ephemeralStore`** — Mirror diffs the new state against the
+     * current composed state (`LoroDoc + EphemeralStore overlay`) and
+     * classifies each change automatically:
+     *
+     * | Condition | Destination |
+     * |---|---|
+     * | Primitive value (`string`, `number`, `boolean`, `null`) on an **existing key** of an **existing LoroMap** | → `EphemeralStore` (no LoroDoc write) |
+     * | Everything else (new keys, new containers, list/text/tree ops) | → `LoroDoc` directly |
+     *
+     * This means a single `setState` call can write some changes to
+     * EphemeralStore and others to LoroDoc in the same invocation.
+     *
+     * Ephemeral values are committed to LoroDoc when:
+     * 1. The {@link SetStateOptions.finalizeTimeout | finalizeTimeout}
+     *    expires (default 50 000 ms), or
+     * 2. You call {@link finalizeEphemeralPatches} manually (e.g. on `mouseup`).
+     *
+     * The debounce timer resets on each `setState` call that produces
+     * ephemeral changes, so it only fires after the user stops updating.
+     *
+     * @example
+     * ```ts
+     * // Without ephemeralStore — writes directly to LoroDoc
+     * mirror.setState((s) => { s.count = 1; });
+     *
+     * // With ephemeralStore — x/y go to EphemeralStore, push goes to LoroDoc
+     * mirror.setState(
+     *     (s) => {
+     *         s.items[0].x = e.clientX;   // → EphemeralStore (primitive on existing key)
+     *         s.items[0].y = e.clientY;   // → EphemeralStore
+     *         s.items.push({ x: 0, y: 0, name: "new" }); // → LoroDoc (structural change)
+     *     },
+     *     { finalizeTimeout: 1_000 },
+     * );
+     * ```
      */
     setState(
         updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
@@ -2317,6 +2222,7 @@ export class Mirror<S extends SchemaType> {
         options?: SetStateOptions,
     ): void {
         if (this.syncing) return; // Prevent recursive updates
+
         // Calculate new state; support mutative or return-based updater via Immer
         const newState =
             typeof updater === "function"
@@ -2327,7 +2233,6 @@ export class Mirror<S extends SchemaType> {
                         ) => InferType<S> | void
                     )(draft as InferType<S>);
                     if (res && res !== (draft as unknown)) {
-                        // Return a replacement so Immer finalizes it
                         return res as unknown as typeof draft;
                     }
                 })
@@ -2356,22 +2261,61 @@ export class Mirror<S extends SchemaType> {
                 : [options.tags]
             : undefined;
 
-        // Update Loro based on new state
-        // Refresh in-memory state from Doc to capture assigned IDs (e.g., TreeIDs)
-        // and any canonical normalization (like Tree meta->data mapping).
-        this.updateLoro(newState, options);
-        // Rebuild baseState from LoroDoc to avoid absorbing ephemeral overlay values.
-        // newState was derived from the composed state and may contain ephemeral fields
-        // that should not leak into baseState.
-        this.baseState = this.ephemeralManager
-            ? (this.buildRootStateSnapshot(
-                this.baseState as unknown as Record<string, unknown>,
-            ) as unknown as InferType<S>)
-            : stripUndefined(newState);
-        this.state = this.composeState(this.baseState);
-        const shouldCheck = this.options.checkStateConsistency;
-        if (shouldCheck) {
-            this.checkStateConsistency();
+        if (this.ephemeralManager) {
+            // Route changes through ephemeral classification
+            const changes = diffContainer(
+                this.doc,
+                this.state,
+                newState,
+                "",
+                this.schema,
+                this.options?.inferOptions,
+            );
+
+            const ephemeralChanges: Change[] = [];
+            const loroChanges: Change[] = [];
+            for (const change of changes) {
+                if (this.ephemeralManager.isEligible(change, this.doc)) {
+                    ephemeralChanges.push(change);
+                } else {
+                    loroChanges.push(change);
+                }
+            }
+
+            // Apply non-ephemeral changes directly to LoroDoc
+            if (loroChanges.length > 0) {
+                this.syncing = true;
+                try {
+                    this.applyChangesToLoro(loroChanges, newState, options);
+                } finally {
+                    this.syncing = false;
+                }
+            }
+
+            // Rebuild baseState from LoroDoc (preserving Ignore fields)
+            this.baseState = this.rebuildBaseState();
+
+            // Write ephemeral-eligible changes to EphemeralStore
+            if (ephemeralChanges.length > 0) {
+                this.ephemeralManager.writeChanges(ephemeralChanges);
+                // Schedule debounced finalization
+                this.ephemeralManager.scheduleFinalizeAfter(
+                    options?.finalizeTimeout,
+                    () => this.finalizeEphemeralPatches(),
+                );
+            }
+
+            // Compose final state (base + ephemeral overlay)
+            this.state = this.composeState(this.baseState);
+        } else {
+            // No ephemeral store — apply everything to LoroDoc
+            this.updateLoro(newState, options);
+            this.baseState = stripUndefined(newState);
+            this.state = this.composeState(this.baseState);
+
+            if (this.options.checkStateConsistency) {
+                this.checkStateConsistency();
+            }
         }
 
         // Notify subscribers
@@ -2483,6 +2427,18 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Build a state snapshot from LoroDoc.
+     * When `prevState` is provided, Ignore fields are preserved from it
+     * (they only exist in memory and are not backed by LoroDoc).
+     */
+    private rebuildBaseState(): InferType<S> {
+        return this.buildRootStateSnapshot(
+            this.baseState as Record<string, unknown>,
+        ) as InferType<S>;
+    }
+
+    /**
+     * Build a fresh state snapshot from the LoroDoc.
+     *
      * When `prevState` is provided, Ignore fields are preserved from it
      * (they only exist in memory and are not backed by LoroDoc).
      */

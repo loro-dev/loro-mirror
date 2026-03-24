@@ -369,11 +369,9 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` – influence container-type inference when inserting containers from plain values.
 
 - `getState(): State`: Returns the current in-memory state view.
-- `setState(updater, options?)`: Update state and sync to Loro. Runs synchronously.
+- `setState(updater, options?)`: Update state and sync to Loro. Runs synchronously. When `ephemeralStore` is configured, eligible changes are automatically routed through EphemeralStore. See [Ephemeral Patches](#ephemeral-patches).
     - **`updater`**: either a partial object to shallow-merge or a function that may mutate a draft (Immer-style) or return a new state object.
-    - **`options`**: `{ tags?: string | string[] }` – arbitrary tags attached to this update; delivered to subscribers in metadata.
-- `setStateWithEphemeralPatch(updater, options?)`: Like `setState`, but routes eligible changes through an `EphemeralStore` instead of writing to LoroDoc. See [Ephemeral Patches](#ephemeral-patches).
-    - **`options`**: same as `setState` plus `{ finalizeTimeout?: number }` (default 50 000 ms).
+    - **`options`**: `{ tags?: string | string[]; finalizeTimeout?: number }` – tags are delivered to subscribers in metadata; `finalizeTimeout` (default 50 000 ms) controls the debounce delay before ephemeral values auto-commit.
 - `finalizeEphemeralPatches()`: Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
 - `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
     - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when produced locally, `FROM_EPHEMERAL` when state changed due to an EphemeralStore update, `BIDIRECTIONAL` for manual/initial syncs.
@@ -392,11 +390,11 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 
 - `SyncDirection`:
     - `FROM_LORO` – applied due to incoming `LoroDoc` changes
-    - `TO_LORO` – applied due to local `setState` or `setStateWithEphemeralPatch`
+    - `TO_LORO` – applied due to local `setState`
     - `FROM_EPHEMERAL` – state recomposed due to an EphemeralStore change (local or remote)
     - `BIDIRECTIONAL` – initial/manual sync context
 - `UpdateMetadata`: `{ direction: SyncDirection; tags?: string[] }`
-- `SetStateOptions`: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string }`
+- `SetStateOptions`: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }`
 
 ### Example
 
@@ -440,37 +438,37 @@ mirror.setState(
 
 ### Ephemeral Patches
 
-For high-frequency temporary changes (dragging, resizing, scrubbing), use `setStateWithEphemeralPatch` to avoid polluting LoroDoc history:
+For high-frequency temporary changes (dragging, resizing, scrubbing), pass an `ephemeralStore` to `MirrorOptions`. This changes how `setState` works: eligible changes (primitive values on existing Map keys) are automatically routed to the EphemeralStore for real-time sync without creating LoroDoc editing history. No separate API is needed — the same `setState` handles both persistent and ephemeral updates.
 
 ```ts
 import { LoroDoc, EphemeralStore } from "loro-crdt";
 
 const doc = new LoroDoc();
 const eph = new EphemeralStore();
-const mirror = new Mirror({ doc, schema: todoSchema, ephemeralStore: eph });
+const mirror = new Mirror({ doc, schema: mySchema, ephemeralStore: eph });
 
 // Network sync for ephemeral state (your responsibility)
 eph.subscribeLocalUpdates((bytes) => channel.send(bytes));
 channel.on("ephemeral", (bytes) => eph.apply(bytes));
 
-// During drag — intermediate positions go to EphemeralStore, not LoroDoc
-mirror.setStateWithEphemeralPatch(
-    (s) => { s.todos[0].x = e.clientX; },
-    { finalizeTimeout: 1_000 },
+// During drag — x/y are primitives on existing keys → EphemeralStore
+mirror.setState(
+    (s) => { s.items[0].x = e.clientX; s.items[0].y = e.clientY; },
+    { finalizeTimeout: 1_000 }, // auto-commit after 1s of inactivity
 );
 
-// On mouseup — commit to LoroDoc immediately
+// On mouseup — commit ephemeral values to LoroDoc immediately
 mirror.finalizeEphemeralPatches();
 ```
 
-**What goes where:**
+**Routing rules** (with `ephemeralStore` configured):
 
 | Change type | Destination |
 |---|---|
 | Primitive value on an existing key of an existing Map | `EphemeralStore` |
 | New Map / new key / container value / List·Text·Tree ops | `LoroDoc` directly |
 
-See the [core package README](./packages/core/README.md#ephemeral-patches) for full details.
+Without `ephemeralStore`, all changes go to LoroDoc as usual. See the [core package README](./packages/core/README.md#ephemeral-patches) for full details.
 
 ### How `$cid` Works
 

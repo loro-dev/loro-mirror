@@ -73,11 +73,11 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-describe("setStateWithEphemeralPatch", () => {
+describe("setState with ephemeral routing", () => {
     it("should update state immediately with ephemeral values", () => {
         const { mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
                 s.canvas.y = 75;
@@ -98,7 +98,7 @@ describe("setStateWithEphemeralPatch", () => {
     it("should not write ephemeral-eligible changes to LoroDoc", () => {
         const { doc, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
             },
@@ -115,7 +115,7 @@ describe("setStateWithEphemeralPatch", () => {
     it("should store values in EphemeralStore", () => {
         const { eph, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
                 s.canvas.y = 75;
@@ -141,18 +141,17 @@ describe("setStateWithEphemeralPatch", () => {
         mirror.dispose();
     });
 
-    it("should throw if no ephemeralStore configured", () => {
+    it("should write directly to LoroDoc when no ephemeralStore configured", () => {
         const doc = new LoroDoc();
         const mirror = new Mirror({
             doc,
             initialState: { canvas: { x: 0 } },
         });
 
-        expect(() => {
-            mirror.setStateWithEphemeralPatch((s: any) => {
-                s.canvas.x = 50;
-            });
-        }).toThrow("ephemeralStore");
+        mirror.setState((s: any) => {
+            s.canvas.x = 50;
+        });
+        expect((mirror.getState() as any).canvas.x).toBe(50);
 
         mirror.dispose();
     });
@@ -165,7 +164,7 @@ describe("setStateWithEphemeralPatch", () => {
             metadata = m;
         });
 
-        mirror.setStateWithEphemeralPatch((s) => {
+        mirror.setState((s) => {
             s.canvas.x = 50;
         });
 
@@ -181,7 +180,7 @@ describe("Change classification", () => {
         const { doc, mirror } = createTestSetup();
 
         // Adding a new item to a list should go to LoroDoc
-        mirror.setStateWithEphemeralPatch((s) => {
+        mirror.setState((s) => {
             s.items.push({ x: 30, y: 40, name: "item3" } as any);
         });
 
@@ -194,7 +193,7 @@ describe("Change classification", () => {
     it("should route Map primitive value changes to EphemeralStore", () => {
         const { doc, eph, mirror } = createTestSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.items[0].x = 100;
             },
@@ -216,7 +215,7 @@ describe("finalizeEphemeralPatches", () => {
     it("should write ephemeral values to LoroDoc on finalize", () => {
         const { doc, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
                 s.canvas.y = 75;
@@ -242,7 +241,7 @@ describe("finalizeEphemeralPatches", () => {
     it("should skip values that were overwritten by remote peer", () => {
         const { doc, eph, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
             },
@@ -268,7 +267,7 @@ describe("finalizeEphemeralPatches", () => {
         vi.useFakeTimers();
         const { doc, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
             },
@@ -277,7 +276,7 @@ describe("finalizeEphemeralPatches", () => {
 
         vi.advanceTimersByTime(500);
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 100;
             },
@@ -300,7 +299,7 @@ describe("finalizeEphemeralPatches", () => {
         vi.useFakeTimers();
         const { doc, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
             },
@@ -358,7 +357,7 @@ describe("FROM_LORO with ephemeral overlay", () => {
         const { doc, mirror } = createSimpleSetup();
 
         // Set ephemeral patch on x
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
             },
@@ -387,7 +386,7 @@ describe("dispose cleanup", () => {
         vi.useFakeTimers();
         const { mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
             },
@@ -403,16 +402,22 @@ describe("dispose cleanup", () => {
     });
 });
 
-describe("setState still works with ephemeralStore", () => {
-    it("should write directly to LoroDoc as before", () => {
+describe("setState routes through ephemeral when ephemeralStore present", () => {
+    it("should route eligible primitive changes to EphemeralStore, not LoroDoc", () => {
         const { doc, mirror } = createSimpleSetup();
 
         mirror.setState((s) => {
             s.canvas.x = 50;
         });
 
-        expect(doc.getMap("canvas").toJSON().x).toBe(50);
+        // Visible in composed state
         expect(mirror.getState().canvas.x).toBe(50);
+        // Not yet in LoroDoc
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        // After finalize, committed to LoroDoc
+        mirror.finalizeEphemeralPatches();
+        expect(doc.getMap("canvas").toJSON().x).toBe(50);
 
         mirror.dispose();
     });
@@ -429,7 +434,7 @@ describe("Drag-and-drop simulation", () => {
         const TIMEOUT = 500;
 
         // --- drag start: first move ---
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.items[0].x = 5;
                 s.items[0].y = 5;
@@ -444,7 +449,7 @@ describe("Drag-and-drop simulation", () => {
         // --- mid-drag: rapid moves ---
         for (let i = 1; i <= 20; i++) {
             vi.advanceTimersByTime(20); // 20ms between frames (~50fps)
-            mirror.setStateWithEphemeralPatch(
+            mirror.setState(
                 (s) => {
                     s.items[0].x = 5 + i * 10;
                     s.items[0].y = 5 + i * 5;
@@ -481,7 +486,7 @@ describe("Drag-and-drop simulation", () => {
 
         // Simulate 50 rapid moves
         for (let i = 0; i < 50; i++) {
-            mirror.setStateWithEphemeralPatch(
+            mirror.setState(
                 (s) => {
                     s.canvas.x = i * 4;
                     s.canvas.y = i * 3;
@@ -516,7 +521,7 @@ describe("Drag-and-drop simulation", () => {
 
         // Drag moves
         for (let i = 0; i < 10; i++) {
-            mirror.setStateWithEphemeralPatch(
+            mirror.setState(
                 (s) => {
                     s.canvas.x = (i + 1) * 20;
                     s.canvas.y = (i + 1) * 15;
@@ -552,7 +557,7 @@ describe("Drag-and-drop simulation", () => {
 
         // Drag both items at once
         for (let i = 0; i < 10; i++) {
-            mirror.setStateWithEphemeralPatch(
+            mirror.setState(
                 (s) => {
                     s.items[0].x = (i + 1) * 10;
                     s.items[0].y = (i + 1) * 10;
@@ -592,7 +597,7 @@ describe("Drag-and-drop simulation", () => {
 
         // First drag
         for (let i = 0; i < 5; i++) {
-            mirror.setStateWithEphemeralPatch(
+            mirror.setState(
                 (s) => {
                     s.canvas.x = (i + 1) * 10;
                 },
@@ -607,7 +612,7 @@ describe("Drag-and-drop simulation", () => {
 
         // Second drag from finalized position
         for (let i = 0; i < 5; i++) {
-            mirror.setStateWithEphemeralPatch(
+            mirror.setState(
                 (s) => {
                     s.canvas.x = 50 + (i + 1) * 10;
                 },
@@ -639,7 +644,7 @@ describe("Debounce behavior", () => {
         const { doc, mirror } = createSimpleSetup();
         const TIMEOUT = 200;
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 10; },
             { finalizeTimeout: TIMEOUT },
         );
@@ -648,7 +653,7 @@ describe("Debounce behavior", () => {
         vi.advanceTimersByTime(150);
         expect(doc.getMap("canvas").toJSON().x).toBe(0);
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 20; },
             { finalizeTimeout: TIMEOUT },
         );
@@ -669,7 +674,7 @@ describe("Debounce behavior", () => {
         const { doc, mirror } = createSimpleSetup();
 
         // Call without finalizeTimeout — should use 50_000ms default
-        mirror.setStateWithEphemeralPatch((s) => {
+        mirror.setState((s) => {
             s.canvas.x = 42;
         });
 
@@ -710,7 +715,7 @@ describe("Debounce behavior", () => {
             s.canvas.y = 0;
         });
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 42; },
             { finalizeTimeout: 1000 },
         );
@@ -727,7 +732,7 @@ describe("Debounce behavior", () => {
         vi.useFakeTimers();
         const { doc, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 99; },
             { finalizeTimeout: 500 },
         );
@@ -748,7 +753,7 @@ describe("Debounce behavior", () => {
 
         // Simulate resize by dragging bottom-right corner
         for (let i = 0; i < 30; i++) {
-            mirror.setStateWithEphemeralPatch(
+            mirror.setState(
                 (s) => {
                     s.canvas.width = 100 + (i + 1) * 5;
                     s.canvas.height = 100 + (i + 1) * 3;
@@ -791,19 +796,24 @@ describe("Remote ephemeral isolation", () => {
         // State should show the ephemeral overlay
         expect(mirror.getState().canvas.x).toBe(200);
 
-        // Local peer changes a DIFFERENT field via regular setState
+        // Local peer changes a DIFFERENT field via setState
+        // (y=50 is also ephemeral-eligible, so it goes to EphemeralStore)
         mirror.setState((s) => {
             s.canvas.y = 50;
         });
 
-        // y should be committed to LoroDoc
-        expect(doc.getMap("canvas").toJSON().y).toBe(50);
-        // x should NOT have been committed — it's a remote ephemeral value
+        // Neither x nor y committed to LoroDoc yet (both in EphemeralStore)
+        expect(doc.getMap("canvas").toJSON().y).toBe(0);
         expect(doc.getMap("canvas").toJSON().x).toBe(0);
 
-        // State should still show the ephemeral overlay for x
+        // State should show both ephemeral values
         expect(mirror.getState().canvas.x).toBe(200);
         expect(mirror.getState().canvas.y).toBe(50);
+
+        // Finalize: only local writes (y) should commit; remote x=200 is skipped
+        mirror.finalizeEphemeralPatches();
+        expect(doc.getMap("canvas").toJSON().y).toBe(50);
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
 
         mirror.dispose();
     });
@@ -812,7 +822,7 @@ describe("Remote ephemeral isolation", () => {
         const { doc, eph, mirror } = createTestSetup();
 
         // Ephemeral change on item[0].x + structural change (push new item)
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.items[0].x = 999;
                 s.items.push({ x: 50, y: 50, name: "item3" } as any);
@@ -888,7 +898,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("number value change on existing Map key → Eph", () => {
         const { doc, eph, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.settings.count = 42; },
             { finalizeTimeout: 50_000 },
         );
@@ -912,7 +922,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("string value change on existing Map key → Eph", () => {
         const { doc, eph, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.settings.title = "New Title"; },
             { finalizeTimeout: 50_000 },
         );
@@ -933,7 +943,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("boolean value change on existing Map key → Eph", () => {
         const { doc, eph, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.settings.darkMode = true; },
             { finalizeTimeout: 50_000 },
         );
@@ -954,7 +964,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("null value on existing Map key → Eph", () => {
         const { doc, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { (s.settings as any).title = null; },
             { finalizeTimeout: 50_000 },
         );
@@ -968,7 +978,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("primitive change on list item's existing Map key → Eph", () => {
         const { doc, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.items[0].x = 999;
                 s.items[0].name = "moved";
@@ -995,7 +1005,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("push new item to list → LoroDoc", () => {
         const { doc, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch((s) => {
+        mirror.setState((s) => {
             s.items.push({ x: 50, y: 60, name: "newItem" } as any);
         });
 
@@ -1008,7 +1018,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("delete item from list → LoroDoc", () => {
         const { doc, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch((s) => {
+        mirror.setState((s) => {
             s.items.splice(0, 1);
         });
 
@@ -1021,7 +1031,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("LoroText change → LoroDoc", () => {
         const { doc, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch((s) => {
+        mirror.setState((s) => {
             (s as any).notes = "Hello world";
         });
 
@@ -1035,7 +1045,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("mixed: primitive on existing key → Eph, new list item → LoroDoc", () => {
         const { doc, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.items[0].x = 500;                             // → Eph
                 s.items.push({ x: 0, y: 0, name: "new" } as any); // → LoroDoc
@@ -1057,7 +1067,7 @@ describe("Ephemeral routing: only existing LoroMap key primitives go to Eph", ()
     it("mixed: multiple Map key changes → Eph, text change → LoroDoc", () => {
         const { doc, mirror } = createRichSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.settings.count = 77;         // → Eph
                 s.settings.darkMode = true;     // → Eph
@@ -1085,11 +1095,11 @@ describe("finalizeEphemeralPatches flushes all pending to LoroDoc", () => {
         const { doc, eph, mirror } = createSimpleSetup();
 
         // Multiple ephemeral patches
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 50; s.canvas.y = 75; },
             { finalizeTimeout: 50_000 },
         );
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.width = 200; s.canvas.height = 150; },
             { finalizeTimeout: 50_000 },
         );
@@ -1124,7 +1134,7 @@ describe("finalizeEphemeralPatches flushes all pending to LoroDoc", () => {
     it("should flush ephemeral values from multiple containers", () => {
         const { doc, eph, mirror } = createTestSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.items[0].x = 100;
                 s.items[0].y = 200;
@@ -1153,7 +1163,7 @@ describe("finalizeEphemeralPatches flushes all pending to LoroDoc", () => {
     it("should be idempotent (second call is a no-op)", () => {
         const { doc, mirror } = createSimpleSetup();
 
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 42; },
             { finalizeTimeout: 50_000 },
         );
@@ -1175,7 +1185,7 @@ describe("finalizeEphemeralPatches flushes all pending to LoroDoc", () => {
         const { doc, mirror } = createSimpleSetup();
 
         // First round of ephemeral patches
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 50; },
             { finalizeTimeout: 50_000 },
         );
@@ -1183,7 +1193,7 @@ describe("finalizeEphemeralPatches flushes all pending to LoroDoc", () => {
         expect(doc.getMap("canvas").toJSON().x).toBe(50);
 
         // Second round
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => { s.canvas.x = 100; },
             { finalizeTimeout: 50_000 },
         );
@@ -1210,7 +1220,7 @@ describe("$cid preservation", () => {
         const cidBefore = (stateBefore.canvas as any).$cid;
 
         // Apply ephemeral patch
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.canvas.x = 50;
             },
@@ -1233,7 +1243,7 @@ describe("$cid preservation", () => {
         expect(cidBefore).toBeDefined();
 
         // Apply ephemeral patch on list item
-        mirror.setStateWithEphemeralPatch(
+        mirror.setState(
             (s) => {
                 s.items[0].x = 42;
             },
@@ -1786,7 +1796,7 @@ describe("Regression: remote ephemeral not committed by unrelated local ephemera
         expect(mirror.getState().items[0].x).toBe(200);
 
         // Local ephemeral update only touches y
-        mirror.setStateWithEphemeralPatch((s) => {
+        mirror.setState((s) => {
             s.items[0].y = 100;
         });
 
@@ -1854,7 +1864,7 @@ describe("Regression: schema.Ignore() fields preserved with ephemeralStore", () 
         expect((mirror.getState() as Record<string, unknown>).cache).toBe("important");
 
         // Ephemeral update
-        mirror.setStateWithEphemeralPatch(((s: Record<string, unknown>) => {
+        mirror.setState(((s: Record<string, unknown>) => {
             (s.items as Array<Record<string, unknown>>)[0].x = 50;
         }) as never);
         expect((mirror.getState() as Record<string, unknown>).cache).toBe("important");

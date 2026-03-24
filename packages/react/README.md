@@ -265,31 +265,30 @@ addTodo('New todo');
 
 ### Ephemeral Patches
 
-For high-frequency temporary changes (dragging, resizing), pass `ephemeralStore` and use the ephemeral helpers to avoid polluting LoroDoc history:
+For high-frequency temporary changes (dragging, resizing), pass `ephemeralStore` to `useLoroStore` or `LoroProvider`. This changes how `setState` works: eligible changes (primitive values on existing Map keys) are automatically routed to EphemeralStore instead of LoroDoc. No separate update function is needed.
 
 ```tsx
 import { EphemeralStore } from "loro-crdt";
 
 const eph = new EphemeralStore();
 
-// With useLoroStore
-const { state, setStateWithEphemeralPatch, finalizeEphemeralPatches } =
+const { state, setState, finalizeEphemeralPatches } =
     useLoroStore({ doc, schema: mySchema, ephemeralStore: eph });
 
-// During drag
-setStateWithEphemeralPatch(
+// During drag — x is a primitive on an existing key → EphemeralStore
+// No LoroDoc history is created for intermediate positions.
+setState(
     (s) => { s.items[i].x = e.clientX; },
-    { finalizeTimeout: 1_000 },
+    { finalizeTimeout: 1_000 }, // auto-commit after 1s of inactivity
 );
 
-// On mouseup
+// On mouseup — commit ephemeral values to LoroDoc
 finalizeEphemeralPatches();
 ```
 
-With `createLoroContext`, the provider accepts `ephemeralStore` and two extra hooks are available:
+Without `ephemeralStore`, the same `setState` call writes everything to LoroDoc as usual.
 
-- `useLoroEphemeralAction(updater, deps)` — like `useLoroAction`, but routes eligible changes through EphemeralStore
-- `useLoroFinalizeEphemeral()` — returns a callback that commits pending ephemeral patches
+With `createLoroContext`, the provider accepts `ephemeralStore` and `useLoroFinalizeEphemeral()` returns a callback that commits pending ephemeral patches. See the [core package README](../core/README.md#ephemeral-patches) for routing rules.
 
 ## License
 

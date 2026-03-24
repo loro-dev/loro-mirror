@@ -14,7 +14,6 @@ import type {
     SchemaType,
     InferType,
     InferInputType,
-    SetStateOptions,
 } from "loro-mirror";
 
 /**
@@ -56,8 +55,12 @@ export interface LoroMirrorAtomConfig<S extends SchemaType> {
 
     /**
      * Optional EphemeralStore for syncing temporary state without polluting
-     * LoroDoc history. When provided, the ephemeral atoms from
-     * `loroMirrorAtoms` become usable.
+     * LoroDoc history.
+     *
+     * **Setting this changes how writes work:** eligible changes (primitive
+     * values on existing Map keys) are automatically routed to
+     * EphemeralStore instead of LoroDoc. Use `loroMirrorAtoms` to get a
+     * `finalizeAtom` for committing ephemeral values to LoroDoc.
      */
     ephemeralStore?: EphemeralStore;
 }
@@ -130,29 +133,26 @@ export function loroMirrorAtom<S extends SchemaType>(
  * Creates a set of atoms for full Loro Mirror integration including
  * ephemeral patch support.
  *
- * @returns `{ stateAtom, ephemeralAtom, finalizeAtom }`
- *   - `stateAtom` — read/write atom for the synchronized state (same as `loroMirrorAtom`)
- *   - `ephemeralAtom` — write-only atom for ephemeral updates (requires `ephemeralStore` in config)
+ * @returns `{ stateAtom, finalizeAtom }`
+ *   - `stateAtom` — read/write atom for the synchronized state (same as `loroMirrorAtom`).
+ *     When `ephemeralStore` is configured, eligible changes are automatically routed
+ *     through EphemeralStore.
  *   - `finalizeAtom` — write-only atom that commits pending ephemeral patches to LoroDoc
  *
  * @example
  * ```tsx
- * const { stateAtom, ephemeralAtom, finalizeAtom } = loroMirrorAtoms({
+ * const { stateAtom, finalizeAtom } = loroMirrorAtoms({
  *   doc,
  *   schema: canvasSchema,
  *   ephemeralStore: new EphemeralStore(),
  * });
  *
  * function Canvas() {
- *   const [state] = useAtom(stateAtom);
- *   const ephemeralUpdate = useSetAtom(ephemeralAtom);
+ *   const [state, setState] = useAtom(stateAtom);
  *   const finalize = useSetAtom(finalizeAtom);
  *
  *   const onDrag = (x: number, y: number) => {
- *     ephemeralUpdate({
- *       updater: (s) => { s.items[0].x = x; s.items[0].y = y; },
- *       options: { finalizeTimeout: 1_000 },
- *     });
+ *     setState({ x, y });
  *   };
  *
  *   const onDragEnd = () => finalize();
@@ -162,34 +162,11 @@ export function loroMirrorAtom<S extends SchemaType>(
 export function loroMirrorAtoms<S extends SchemaType>(
     config: LoroMirrorAtomConfig<S>,
 ) {
-    const { store, stateAtom, base } = createMirrorAtoms(config);
-
-    const ephemeralAtom = atom(
-        null,
-        (
-            _get,
-            set,
-            update: {
-                updater:
-                    | Partial<InferInputType<S>>
-                    | ((state: InferType<S>) => void)
-                    | ((
-                          state: Readonly<InferInputType<S>>,
-                      ) => InferInputType<S>);
-                options?: SetStateOptions & { finalizeTimeout?: number };
-            },
-        ) => {
-            store.setStateWithEphemeralPatch(
-                update.updater as never,
-                update.options,
-            );
-            set(stateAtom, store.getState() as InferType<S>);
-        },
-    );
+    const { store, base } = createMirrorAtoms(config);
 
     const finalizeAtom = atom(null, (_get, _set) => {
         store.finalizeEphemeralPatches();
     });
 
-    return { stateAtom: base, ephemeralAtom, finalizeAtom };
+    return { stateAtom: base, finalizeAtom };
 }

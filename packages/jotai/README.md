@@ -100,37 +100,38 @@ function TodoApp() {
 
 ### Ephemeral Patches
 
-For high-frequency temporary changes, use `loroMirrorAtoms` (instead of `loroMirrorAtom`) to get ephemeral patch support:
+For high-frequency temporary changes, use `loroMirrorAtoms` (instead of `loroMirrorAtom`) to get a `finalizeAtom` alongside the state atom. Pass `ephemeralStore` and the write side of `stateAtom` automatically routes eligible changes (primitive values on existing Map keys) through EphemeralStore instead of LoroDoc. No separate atom is needed for ephemeral vs persistent updates.
 
 ```tsx
 import { EphemeralStore } from 'loro-crdt';
 import { loroMirrorAtoms } from 'loro-mirror-jotai';
 
-const { stateAtom, ephemeralAtom, finalizeAtom } = loroMirrorAtoms({
+const { stateAtom, finalizeAtom } = loroMirrorAtoms({
     doc,
     schema: canvasSchema,
-    ephemeralStore: new EphemeralStore(),
+    ephemeralStore: new EphemeralStore(), // ← changes how writes work
 });
 
 function Canvas() {
-    const [state] = useAtom(stateAtom);
-    const ephemeralUpdate = useSetAtom(ephemeralAtom);
+    const [state, setState] = useAtom(stateAtom);
     const finalize = useSetAtom(finalizeAtom);
 
     const onDrag = (x: number, y: number) => {
-        ephemeralUpdate({
-            updater: (s) => { s.items[0].x = x; s.items[0].y = y; },
-            options: { finalizeTimeout: 1_000 },
-        });
+        // x/y are primitives on existing keys → EphemeralStore
+        // No LoroDoc history for intermediate positions
+        setState({ x, y });
     };
 
-    const onDragEnd = () => finalize();
+    const onDragEnd = () => finalize(); // commit to LoroDoc
 }
 ```
 
-- `stateAtom` — same read/write atom as `loroMirrorAtom` returns; reflects both LoroDoc and ephemeral state
-- `ephemeralAtom` — write-only; routes eligible changes through EphemeralStore
+Without `ephemeralStore`, `setState` writes everything to LoroDoc as usual.
+
+- `stateAtom` — read/write atom; reads return composed state (`LoroDoc + EphemeralStore overlay`); writes go through ephemeral routing when `ephemeralStore` is configured
 - `finalizeAtom` — write-only; commits pending ephemeral patches to LoroDoc
+
+See the [core package README](../core/README.md#ephemeral-patches) for routing rules and finalization details.
 
 ## License
 
