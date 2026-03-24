@@ -29,6 +29,7 @@ import type { InferContainerOptions } from "../schema/types.js";
 export type { InferContainerOptions } from "../schema/types.js";
 
 import { applyEventBatchToState } from "./loroEventApply.js";
+import { normalizeTreeJson } from "./tree-utils.js";
 import {
     ContainerSchemaType,
     getDefaultValue,
@@ -47,6 +48,11 @@ import {
     SchemaType,
     validateSchema,
 } from "../schema/index.js";
+import {
+    getChildContainerSchema,
+    getChildSchema,
+    getMapFieldSchema,
+} from "../schema/resolver.js";
 import {
     deepEqual,
     inferContainerTypeFromValue,
@@ -594,13 +600,8 @@ export class Mirror<S extends SchemaType> {
                     if (isContainer(value)) {
                         let nestedSchema: ContainerSchemaType | undefined;
                         if (parentSchema && isLoroMapSchema(parentSchema)) {
-                            const candidate = this.getSchemaForMapKey(
-                                parentSchema as
-                                | LoroMapSchema<Record<string, SchemaType>>
-                                | LoroMapSchemaWithCatchall<
-                                    Record<string, SchemaType>,
-                                    SchemaType
-                                >,
+                            const candidate = getMapFieldSchema(
+                                parentSchema,
                                 key,
                             );
                             if (candidate?.type === "any") {
@@ -1658,18 +1659,21 @@ export class Mirror<S extends SchemaType> {
             containerType = tryInferContainerType(item, effectiveInfer);
         }
 
-	        if (containerType && isValueOfContainerType(containerType, item)) {
-	            const childInfer =
-	                containerSchema ? undefined : (effectiveInfer || baseInfer);
-	            this.insertContainerIntoList(
-	                list,
-	                containerSchema,
-	                index,
-	                item,
-	                childInfer,
-	            );
-	            return;
-	        }
+        if (
+            containerType &&
+            (!containerSchema || isValueOfContainerType(containerType, item))
+        ) {
+            const childInfer =
+                containerSchema ? undefined : (effectiveInfer || baseInfer);
+            this.insertContainerIntoList(
+                list,
+                containerSchema,
+                index,
+                item,
+                childInfer,
+            );
+            return;
+        }
 
         // Default to simple insert
         list.insert(index, item);
@@ -1872,7 +1876,7 @@ export class Mirror<S extends SchemaType> {
                 // Skip undefined values - treat them as non-existent fields
                 if (val === undefined) continue;
                 if (mapSchema) {
-                    const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
+                    const fieldSchema = getMapFieldSchema(mapSchema, key);
 
                     if (fieldSchema?.type === "any") {
                         const infer = this.getInferOptionsForChild(
@@ -1880,17 +1884,17 @@ export class Mirror<S extends SchemaType> {
                             fieldSchema,
                         );
                         const ct = tryInferContainerType(val, infer);
-	                        if (ct && isValueOfContainerType(ct, val)) {
-	                            this.insertContainerIntoMap(
-	                                map,
-	                                undefined,
-	                                key,
-	                                val,
-	                                infer,
-	                            );
-	                        } else {
-	                            map.set(key, val);
-	                        }
+                        if (ct) {
+                            this.insertContainerIntoMap(
+                                map,
+                                undefined,
+                                key,
+                                val,
+                                infer,
+                            );
+                        } else {
+                            map.set(key, val);
+                        }
                         continue;
                     }
 
@@ -1913,18 +1917,18 @@ export class Mirror<S extends SchemaType> {
                     continue;
                 }
 
-	                const ct = tryInferContainerType(val, baseInfer);
-	                if (ct && isValueOfContainerType(ct, val)) {
-	                    this.insertContainerIntoMap(
-	                        map,
-	                        undefined,
-	                        key,
-	                        val,
-	                        baseInfer,
-	                    );
-	                } else {
-	                    map.set(key, val);
-	                }
+                const ct = tryInferContainerType(val, baseInfer);
+                if (ct) {
+                    this.insertContainerIntoMap(
+                        map,
+                        undefined,
+                        key,
+                        val,
+                        baseInfer,
+                    );
+                } else {
+                    map.set(key, val);
+                }
             }
         } else if (kind === "List" || kind === "MovableList") {
             const list = container as LoroList | LoroMovableList;
@@ -1947,7 +1951,7 @@ export class Mirror<S extends SchemaType> {
                         applySchemaToInferOptions(itemSchema, baseInfer) ||
                         baseInfer;
                     const ct = tryInferContainerType(item, infer);
-                    if (ct && isValueOfContainerType(ct, item)) {
+                    if (ct) {
                         this.insertContainerIntoList(
                             list,
                             undefined,
@@ -1971,19 +1975,19 @@ export class Mirror<S extends SchemaType> {
                     continue;
                 }
 
-	                if (!itemSchema) {
-	                    const ct = tryInferContainerType(item, baseInfer);
-	                    if (ct && isValueOfContainerType(ct, item)) {
-	                        this.insertContainerIntoList(
-	                            list,
-	                            undefined,
-	                            i,
-	                            item,
-	                            baseInfer,
-	                        );
-	                    } else {
-	                        list.insert(i, item);
-	                    }
+                if (!itemSchema) {
+                    const ct = tryInferContainerType(item, baseInfer);
+                    if (ct) {
+                        this.insertContainerIntoList(
+                            list,
+                            undefined,
+                            i,
+                            item,
+                            baseInfer,
+                        );
+                    } else {
+                        list.insert(i, item);
+                    }
                     continue;
                 }
 
@@ -2084,7 +2088,7 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Normalize current tree JSON from Loro to Mirror node shape
-        const current: unknown[] = normalizeTreeNodes(tree.toJSON());
+        const current: unknown[] = normalizeTreeJsonForMirror(tree.toJSON());
         const next: unknown[] = value as unknown[];
 
         // Optional schema to enable nested node.data diffs
@@ -2163,7 +2167,7 @@ export class Mirror<S extends SchemaType> {
                 // Infer whether this is a container
                 const infer = this.getInferOptionsForContainer(map.id);
                 const ct = tryInferContainerType(val, infer);
-                if (ct && isValueOfContainerType(ct, val)) {
+                if (ct) {
                     // No child schema; insert with inferred container type
                     this.insertContainerIntoMap(
                         map,
@@ -2203,7 +2207,7 @@ export class Mirror<S extends SchemaType> {
                     Record<string, SchemaType>,
                     SchemaType
                 >;
-            const fieldSchema = this.getSchemaForMapKey(mapSchema, key);
+            const fieldSchema = getMapFieldSchema(mapSchema, key);
             if (fieldSchema && fieldSchema.type === "ignore") {
                 // Skip ignore fields: they live only in mirrored state
                 return;
@@ -2211,7 +2215,7 @@ export class Mirror<S extends SchemaType> {
             if (fieldSchema?.type === "any") {
                 const infer = this.getInferOptionsForChild(map.id, fieldSchema);
                 const ct = tryInferContainerType(value, infer);
-                if (ct && isValueOfContainerType(ct, value)) {
+                if (ct) {
                     this.insertContainerIntoMap(
                         map,
                         undefined,
@@ -2541,7 +2545,7 @@ export class Mirror<S extends SchemaType> {
         } else if (kind === "Tree") {
             const t = c as LoroTree;
             // Normalize via toJSON first
-            const normalized = normalizeTreeNodes(t.toJSON());
+            const normalized = normalizeTreeJsonForMirror(t.toJSON());
             // Optionally inject $cid per node.data using an id->cid map from live nodes
             const schema = this.getContainerSchema(t.id);
             const withCid = schema && isLoroTreeSchema(schema);
@@ -2697,27 +2701,6 @@ export class Mirror<S extends SchemaType> {
         return applySchemaToInferOptions(childSchema, base) || base;
     }
 
-    private getSchemaForMapKey(
-        schema:
-            | LoroMapSchema<Record<string, SchemaType>>
-            | LoroMapSchemaWithCatchall<Record<string, SchemaType>, SchemaType>
-            | undefined,
-        key: string,
-    ): SchemaType | undefined {
-        if (!schema) return undefined;
-        if (Object.prototype.hasOwnProperty.call(schema.definition, key)) {
-            return schema.definition[key];
-        }
-        const withCatchall = schema as LoroMapSchemaWithCatchall<
-            Record<string, SchemaType>,
-            SchemaType
-        > & { catchallType?: SchemaType };
-        if (withCatchall.catchallType) {
-            return withCatchall.catchallType;
-        }
-        return undefined;
-    }
-
     private getContainerSchema(
         containerId: ContainerID,
     ): ContainerSchemaType | undefined {
@@ -2728,46 +2711,17 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         childKey: string | number,
     ): ContainerSchemaType | undefined {
-        const containerSchema = this.getSchemaForChild(containerId, childKey);
-
-        if (!containerSchema || !isContainerSchema(containerSchema)) {
-            return undefined;
-        }
-
-        return containerSchema;
+        return getChildContainerSchema(
+            this.getContainerSchema(containerId),
+            childKey,
+        );
     }
 
     private getSchemaForChild(
         containerId: ContainerID,
         childKey: string | number,
     ): SchemaType | undefined {
-        const containerSchema = this.getContainerSchema(containerId);
-
-        if (!containerSchema) {
-            return undefined;
-        }
-
-        if (isLoroMapSchema(containerSchema)) {
-            return this.getSchemaForMapKey(
-                containerSchema as
-                | LoroMapSchema<Record<string, SchemaType>>
-                | LoroMapSchemaWithCatchall<
-                    Record<string, SchemaType>,
-                    SchemaType
-                >,
-                String(childKey),
-            );
-        } else if (
-            isLoroListSchema(containerSchema) ||
-            isLoroMovableListSchema(containerSchema)
-        ) {
-            return containerSchema.itemSchema;
-        } else if (isLoroTreeSchema(containerSchema)) {
-            // Tree nodes' data map schema
-            return containerSchema.nodeSchema;
-        }
-
-        return undefined;
+        return getChildSchema(this.getContainerSchema(containerId), childKey);
     }
 
     /* Get all container IDs registered with the mirror */
@@ -2784,7 +2738,7 @@ export class Mirror<S extends SchemaType> {
 export function toNormalizedJson(doc: LoroDoc) {
     const withEnumerableCid = doc.toJsonWithReplacer((_k, v) => {
         if (isContainer(v) && v.kind() === "Tree") {
-            return normalizeTreeNodes(v.toJSON()) as unknown as typeof v;
+            return normalizeTreeJsonForMirror(v.toJSON()) as unknown as typeof v;
         }
 
         if (isContainer(v) && v.kind() === "Map") {
@@ -2851,31 +2805,11 @@ function normalizeInitialShapeShallow(
     return out;
 }
 
-// Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
-function normalizeTreeNodes(
-    input: unknown[],
-): Array<{ id: string; data: Record<string, unknown>; children: unknown[] }> {
-    if (!Array.isArray(input)) return [];
-    return input.map(mapRawTreeNodeToMirror);
-}
-
-function mapRawTreeNodeToMirror(n: unknown): {
-    id: string;
-    data: Record<string, unknown>;
-    children: unknown[];
-} {
-    const rawId = (n as { id?: unknown })?.id;
-    const id = typeof rawId === "string" ? rawId : "";
-    const meta = (n as { meta?: unknown })?.meta;
-    const data: Record<string, unknown> =
-        typeof meta === "object" && meta != null && !Array.isArray(meta)
-            ? (meta as Record<string, unknown>)
-            : {};
-    const rawChildren = (n as { children?: unknown })?.children;
-    const children: unknown[] = Array.isArray(rawChildren)
-        ? rawChildren.map(mapRawTreeNodeToMirror)
-        : [];
-    return { id, data, children };
+function normalizeTreeJsonForMirror(input: unknown) {
+    return normalizeTreeJson(input, {
+        isTreeData: isObject,
+        createEmptyData: () => ({}),
+    });
 }
 
 // Deep merge initialState into a base state with awareness of the provided root schema.

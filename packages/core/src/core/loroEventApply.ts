@@ -8,6 +8,10 @@ import {
     LoroEventBatch,
     TreeID,
 } from "loro-crdt";
+import {
+    normalizeTreeJson,
+    type NormalizedTreeNode,
+} from "./tree-utils.js";
 import { defineCidProperty, isTreeID } from "./utils.js";
 
 // Plain JSON-like value held in Mirror state (no `any`)
@@ -18,11 +22,7 @@ interface JSONObject {
 }
 
 // State representation for a tree node in mirror state
-interface StateTreeNode {
-    id: string;
-    data: JSONObject;
-    children: StateTreeNode[];
-}
+type StateTreeNode = NormalizedTreeNode<JSONObject>;
 
 function isJSONObject(v: unknown): v is JSONObject {
     return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -357,24 +357,6 @@ function getOrInitNodeData(node: JSONObject): JSONObject {
     return fresh;
 }
 
-// Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
-function normalizeTreeJson(input: unknown[]): StateTreeNode[] {
-    if (!Array.isArray(input)) return [];
-    return input.map(mapRawTreeNode);
-}
-
-function mapRawTreeNode(n: unknown): StateTreeNode {
-    const rawId = (n as { id?: unknown })?.id;
-    const id = typeof rawId === "string" ? rawId : "";
-    const meta = (n as { meta?: unknown })?.meta;
-    const data = isJSONObject(meta) ? meta : {};
-    const rawChildren = (n as { children?: unknown })?.children;
-    const children = Array.isArray(rawChildren)
-        ? rawChildren.map(mapRawTreeNode)
-        : [];
-    return { id, data, children };
-}
-
 /**
  * Apply Map updates to a plain object
  */
@@ -638,7 +620,10 @@ function containerToMirrorJson(c: Container): JSONValue {
         const raw = (
             c as Exclude<Container, LoroCounter>
         ).toJSON() as unknown[];
-        return normalizeTreeJson(raw) as unknown as JSONValue;
+        return normalizeTreeJson(raw, {
+            isTreeData: isJSONObject,
+            createEmptyData: (): JSONObject => ({}),
+        }) as unknown as JSONValue;
     }
     return (
         c as Exclude<Container, LoroCounter>

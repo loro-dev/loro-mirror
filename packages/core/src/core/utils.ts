@@ -6,6 +6,12 @@ import { Container, ContainerID, ContainerType, LoroDoc } from "loro-crdt";
 import { SchemaType } from "../schema/index.js";
 import { Change, InferContainerOptions } from "./mirror.js";
 import { CID_KEY } from "../constants.js";
+import {
+    inferContainerTypeFromValue as inferLoroContainerTypeFromValue,
+    inferSchemaContainerTypeFromValue,
+    isPlainObjectValue,
+    matchesContainerType,
+} from "./container-inference.js";
 
 export function defineCidProperty(target: unknown, cid: ContainerID) {
     if (
@@ -20,14 +26,7 @@ export function defineCidProperty(target: unknown, cid: ContainerID) {
  * Check if a value is an object
  */
 export function isObject(value: unknown): value is Record<string, unknown> {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        !Array.isArray(value) &&
-        !(value instanceof Date) &&
-        !(value instanceof RegExp) &&
-        typeof value !== "function"
-    );
+    return isPlainObjectValue(value);
 }
 
 // Keys that could cause prototype pollution if assigned directly
@@ -362,20 +361,7 @@ export function tryInferContainerType(
     value: unknown,
     defaults?: InferContainerOptions,
 ): ContainerType | undefined {
-    if (isObject(value)) {
-        return "Map";
-    } else if (Array.isArray(value)) {
-        if (defaults?.defaultMovableList) {
-            return "MovableList";
-        }
-        return "List";
-    } else if (typeof value === "string") {
-        if (defaults?.defaultLoroText) {
-            return "Text";
-        } else {
-            return;
-        }
-    }
+    return inferLoroContainerTypeFromValue(value, defaults);
 }
 
 export function applySchemaToInferOptions(
@@ -396,19 +382,7 @@ export function isValueOfContainerType(
     containerType: ContainerType,
     value: unknown,
 ): boolean {
-    switch (containerType) {
-        case "MovableList":
-        case "List":
-            return typeof value === "object" && Array.isArray(value);
-        case "Map":
-            return isObject(value);
-        case "Text":
-            return typeof value === "string" && value !== null;
-        case "Tree":
-            return typeof value === "object" && Array.isArray(value);
-        default:
-            return false;
-    }
+    return matchesContainerType(containerType, value);
 }
 
 /* Infer container type from value */
@@ -416,20 +390,7 @@ export function inferContainerTypeFromValue(
     value: unknown,
     defaults?: InferContainerOptions,
 ): "loro-map" | "loro-list" | "loro-text" | "loro-movable-list" | undefined {
-    if (isObject(value)) {
-        return "loro-map";
-    } else if (Array.isArray(value)) {
-        if (defaults?.defaultMovableList) {
-            return "loro-movable-list";
-        }
-        return "loro-list";
-    } else if (typeof value === "string") {
-        if (defaults?.defaultLoroText) {
-            return "loro-text";
-        }
-    } else {
-        return;
-    }
+    return inferSchemaContainerTypeFromValue(value, defaults);
 }
 
 export type ObjectLike = Record<string, unknown>;
