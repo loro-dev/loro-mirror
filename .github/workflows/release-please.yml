@@ -5,6 +5,12 @@ on:
         branches:
             - main
     workflow_dispatch:
+        inputs:
+            publish_existing:
+                description: Publish unpublished workspace packages without creating a new release
+                required: false
+                default: false
+                type: boolean
 
 permissions:
     contents: write
@@ -12,6 +18,7 @@ permissions:
 
 jobs:
     release:
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish_existing) }}
         runs-on: ubuntu-latest
         outputs:
             releases_created: ${{ steps.release.outputs.releases_created }}
@@ -27,7 +34,7 @@ jobs:
 
     publish:
         needs: release
-        if: ${{ needs.release.outputs.releases_created == 'true' }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.publish_existing) || needs.release.outputs.releases_created == 'true') }}
         runs-on: ubuntu-latest
         permissions:
             contents: read
