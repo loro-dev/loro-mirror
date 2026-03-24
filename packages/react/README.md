@@ -145,7 +145,7 @@ function TodoItem({ todo }) {
 Creates and manages a Loro Mirror store.
 
 ```tsx
-const { state, setState, store } = useLoroStore({
+const { state, setState, finalizeEphemeralPatches, store } = useLoroStore({
   doc,
   schema,
   initialState,

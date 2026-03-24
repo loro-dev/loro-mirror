@@ -91,11 +91,6 @@ export enum UpdateSource {
      * State recomposed due to an EphemeralStore change.
      */
     EPHEMERAL = "EPHEMERAL",
-
-    /**
-     * Initial or manual sync operations.
-     */
-    INITIAL = "INITIAL",
 }
 
 /**

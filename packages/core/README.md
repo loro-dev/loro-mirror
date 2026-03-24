@@ -48,7 +48,7 @@ store.setState((s) => {
 
 // Subscribe
 const unsubscribe = store.subscribe((next, { source }) => {
-    // source: "LORO" | "MIRROR" | "EPHEMERAL" | "INITIAL"
+    // source: "LORO" | "MIRROR" | "EPHEMERAL"
 });
 ```
 
@@ -77,15 +77,16 @@ Trees are advanced usage; see Advanced: Trees at the end.
     - validateUpdates: Validate on `setState`
     - throwOnValidationError: Throw if validation fails (default false)
     - debug: Verbose logging
-    - checkStateConsistency: Extra runtime check that `deepEqual(state, toNormalizedJson(doc))` after updates
+    - checkStateConsistency: Extra runtime check that the doc-backed base state still matches `toNormalizedJson(doc)` after non-ephemeral `setState` updates
     - inferOptions: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` for container inference when schema is missing
 - Methods:
     - getState(): Current state
     - setState(updater | partial, options?): Mutate a draft or return a new object. Runs synchronously so downstream logic can immediately read the latest state. When `ephemeralStore` is configured, eligible changes are automatically routed through EphemeralStore. See [Ephemeral Patches](#ephemeral-patches) below.
         - options: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }` — tags surface in subscriber metadata; commit metadata is forwarded to the underlying Loro commit; `finalizeTimeout` controls the debounce delay before ephemeral values auto-commit.
+    - patchEphemeral(containerId, key, value, options?): Fast path for one primitive write to an existing `LoroMap` key through `EphemeralStore`. Requires `ephemeralStore`.
     - finalizeEphemeralPatches(): Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
     - subscribe((state, metadata) => void): Subscribe; returns unsubscribe
-        - metadata: `{ source: LORO | MIRROR | EPHEMERAL | INITIAL; tags?: string[] }`
+        - metadata: `{ source: LORO | MIRROR | EPHEMERAL; tags?: string[] }`
     - dispose(): Remove all subscriptions
 
 Types: `UpdateSource`, `UpdateMetadata`, `SetStateOptions`.
@@ -302,7 +303,7 @@ For more React patterns (selectors, actions, provider), see `packages/react/READ
 
 - Use an `idSelector` whenever list items have stable IDs to get efficient moves instead of delete+insert.
 - `setState` accepts an updater that either mutates a draft or returns a new object — use whichever style you prefer.
-- Subscriptions receive `{ source: LORO | MIRROR | EPHEMERAL | INITIAL, tags?: string[] }`.
+- Subscriptions receive `{ source: LORO | MIRROR | EPHEMERAL, tags?: string[] }`.
 
 ## License
 

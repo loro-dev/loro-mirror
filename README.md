@@ -365,16 +365,17 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`validateUpdates`**: boolean (default `true`) – validate new state against schema.
     - **`throwOnValidationError`**: boolean (default `false`) – throw on invalid updates.
     - **`debug`**: boolean (default `false`) – log diffs and applied changes.
-    - **`checkStateConsistency`**: boolean (default `false`) – after each `setState`, assert the in-memory state equals the normalized `LoroDoc` snapshot.
+    - **`checkStateConsistency`**: boolean (default `false`) – after non-ephemeral `setState` calls, assert the doc-backed base state equals the normalized `LoroDoc` snapshot.
     - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` – influence container-type inference when inserting containers from plain values.
 
 - `getState(): State`: Returns the current in-memory state view.
 - `setState(updater, options?)`: Update state and sync to Loro. Runs synchronously. When `ephemeralStore` is configured, eligible changes are automatically routed through EphemeralStore. See [Ephemeral Patches](#ephemeral-patches).
     - **`updater`**: either a partial object to shallow-merge or a function that may mutate a draft (Immer-style) or return a new state object.
     - **`options`**: `{ tags?: string | string[]; finalizeTimeout?: number }` – tags are delivered to subscribers in metadata; `finalizeTimeout` (default 50 000 ms) controls the debounce delay before ephemeral values auto-commit.
+- `patchEphemeral(containerId, key, value, options?)`: Fast path for writing one primitive value to an existing `LoroMap` key through `EphemeralStore`. Requires `ephemeralStore`.
 - `finalizeEphemeralPatches()`: Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
 - `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
-    - **`source`**: `UpdateSource` – `LORO` when changes came from the doc, `MIRROR` when a local Mirror API changed state, `EPHEMERAL` when state changed due to an EphemeralStore update, `INITIAL` for initial/manual syncs.
+    - **`source`**: `UpdateSource` – `LORO` when changes came from the doc, `MIRROR` when a local Mirror API changed state, `EPHEMERAL` when state changed due to an EphemeralStore update.
     - **`tags`**: `string[] | undefined` – tags provided via `setState`.
 - `dispose()`: Unsubscribe internal listeners and clear subscribers.
 - `checkStateConsistency()`: Manually trigger the consistency assertion described above.
@@ -384,7 +385,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 
 - **Lists and IDs**: If your list schema provides an `idSelector`, list updates use minimal add/remove/update/move operations; otherwise index-based diffs are applied.
 - **Container inference**: When schema is missing/ambiguous for a field, the mirror infers container types from values. `inferOptions.defaultLoroText` makes strings become `LoroText`; `inferOptions.defaultMovableList` makes arrays become `LoroMovableList`.
-- **Consistency checks**: Enabling `checkStateConsistency` (or calling the method directly) is useful while developing or writing tests; it throws if Mirror state diverges from the normalized document snapshot.
+- **Consistency checks**: Enabling `checkStateConsistency` is useful while developing or writing tests; it auto-checks only non-ephemeral `setState` calls. Calling `checkStateConsistency()` manually compares the doc-backed base state against the normalized document snapshot, so active ephemeral overlay values are intentionally ignored.
 
 ### Types
 
@@ -392,7 +393,6 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - `LORO` – applied due to incoming `LoroDoc` changes
     - `MIRROR` – applied due to a local Mirror API call such as `setState`, `patchEphemeral`, or `finalizeEphemeralPatches`
     - `EPHEMERAL` – state recomposed due to an EphemeralStore change
-    - `INITIAL` – initial/manual sync context
 - `UpdateMetadata`: `{ source: UpdateSource; tags?: string[] }`
 - `SetStateOptions`: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }`
 

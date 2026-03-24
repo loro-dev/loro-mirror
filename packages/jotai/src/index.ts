@@ -16,7 +16,7 @@ import type {
     InferInputType,
 } from "loro-mirror";
 
-type MirrorUpdateSource = "LORO" | "MIRROR" | "EPHEMERAL" | "INITIAL";
+type MirrorUpdateSource = "LORO" | "MIRROR" | "EPHEMERAL";
 
 /**
  * Configuration for creating a Loro Mirror atom
