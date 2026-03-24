@@ -131,6 +131,7 @@ export function validateSchema<S extends SchemaType>(
     value: unknown,
 ): { valid: boolean; errors?: string[] } {
     const errors: string[] = [];
+    const actualType = (schema as BaseSchemaType).type;
 
     // Check if value is required
     if (schema.options.required && (value === undefined || value === null)) {
@@ -148,7 +149,7 @@ export function validateSchema<S extends SchemaType>(
     }
 
     // Validate based on schema type
-    switch (schema.type) {
+    switch (actualType) {
         case "any": {
             // Accept JSON-like values (primitives, arrays, and plain objects)
             if (
@@ -171,7 +172,7 @@ export function validateSchema<S extends SchemaType>(
             validateTransformablePrimitive(
                 schema,
                 value,
-                schema.type,
+                actualType,
                 errors,
             );
             break;
@@ -329,13 +330,13 @@ export function validateSchema<S extends SchemaType>(
                     }
                 }
             } else {
-                errors.push(`Should be a schema, but got ${(schema as any).type}`);
+                errors.push(`Should be a schema, but got ${actualType}`);
             }
             break;
 
         default:
             errors.push(
-                `Unknown schema type: ${(schema as any).type}`
+                `Unknown schema type: ${actualType}`
             );
     }
 
@@ -379,7 +380,7 @@ function validateTransformablePrimitive<S extends SchemaType>(
         if (transform.validate) {
             try {
                 // Value is known to be non-null/undefined at this point
-                const result = transform.validate(value as {});
+                const result = transform.validate(value);
                 if (result !== true) {
                     errors.push(
                         typeof result === "string"

@@ -205,7 +205,7 @@ export function valuesEqual(
     } else if (strategy === "encoded-value-equality") {
         const encodedOld = applyEncode(schema, oldValue);
         const encodedNew = applyEncode(schema, newValue);
-        return encodedOld == encodedNew;
+        return encodedOld === encodedNew;
     } else if (strategy === "deep-equality") {
         return deepEqual(oldValue, newValue);
     } else {
@@ -757,7 +757,7 @@ export function safeStringify(value: unknown, indent = 2): string {
             return result;
         }
 
-        return String(val);
+        return Object.prototype.toString.call(val);
     }
 
     return JSON.stringify(replacer(value), null, indent);

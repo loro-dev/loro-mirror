@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { LoroDoc } from "loro-crdt";
 import { Mirror } from "../src/core/mirror.js";
+import { valuesEqual } from "../src/core/utils.js";
 import { schema } from "../src/schema/index.js";
 
 /**
@@ -203,6 +204,20 @@ describe("Transform Equality Strategy", () => {
 
             // Should encode for comparison
             expect(countAfterSecond).toBeGreaterThan(countAfterFirst);
+        });
+
+        it("treats null and undefined as different values", () => {
+            const fieldSchema = schema
+                .String({ required: false })
+                .transform({
+                    decode: (s: string) => new Date(s),
+                    encode: (d: Date) => d.toISOString(),
+                    isEqual: "encoded-value-equality" as const,
+                });
+
+            expect(
+                valuesEqual(fieldSchema, null, undefined, "reference-equality"),
+            ).toBe(false);
         });
     });
 
