@@ -1,5 +1,5 @@
 {
-    "packages/core": "1.2.2",
-    "packages/react": "1.2.2",
-    "packages/jotai": "1.2.2"
+    "packages/core": "2.0.0",
+    "packages/react": "2.0.0",
+    "packages/jotai": "2.0.0"
 }
