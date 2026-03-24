@@ -83,7 +83,6 @@ Trees are advanced usage; see Advanced: Trees at the end.
     - getState(): Current state
     - setState(updater | partial, options?): Mutate a draft or return a new object. Runs synchronously so downstream logic can immediately read the latest state. When `ephemeralStore` is configured, eligible changes are automatically routed through EphemeralStore. See [Ephemeral Patches](#ephemeral-patches) below.
         - options: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }` — tags surface in subscriber metadata; commit metadata is forwarded to the underlying Loro commit; `finalizeTimeout` controls the debounce delay before ephemeral values auto-commit.
-    - patchEphemeral(containerId, key, value, options?): Fast path for one primitive write to an existing `LoroMap` key through `EphemeralStore`. Requires `ephemeralStore`.
     - finalizeEphemeralPatches(): Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
     - subscribe((state, metadata) => void): Subscribe; returns unsubscribe
         - metadata: `{ source: LORO | MIRROR | EPHEMERAL; tags?: string[] }`

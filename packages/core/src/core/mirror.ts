@@ -2271,6 +2271,10 @@ export class Mirror<S extends SchemaType> {
         return true;
     }
 
+    /**
+     * @internal
+     * Advanced ephemeral hot path. Prefer `setState` for the public API surface.
+     */
     patchEphemeral(
         containerId: ContainerID,
         key: string,

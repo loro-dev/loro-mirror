@@ -372,7 +372,6 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 - `setState(updater, options?)`: Update state and sync to Loro. Runs synchronously. When `ephemeralStore` is configured, eligible changes are automatically routed through EphemeralStore. See [Ephemeral Patches](#ephemeral-patches).
     - **`updater`**: either a partial object to shallow-merge or a function that may mutate a draft (Immer-style) or return a new state object.
     - **`options`**: `{ tags?: string | string[]; finalizeTimeout?: number }` – tags are delivered to subscribers in metadata; `finalizeTimeout` (default 50 000 ms) controls the debounce delay before ephemeral values auto-commit.
-- `patchEphemeral(containerId, key, value, options?)`: Fast path for writing one primitive value to an existing `LoroMap` key through `EphemeralStore`. Requires `ephemeralStore`.
 - `finalizeEphemeralPatches()`: Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
 - `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
     - **`source`**: `UpdateSource` – `LORO` when changes came from the doc, `MIRROR` when a local Mirror API changed state, `EPHEMERAL` when state changed due to an EphemeralStore update.
@@ -391,7 +390,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 
 - `UpdateSource`:
     - `LORO` – applied due to incoming `LoroDoc` changes
-    - `MIRROR` – applied due to a local Mirror API call such as `setState`, `patchEphemeral`, or `finalizeEphemeralPatches`
+    - `MIRROR` – applied due to a local Mirror API call such as `setState` or `finalizeEphemeralPatches`
     - `EPHEMERAL` – state recomposed due to an EphemeralStore change
 - `UpdateMetadata`: `{ source: UpdateSource; tags?: string[] }`
 - `SetStateOptions`: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }`
