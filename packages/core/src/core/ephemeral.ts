@@ -6,14 +6,10 @@
  * and finalizing (committing) patches to LoroDoc.
  */
 import {
-    Container,
     ContainerID,
     EphemeralStore,
-    isContainer,
     LoroDoc,
-    LoroList,
     LoroMap,
-    LoroMovableList,
 } from "loro-crdt";
 
 /** The value type accepted by EphemeralStore.set() */
@@ -23,11 +19,21 @@ import { CID_KEY } from "../constants.js";
 import { DebounceTimer } from "./debounce-timer.js";
 
 /**
+ * A Change that has been validated as eligible for ephemeral storage.
+ * Guarantees: `container` is a valid ContainerID (not ""), `key` is a string.
+ */
+export interface EphemeralEligibleChange {
+    kind: "set" | "insert";
+    container: ContainerID;
+    key: string;
+    value: unknown;
+}
+
+/**
  * Context needed from Mirror for path resolution.
  */
 export interface PathResolverContext {
     doc: LoroDoc;
-    rootPathById: Map<ContainerID, string[]>;
 }
 
 /**
@@ -55,17 +61,18 @@ export class EphemeralPatchManager {
     /**
      * Check if a change is eligible for ephemeral storage.
      * Must be a primitive value change on an existing Map key.
+     * Acts as a type guard — narrowing to {@link EphemeralEligibleChange}.
      */
-    isEligible(change: Change, doc: LoroDoc): boolean {
+    isEligible(change: Change, doc: LoroDoc): change is EphemeralEligibleChange {
         if (change.kind !== "set" && change.kind !== "insert") return false;
-        if (!change.container || (change.container as string) === "") return false;
+        if (!change.container) return false;
         if (!("key" in change) || typeof change.key !== "string") return false;
 
         const value = change.value;
         if (value !== null && typeof value === "object") return false;
 
         try {
-            const container = doc.getContainerById(change.container as ContainerID);
+            const container = doc.getContainerById(change.container);
             if (!container || container.kind() !== "Map") return false;
             const map = container as LoroMap;
             return map.keys().includes(change.key);
@@ -77,10 +84,9 @@ export class EphemeralPatchManager {
     /**
      * Write a set of ephemeral-eligible changes to the EphemeralStore.
      */
-    writeChanges(changes: Change[]): void {
+    writeChanges(changes: EphemeralEligibleChange[]): void {
         for (const change of changes) {
-            if (!("key" in change) || typeof change.key !== "string") continue;
-            const containerId = change.container as ContainerID;
+            const containerId = change.container;
             const key = change.key;
             const value = change.value;
 
@@ -109,10 +115,12 @@ export class EphemeralPatchManager {
      * Returns the base unchanged if no patches exist.
      */
     compose<T>(base: T, ctx: PathResolverContext): T {
+        type Obj = Record<string | number | symbol, unknown>;
+
         const allStates = this.store.getAllStates();
         if (!allStates || Object.keys(allStates).length === 0) return base;
 
-        let composed = base;
+        let composed = base as Obj;
         let hasChanges = false;
 
         for (const [containerIdStr, fields] of Object.entries(allStates)) {
@@ -122,15 +130,11 @@ export class EphemeralPatchManager {
             if (!path || path.length === 0) continue;
 
             // Navigate to the target object in state
-            let target: Record<string, unknown> | undefined =
-                composed as unknown as Record<string, unknown>;
+            let target: Obj | undefined = composed;
             for (let i = 0; i < path.length; i++) {
-                const seg = path[i];
-                const v = typeof seg === "number"
-                    ? (target as unknown as unknown[])[seg]
-                    : target[seg];
+                const v = target[path[i]];
                 if (v && typeof v === "object") {
-                    target = v as Record<string, unknown>;
+                    target = v as Obj;
                 } else {
                     target = undefined;
                     break;
@@ -149,44 +153,39 @@ export class EphemeralPatchManager {
             if (!needsClone) continue;
 
             if (!hasChanges) {
-                composed = Object.assign(
-                    {},
-                    composed as unknown as Record<string, unknown>,
-                ) as unknown as T;
+                composed = { ...composed };
                 hasChanges = true;
             }
 
             // Immutably clone each segment along the path, preserving non-enumerable $cid
-            let node: unknown = composed;
+            let node: Obj = composed;
             for (let i = 0; i < path.length; i++) {
                 const seg = path[i];
-                const parent = node as Record<string | number, unknown>;
-                const child = parent[seg];
-                let clone: unknown;
+                const child = node[seg];
+                let clone: Obj;
                 if (Array.isArray(child)) {
-                    clone = [...child];
+                    clone = [...child] as unknown as Obj;
                 } else {
-                    const obj = child as Record<string, unknown>;
+                    const obj = child as Obj;
                     clone = { ...obj };
                     // Preserve non-enumerable $cid property (set via defineCidProperty)
-                    const cid = (obj as Record<string | symbol, unknown>)[CID_KEY];
+                    const cid = obj[CID_KEY];
                     if (cid !== undefined) {
                         Object.defineProperty(clone, CID_KEY, { value: cid });
                     }
                 }
-                parent[seg] = clone;
+                node[seg] = clone;
                 node = clone;
             }
-            target = node as Record<string, unknown>;
 
             for (const [key, value] of Object.entries(fieldEntries)) {
-                if (key in target) {
-                    target[key] = value;
+                if (key in node) {
+                    node[key] = value;
                 }
             }
         }
 
-        return composed;
+        return composed as T;
     }
 
     /**
@@ -267,72 +266,16 @@ export class EphemeralPatchManager {
 
     /**
      * Resolve a ContainerID to a path of keys/indices from the state root.
-     * Always computed fresh — no caching, since list indices can change after moves.
+     * Delegates to LoroDoc's built-in `getPathToContainer`.
      */
     resolvePath(
         containerId: ContainerID,
         ctx: PathResolverContext,
     ): (string | number)[] | undefined {
-        const rootPath = ctx.rootPathById.get(containerId);
-        if (rootPath) {
-            return rootPath;
-        }
-
         try {
-            const container = ctx.doc.getContainerById(containerId);
-            if (!container) return undefined;
-
-            const segments: (string | number)[] = [];
-            let current: Container | undefined = container;
-            while (current) {
-                const parent: Container | undefined = current.parent();
-                if (!parent) {
-                    const rootKey = ctx.rootPathById.get(current.id);
-                    if (rootKey) {
-                        segments.unshift(...rootKey);
-                        break;
-                    }
-                    return undefined;
-                }
-
-                if (parent.kind() === "Map") {
-                    const map = parent as LoroMap;
-                    for (const k of map.keys()) {
-                        const v = map.get(k);
-                        if (isContainer(v) && v.id === current.id) {
-                            segments.unshift(k);
-                            break;
-                        }
-                    }
-                } else if (
-                    parent.kind() === "List" ||
-                    parent.kind() === "MovableList"
-                ) {
-                    const list = parent as LoroList | LoroMovableList;
-                    const len = list.length;
-                    let found = false;
-                    for (let i = 0; i < len; i++) {
-                        const v = list.get(i);
-                        if (isContainer(v) && v.id === current.id) {
-                            segments.unshift(i);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) return undefined;
-                } else {
-                    return undefined;
-                }
-                current = parent;
-            }
-
-            if (segments.length > 0) {
-                return segments;
-            }
+            return ctx.doc.getPathToContainer(containerId) ?? undefined;
         } catch {
-            // Container not found
+            return undefined;
         }
-
-        return undefined;
     }
 }

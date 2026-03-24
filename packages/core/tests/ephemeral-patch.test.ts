@@ -1407,10 +1407,7 @@ describe("EphemeralPatchManager edge cases", () => {
         it("should return base when store is empty", () => {
             const { manager } = createManager();
             const doc = new LoroDoc();
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map(),
-            };
+            const ctx: PathResolverContext = { doc };
 
             const base = { a: 1 };
             expect(manager.compose(base, ctx)).toBe(base); // same reference
@@ -1426,10 +1423,7 @@ describe("EphemeralPatchManager edge cases", () => {
             // Put a non-object "field" into the store
             store.set(map.id, null as any);
 
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([[map.id, ["root"]]]),
-            };
+            const ctx: PathResolverContext = { doc };
 
             const base = { root: { x: 0 } };
             // Should not crash, just return base
@@ -1445,10 +1439,7 @@ describe("EphemeralPatchManager edge cases", () => {
             const fakeId = "cid:fake@0" as ContainerID;
             store.set(fakeId, { x: 100 } as any);
 
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map(), // no path for fakeId
-            };
+            const ctx: PathResolverContext = { doc };
 
             const base = { x: 0 };
             const result = manager.compose(base, ctx);
@@ -1466,13 +1457,7 @@ describe("EphemeralPatchManager edge cases", () => {
             // Store a patch on the nested container
             store.set(nested.id, { color: "blue" } as any);
 
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([
-                    [map.id, ["settings"]],
-                    [nested.id, ["settings", "theme"]],
-                ]),
-            };
+            const ctx: PathResolverContext = { doc };
 
             // Create a base where "settings" is a primitive (not an object), so navigation fails
             const base = { settings: "not-an-object" };
@@ -1490,10 +1475,7 @@ describe("EphemeralPatchManager edge cases", () => {
             // Store a patch with the same value
             store.set(map.id, { x: 42 } as any);
 
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([[map.id, ["root"]]]),
-            };
+            const ctx: PathResolverContext = { doc };
 
             const base = { root: { x: 42 } };
             const result = manager.compose(base, ctx);
@@ -1510,13 +1492,7 @@ describe("EphemeralPatchManager edge cases", () => {
 
             store.set(itemMap.id, { x: 99 } as any);
 
-            // Only register the list in rootPathById — let resolvePath walk up to discover the index
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([
-                    [list.id, ["items"]],
-                ]),
-            };
+            const ctx: PathResolverContext = { doc };
 
             const base = { items: [{ x: 0 }] };
             const result = manager.compose(base, ctx);
@@ -1539,11 +1515,6 @@ describe("EphemeralPatchManager edge cases", () => {
             const doc = createDocWithMap();
             const mapId = doc.getMap("root").id;
 
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([[mapId, ["root"]]]),
-            };
-
             // Write a change
             manager.writeChanges(
                 [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
@@ -1563,11 +1534,6 @@ describe("EphemeralPatchManager edge cases", () => {
             const { store, manager } = createManager();
             const doc = createDocWithMap();
             const mapId = doc.getMap("root").id;
-
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([[mapId, ["root"]]]),
-            };
 
             // Write local change on x only
             manager.writeChanges(
@@ -1592,8 +1558,8 @@ describe("EphemeralPatchManager edge cases", () => {
         });
     });
 
-    describe("resolvePath fallback (container tree walk)", () => {
-        it("should resolve path by walking up container parents", () => {
+    describe("resolvePath (via getPathToContainer)", () => {
+        it("should resolve path for nested containers", () => {
             const doc = new LoroDoc();
             const store = new EphemeralStore();
             const manager = new EphemeralPatchManager(store);
@@ -1604,13 +1570,9 @@ describe("EphemeralPatchManager edge cases", () => {
             colorMap.set("value", "red");
             doc.commit();
 
-            // Only register the root in rootPathById
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([[root.id, ["root"]]]),
-            };
+            const ctx: PathResolverContext = { doc };
 
-            // Write ephemeral change on the nested container (not in rootPathById)
+            // Write ephemeral change on the nested container
             store.set(colorMap.id, { value: "blue" } as any);
 
             const base = { root: { color: { value: "red" } } };
@@ -1629,11 +1591,7 @@ describe("EphemeralPatchManager edge cases", () => {
             itemMap.set("x", 0);
             doc.commit();
 
-            // Only register the list in rootPathById (not the item map)
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([[list.id, ["items"]]]),
-            };
+            const ctx: PathResolverContext = { doc };
 
             store.set(itemMap.id, { x: 42 } as any);
 
@@ -1642,23 +1600,16 @@ describe("EphemeralPatchManager edge cases", () => {
             expect(result.items[0].x).toBe(42);
         });
 
-        it("should return undefined for container whose root is not in rootPathById", () => {
+        it("should return undefined for unknown container ID", () => {
             const doc = new LoroDoc();
             const store = new EphemeralStore();
             const manager = new EphemeralPatchManager(store);
 
-            // Create a standalone map not connected to any root path
-            const orphan = doc.getMap("orphan");
-            orphan.set("x", 0);
-            doc.commit();
+            // Use a fake container ID that doesn't exist in the doc
+            const fakeId = "cid:fake@0" as ContainerID;
+            store.set(fakeId, { x: 99 } as any);
 
-            // Empty rootPathById — nothing is registered
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map(),
-            };
-
-            store.set(orphan.id, { x: 99 } as any);
+            const ctx: PathResolverContext = { doc };
 
             const base = { orphan: { x: 0 } };
             const result = manager.compose(base, ctx);
@@ -1737,10 +1688,7 @@ describe("EphemeralPatchManager edge cases", () => {
             const doc = createDocWithMap();
             const mapId = doc.getMap("root").id;
 
-            const ctx: PathResolverContext = {
-                doc,
-                rootPathById: new Map([[mapId, ["root"]]]),
-            };
+            const ctx: PathResolverContext = { doc };
 
             let callbackFired = false;
             manager.writeChanges(

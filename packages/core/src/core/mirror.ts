@@ -18,7 +18,7 @@ import {
     LoroTree,
     TreeID,
 } from "loro-crdt";
-import { EphemeralPatchManager, type PathResolverContext } from "./ephemeral.js";
+import { EphemeralPatchManager, type EphemeralEligibleChange, type PathResolverContext } from "./ephemeral.js";
 import type { InferContainerOptions } from "../schema/types.js";
 export type { InferContainerOptions } from "../schema/types.js";
 
@@ -1648,7 +1648,7 @@ export class Mirror<S extends SchemaType> {
 
     /** Path resolver context for EphemeralPatchManager */
     private get ephemeralCtx(): PathResolverContext {
-        return { doc: this.doc, rootPathById: this.rootPathById };
+        return { doc: this.doc };
     }
 
     /**
@@ -2272,7 +2272,7 @@ export class Mirror<S extends SchemaType> {
                 this.options?.inferOptions,
             );
 
-            const ephemeralChanges: Change[] = [];
+            const ephemeralChanges: EphemeralEligibleChange[] = [];
             const loroChanges: Change[] = [];
             for (const change of changes) {
                 if (this.ephemeralManager.isEligible(change, this.doc)) {
