@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v1.2.2...loro-mirror-jotai-v2.0.0) (2026-03-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **core:** add ephemeral sync and replace direction with source ([#77](https://github.com/loro-dev/loro-mirror/issues/77))
+
+### Features
+
+* **core:** add ephemeral sync and replace direction with source ([#77](https://github.com/loro-dev/loro-mirror/issues/77)) ([267d552](https://github.com/loro-dev/loro-mirror/commit/267d5522ecdd0875241a73f0e23d8265acf7fa02))
+
 ## [1.2.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v1.2.1...loro-mirror-jotai-v1.2.2) (2026-01-13)
 
 
