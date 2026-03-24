@@ -31,7 +31,9 @@ export class DebounceTimer {
         this.callback = callback;
 
         if (this.timer == null) {
-            this.timer = setTimeout(() => this.onFired(), delay);
+            this.timer = setTimeout(() => {
+                this.onFired();
+            }, delay);
         }
     }
 
@@ -54,7 +56,9 @@ export class DebounceTimer {
         this.timer = undefined;
         const remaining = this.debounceUntil - Date.now();
         if (remaining > 0) {
-            this.timer = setTimeout(() => this.onFired(), remaining);
+            this.timer = setTimeout(() => {
+                this.onFired();
+            }, remaining);
         } else {
             const cb = this.callback;
             this.callback = undefined;

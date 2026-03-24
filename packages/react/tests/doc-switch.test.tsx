@@ -43,14 +43,14 @@ describe("React hooks - switching LoroDoc", () => {
         }
 
         const { rerender } = render(<CounterView doc={docA} />);
-        await waitFor(() =>
-            expect(screen.getByTestId("counter").textContent).toBe("1"),
-        );
+        await waitFor(() => {
+            expect(screen.getByTestId("counter").textContent).toBe("1");
+        });
 
         rerender(<CounterView doc={docB} />);
-        await waitFor(() =>
-            expect(screen.getByTestId("counter").textContent).toBe("2"),
-        );
+        await waitFor(() => {
+            expect(screen.getByTestId("counter").textContent).toBe("2");
+        });
     });
 
     it("createLoroContext hooks reflect the new doc state after provider doc changes", async () => {
@@ -78,18 +78,18 @@ describe("React hooks - switching LoroDoc", () => {
                 <StateView />
             </LoroProvider>,
         );
-        await waitFor(() =>
-            expect(screen.getByTestId("counter").textContent).toBe("10"),
-        );
+        await waitFor(() => {
+            expect(screen.getByTestId("counter").textContent).toBe("10");
+        });
 
         stateView.rerender(
             <LoroProvider doc={docB} initialState={{ data: { counter: 0 } }}>
                 <StateView />
             </LoroProvider>,
         );
-        await waitFor(() =>
-            expect(screen.getByTestId("counter").textContent).toBe("20"),
-        );
+        await waitFor(() => {
+            expect(screen.getByTestId("counter").textContent).toBe("20");
+        });
         stateView.unmount();
 
         const selectorView = render(
@@ -97,18 +97,18 @@ describe("React hooks - switching LoroDoc", () => {
                 <SelectorView />
             </LoroProvider>,
         );
-        await waitFor(() =>
-            expect(screen.getByTestId("counter").textContent).toBe("10"),
-        );
+        await waitFor(() => {
+            expect(screen.getByTestId("counter").textContent).toBe("10");
+        });
 
         selectorView.rerender(
             <LoroProvider doc={docB} initialState={{ data: { counter: 0 } }}>
                 <SelectorView />
             </LoroProvider>,
         );
-        await waitFor(() =>
-            expect(screen.getByTestId("counter").textContent).toBe("20"),
-        );
+        await waitFor(() => {
+            expect(screen.getByTestId("counter").textContent).toBe("20");
+        });
         selectorView.unmount();
     });
 });

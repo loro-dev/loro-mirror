@@ -2301,7 +2301,9 @@ export class Mirror<S extends SchemaType> {
                 // Schedule debounced finalization
                 this.ephemeralManager.scheduleFinalizeAfter(
                     options?.finalizeTimeout,
-                    () => this.finalizeEphemeralPatches(),
+                    () => {
+                        this.finalizeEphemeralPatches();
+                    },
                 );
             }
 

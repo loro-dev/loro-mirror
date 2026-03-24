@@ -1,7 +1,7 @@
 import { Mirror, SyncDirection, UpdateMetadata } from "../src/core/mirror.js";
 import { EphemeralPatchManager, PathResolverContext } from "../src/core/ephemeral.js";
 import { schema } from "../src/schema/index.js";
-import { LoroDoc, EphemeralStore, ContainerID, LoroMap, LoroList } from "loro-crdt";
+import { LoroDoc, EphemeralStore, ContainerID, LoroMap } from "loro-crdt";
 import { describe, expect, it, vi, afterEach } from "vitest";
 
 function createTestSetup() {
@@ -191,7 +191,7 @@ describe("Change classification", () => {
     });
 
     it("should route Map primitive value changes to EphemeralStore", () => {
-        const { doc, eph, mirror } = createTestSetup();
+        const { doc, mirror } = createTestSetup();
 
         mirror.setState(
             (s) => {
@@ -482,7 +482,7 @@ describe("Drag-and-drop simulation", () => {
         const { doc, mirror } = createSimpleSetup();
         const TIMEOUT = 1000;
 
-        const initialVersion = doc.oplogVersion();
+        const initialVersion = doc.oplogVersion().toJSON();
 
         // Simulate 50 rapid moves
         for (let i = 0; i < 50; i++) {
@@ -499,6 +499,7 @@ describe("Drag-and-drop simulation", () => {
         // LoroDoc should be unchanged during the entire drag
         expect(doc.getMap("canvas").toJSON().x).toBe(0);
         expect(doc.getMap("canvas").toJSON().y).toBe(0);
+        expect(doc.oplogVersion().toJSON()).toEqual(initialVersion);
 
         // Mirror state should reflect the latest
         expect(mirror.getState().canvas.x).toBe(196);
@@ -1132,7 +1133,7 @@ describe("finalizeEphemeralPatches flushes all pending to LoroDoc", () => {
     });
 
     it("should flush ephemeral values from multiple containers", () => {
-        const { doc, eph, mirror } = createTestSetup();
+        const { doc, mirror } = createTestSetup();
 
         mirror.setState(
             (s) => {
@@ -1684,11 +1685,9 @@ describe("EphemeralPatchManager edge cases", () => {
     describe("dispose", () => {
         it("should clear all internal state", () => {
             vi.useFakeTimers();
-            const { store, manager } = createManager();
+            const { manager } = createManager();
             const doc = createDocWithMap();
             const mapId = doc.getMap("root").id;
-
-            const ctx: PathResolverContext = { doc };
 
             let callbackFired = false;
             manager.writeChanges(
