@@ -40,6 +40,16 @@ type StringSchemaBuilder<T extends string, O extends SchemaOptions> =
         };
     };
 
+type StringSchemaFactory = {
+    <T extends string = string, O extends SchemaOptions = {}>(): StringSchemaBuilder<T, O>;
+    <T extends string = string, O extends SchemaOptions & { required: false } = SchemaOptions & { required: false }>(
+        options: O,
+    ): StringSchemaBuilder<T, O>;
+    <T extends string = string, O extends SchemaOptions = {}>(
+        options: O,
+    ): StringSchemaBuilder<T, O>;
+};
+
 /**
  * Number schema builder with transform method.
  * Transform decode/encode never receive null/undefined - they pass through as-is.
@@ -96,7 +106,7 @@ export function schema<
 /**
  * Define a string field
  */
-schema.String = function <
+schema.String = (function <
     T extends string = string,
     O extends SchemaOptions = {},
 >(options?: O): StringSchemaBuilder<T, O> {
@@ -115,7 +125,7 @@ schema.String = function <
             transform: def,
         }),
     } as StringSchemaBuilder<T, O>;
-};
+}) as StringSchemaFactory;
 
 /**
  * Define an any field (runtime-inferred by Mirror)
