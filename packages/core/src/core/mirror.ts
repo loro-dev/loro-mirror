@@ -74,31 +74,28 @@ function hasKeyProp(c: Change): c is Extract<Change, { key: string | number }> {
 }
 
 /**
- * Sync direction for handling updates
+ * Source channel that caused this state update.
  */
-export enum SyncDirection {
+export enum UpdateSource {
     /**
-     * Changes coming from Loro to application state
+     * Changes coming from Loro to application state.
      */
-    FROM_LORO = "FROM_LORO",
+    LORO = "LORO",
 
     /**
      * Local state changes initiated through Mirror APIs.
-     * Historical name: the write may end up in LoroDoc, EphemeralStore, or both.
      */
-    TO_LORO = "TO_LORO",
+    MIRROR = "MIRROR",
 
     /**
-     * Initial sync or manual sync operations
+     * State recomposed due to an EphemeralStore change.
      */
-    BIDIRECTIONAL = "BIDIRECTIONAL",
+    EPHEMERAL = "EPHEMERAL",
 
     /**
-     * State recomposed due to an EphemeralStore change (local or remote).
-     * Fired when any peer writes to the EphemeralStore — use this to
-     * distinguish ephemeral updates from permanent LoroDoc changes.
+     * Initial or manual sync operations.
      */
-    FROM_EPHEMERAL = "FROM_EPHEMERAL",
+    INITIAL = "INITIAL",
 }
 
 /**
@@ -330,9 +327,9 @@ type ContainerRegistry = Map<
  */
 export interface UpdateMetadata {
     /**
-     * Direction of the sync operation
+     * Source channel that caused this update.
      */
-    direction: SyncDirection;
+    source: UpdateSource;
 
     /**
      * Tags associated with this update, if any
@@ -736,7 +733,7 @@ export class Mirror<S extends SchemaType> {
             // With canonicalized paths, applyEventBatchToState updates roots precisely.
             // No additional root refresh is required here.
             // Notify subscribers of the update
-            this.notifySubscribers(SyncDirection.FROM_LORO);
+            this.notifySubscribers(UpdateSource.LORO);
         } finally {
             this.registerContainersFromLoroEvent(event);
             this.syncing = false;
@@ -1697,12 +1694,12 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Notify all subscribers of state change
-     * @param direction The direction of the sync operation
+     * @param source The source channel for the sync operation
      * @param tags Optional tags associated with this update
      */
-    private notifySubscribers(direction: SyncDirection, tags?: string[]) {
+    private notifySubscribers(source: UpdateSource, tags?: string[]) {
         const metadata: UpdateMetadata = {
-            direction,
+            source,
             tags,
         };
 
@@ -1759,7 +1756,7 @@ export class Mirror<S extends SchemaType> {
             return;
         }
         this.state = this.applyEphemeralDeltas(event.deltas);
-        this.notifySubscribers(SyncDirection.FROM_EPHEMERAL);
+        this.notifySubscribers(UpdateSource.EPHEMERAL);
     };
 
     /**
@@ -1794,7 +1791,7 @@ export class Mirror<S extends SchemaType> {
                 );
             }
             this.state = this.composeState(this.baseState);
-            this.notifySubscribers(SyncDirection.TO_LORO);
+            this.notifySubscribers(UpdateSource.MIRROR);
         } finally {
             this.syncing = false;
         }
@@ -2320,7 +2317,7 @@ export class Mirror<S extends SchemaType> {
                 ? options.tags
                 : [options.tags]
             : undefined;
-        this.notifySubscribers(SyncDirection.TO_LORO, tags);
+        this.notifySubscribers(UpdateSource.MIRROR, tags);
     }
 
     /**
@@ -2493,7 +2490,7 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Notify subscribers
-        this.notifySubscribers(SyncDirection.TO_LORO, tags);
+        this.notifySubscribers(UpdateSource.MIRROR, tags);
     }
 
     checkStateConsistency() {

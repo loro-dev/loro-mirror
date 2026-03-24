@@ -374,7 +374,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`options`**: `{ tags?: string | string[]; finalizeTimeout?: number }` – tags are delivered to subscribers in metadata; `finalizeTimeout` (default 50 000 ms) controls the debounce delay before ephemeral values auto-commit.
 - `finalizeEphemeralPatches()`: Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
 - `subscribe(callback): () => void`: Subscribe to state changes. `callback` receives `(state, metadata)` where `metadata` includes:
-    - **`direction`**: `SyncDirection` – `FROM_LORO` when changes came from the doc, `TO_LORO` when a local Mirror write changed state, `FROM_EPHEMERAL` when state changed due to an EphemeralStore update, `BIDIRECTIONAL` for manual/initial syncs.
+    - **`source`**: `UpdateSource` – `LORO` when changes came from the doc, `MIRROR` when a local Mirror API changed state, `EPHEMERAL` when state changed due to an EphemeralStore update, `INITIAL` for initial/manual syncs.
     - **`tags`**: `string[] | undefined` – tags provided via `setState`.
 - `dispose()`: Unsubscribe internal listeners and clear subscribers.
 - `checkStateConsistency()`: Manually trigger the consistency assertion described above.
@@ -388,19 +388,19 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 
 ### Types
 
-- `SyncDirection`:
-    - `FROM_LORO` – applied due to incoming `LoroDoc` changes
-    - `TO_LORO` – applied due to a local Mirror write such as `setState`, `patchEphemeral`, or `finalizeEphemeralPatches`; the write may go to `LoroDoc`, `EphemeralStore`, or both
-    - `FROM_EPHEMERAL` – state recomposed due to an EphemeralStore change (local or remote)
-    - `BIDIRECTIONAL` – initial/manual sync context
-- `UpdateMetadata`: `{ direction: SyncDirection; tags?: string[] }`
+- `UpdateSource`:
+    - `LORO` – applied due to incoming `LoroDoc` changes
+    - `MIRROR` – applied due to a local Mirror API call such as `setState`, `patchEphemeral`, or `finalizeEphemeralPatches`
+    - `EPHEMERAL` – state recomposed due to an EphemeralStore change
+    - `INITIAL` – initial/manual sync context
+- `UpdateMetadata`: `{ source: UpdateSource; tags?: string[] }`
 - `SetStateOptions`: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }`
 
 ### Example
 
 ```ts
 import { LoroDoc } from "loro-crdt";
-import { Mirror, schema, SyncDirection } from "loro-mirror";
+import { Mirror, schema, UpdateSource } from "loro-mirror";
 
 const todoSchema = schema({
     todos: schema.LoroList(
@@ -416,8 +416,8 @@ const doc = new LoroDoc();
 const mirror = new Mirror({ doc, schema: todoSchema, validateUpdates: true });
 
 // Subscribe with metadata
-const unsubscribe = mirror.subscribe((state, { direction, tags }) => {
-    if (direction === SyncDirection.FROM_LORO) {
+const unsubscribe = mirror.subscribe((state, { source, tags }) => {
+    if (source === UpdateSource.LORO) {
         console.log("Remote update", tags);
     } else {
         console.log("Local update", tags);

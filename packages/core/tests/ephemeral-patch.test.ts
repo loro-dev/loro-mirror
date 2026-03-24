@@ -1,4 +1,8 @@
-import { Mirror, SyncDirection, UpdateMetadata } from "../src/core/mirror.js";
+import {
+    Mirror,
+    UpdateMetadata,
+    UpdateSource,
+} from "../src/core/mirror.js";
 import { EphemeralPatchManager, PathResolverContext } from "../src/core/ephemeral.js";
 import { schema } from "../src/schema/index.js";
 import { LoroDoc, EphemeralStore, ContainerID, LoroMap } from "loro-crdt";
@@ -169,7 +173,7 @@ describe("setState with ephemeral routing", () => {
         });
 
         expect(metadata).toBeDefined();
-        expect(metadata!.direction).toBe(SyncDirection.TO_LORO);
+        expect(metadata!.source).toBe(UpdateSource.MIRROR);
 
         mirror.dispose();
     });
@@ -196,10 +200,10 @@ describe("setState with ephemeral routing", () => {
 
     it("should emit a single local notification for one ephemeral setState call", () => {
         const { mirror } = createSimpleSetup();
-        const directions: SyncDirection[] = [];
+        const sources: UpdateSource[] = [];
 
         mirror.subscribe((_, metadata) => {
-            directions.push(metadata.direction);
+            sources.push(metadata.source);
         });
 
         mirror.setState(
@@ -210,7 +214,7 @@ describe("setState with ephemeral routing", () => {
             { finalizeTimeout: 50_000 },
         );
 
-        expect(directions).toEqual([SyncDirection.TO_LORO]);
+        expect(sources).toEqual([UpdateSource.MIRROR]);
 
         mirror.dispose();
     });
@@ -375,7 +379,7 @@ describe("EphemeralStore remote changes", () => {
         mirror.dispose();
     });
 
-    it("should notify subscribers with FROM_EPHEMERAL direction", () => {
+    it("should notify subscribers with EPHEMERAL source", () => {
         const { doc, eph, mirror } = createSimpleSetup();
         let metadata: UpdateMetadata | undefined;
 
@@ -387,7 +391,7 @@ describe("EphemeralStore remote changes", () => {
         eph.set(canvasContainerId, { x: 200 } as any);
 
         expect(metadata).toBeDefined();
-        expect(metadata!.direction).toBe(SyncDirection.FROM_EPHEMERAL);
+        expect(metadata!.source).toBe(UpdateSource.EPHEMERAL);
 
         mirror.dispose();
     });
@@ -475,16 +479,16 @@ describe("patchEphemeral fast path", () => {
             mirror as unknown as { rebuildBaseState: () => unknown },
             "rebuildBaseState",
         );
-        const directions: SyncDirection[] = [];
+        const sources: UpdateSource[] = [];
 
         mirror.subscribe((_, metadata) => {
-            directions.push(metadata.direction);
+            sources.push(metadata.source);
         });
 
         mirror.patchEphemeral(canvasCid, "x", 55, { finalizeTimeout: 50_000 });
 
         expect(rebuildSpy).not.toHaveBeenCalled();
-        expect(directions).toEqual([SyncDirection.TO_LORO]);
+        expect(sources).toEqual([UpdateSource.MIRROR]);
 
         mirror.dispose();
     });

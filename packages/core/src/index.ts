@@ -13,7 +13,7 @@ export {
     type UpdateMetadata,
     type SubscriberCallback,
     type InferContainerOptions,
-    SyncDirection,
+    UpdateSource,
 } from "./core/index.js";
 
 // Default export

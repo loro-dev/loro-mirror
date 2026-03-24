@@ -9,12 +9,14 @@ import { atom } from "jotai";
 
 // Import types only to avoid module resolution issues
 import type { LoroDoc, EphemeralStore } from "loro-crdt";
-import { SyncDirection, Mirror } from "loro-mirror";
+import { Mirror } from "loro-mirror";
 import type {
     SchemaType,
     InferType,
     InferInputType,
 } from "loro-mirror";
+
+type MirrorUpdateSource = "LORO" | "MIRROR" | "EPHEMERAL" | "INITIAL";
 
 /**
  * Configuration for creating a Loro Mirror atom
@@ -77,11 +79,8 @@ function createMirrorAtoms<S extends SchemaType>(
 
     subAtom.onMount = (set) => {
         set(store.getState() as InferType<S>);
-        const sub = store.subscribe((state: InferType<S>, { direction }: { direction: SyncDirection }) => {
-            if (
-                direction === SyncDirection.FROM_LORO ||
-                direction === SyncDirection.FROM_EPHEMERAL
-            ) {
+        const sub = store.subscribe((state: InferType<S>, { source }: { source: MirrorUpdateSource }) => {
+            if (source === "LORO" || source === "EPHEMERAL") {
                 set(state);
             }
         });

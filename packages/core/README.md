@@ -47,8 +47,8 @@ store.setState((s) => {
 });
 
 // Subscribe
-const unsubscribe = store.subscribe((next, { direction }) => {
-    // direction: "FROM_LORO" | "TO_LORO" | "FROM_EPHEMERAL" | "BIDIRECTIONAL"
+const unsubscribe = store.subscribe((next, { source }) => {
+    // source: "LORO" | "MIRROR" | "EPHEMERAL" | "INITIAL"
 });
 ```
 
@@ -85,11 +85,10 @@ Trees are advanced usage; see Advanced: Trees at the end.
         - options: `{ tags?: string | string[]; origin?: string; timestamp?: number; message?: string; finalizeTimeout?: number }` — tags surface in subscriber metadata; commit metadata is forwarded to the underlying Loro commit; `finalizeTimeout` controls the debounce delay before ephemeral values auto-commit.
     - finalizeEphemeralPatches(): Immediately commit pending ephemeral patches to LoroDoc (e.g. on `mouseup`).
     - subscribe((state, metadata) => void): Subscribe; returns unsubscribe
-        - metadata: `{ direction: FROM_LORO | TO_LORO | FROM_EPHEMERAL | BIDIRECTIONAL; tags?: string[] }`
-        - `TO_LORO` means a local write started from Mirror APIs. It does not mean the change definitely went only to `LoroDoc`; with `ephemeralStore`, it may go to `EphemeralStore`, `LoroDoc`, or both.
+        - metadata: `{ source: LORO | MIRROR | EPHEMERAL | INITIAL; tags?: string[] }`
     - dispose(): Remove all subscriptions
 
-Types: `SyncDirection`, `UpdateMetadata`, `SetStateOptions`.
+Types: `UpdateSource`, `UpdateMetadata`, `SetStateOptions`.
 
 ### Schema Builder
 
@@ -225,13 +224,13 @@ Because LoroDoc and EphemeralStore are independent, `ephemeralStore` is fully op
 - Peers **without** `ephemeralStore` sync normally via LoroDoc. They see final values after `finalizeEphemeralPatches()`, but not intermediate ephemeral changes.
 - Peers that share an EphemeralStore channel see real-time intermediate updates as well.
 
-### Subscriber direction
+### Subscriber source
 
-Subscribers receive `direction: "FROM_EPHEMERAL"` when state changes due to an EphemeralStore update (local or remote). Use this to distinguish ephemeral changes from permanent LoroDoc changes:
+Subscribers receive `source: "EPHEMERAL"` when state changes due to an EphemeralStore update. Use this to distinguish ephemeral changes from permanent LoroDoc changes:
 
 ```ts
-mirror.subscribe((state, { direction }) => {
-    if (direction === "FROM_EPHEMERAL") {
+mirror.subscribe((state, { source }) => {
+    if (source === "EPHEMERAL") {
         // Lightweight update — no LoroDoc history created
     }
 });
@@ -303,7 +302,7 @@ For more React patterns (selectors, actions, provider), see `packages/react/READ
 
 - Use an `idSelector` whenever list items have stable IDs to get efficient moves instead of delete+insert.
 - `setState` accepts an updater that either mutates a draft or returns a new object — use whichever style you prefer.
-- Subscriptions receive `{ direction: FROM_LORO | TO_LORO | FROM_EPHEMERAL, tags?: string[] }` to help you attribute changes.
+- Subscriptions receive `{ source: LORO | MIRROR | EPHEMERAL | INITIAL, tags?: string[] }`.
 
 ## License
 

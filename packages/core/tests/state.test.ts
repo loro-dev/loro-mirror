@@ -9,7 +9,7 @@ import {
     schema,
     StringSchemaType,
 } from "../src/schema/index.js";
-import { Mirror, SyncDirection } from "../src/core/mirror.js";
+import { Mirror, UpdateSource } from "../src/core/mirror.js";
 import { LoroDoc } from "loro-crdt";
 
 // Utility to wait for sync to complete (three microtasks for reliable sync)
@@ -252,7 +252,7 @@ describe("Core State Management", () => {
             await waitForSync();
 
             expect(subscriber).toHaveBeenCalledWith(expect.any(Object), {
-                direction: SyncDirection.TO_LORO,
+                source: UpdateSource.MIRROR,
                 tags: undefined,
             });
             expect(subscriber).toHaveBeenCalledTimes(1);
