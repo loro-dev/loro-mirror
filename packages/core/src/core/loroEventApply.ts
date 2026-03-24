@@ -12,23 +12,24 @@ import {
     normalizeTreeJson,
     type NormalizedTreeNode,
 } from "./tree-utils.js";
-import { defineCidProperty, isTreeID } from "./utils.js";
+import { defineCidProperty, isTreeID, applyDecode } from "./utils.js";
+import { SchemaType } from "../schema/index.js";
 
-// Plain JSON-like value held in Mirror state (no `any`)
-type JSONPrimitive = string | number | boolean | null | undefined;
-type JSONValue = JSONPrimitive | JSONObject | JSONValue[];
-interface JSONObject {
-    [k: string]: JSONValue;
+// Value held in Mirror state (no `any`)
+type MirrorStatePrimitive = string | number | boolean | null | undefined | {};
+type MirrorState = MirrorStatePrimitive | MirrorStateObject | MirrorState[];
+interface MirrorStateObject {
+    [k: string]: MirrorState;
 }
 
 // State representation for a tree node in mirror state
-type StateTreeNode = NormalizedTreeNode<JSONObject>;
+type StateTreeNode = NormalizedTreeNode<MirrorStateObject>;
 
-function isJSONObject(v: unknown): v is JSONObject {
+function isJSONObject(v: unknown): v is MirrorStateObject {
     return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function isJSONArray(v: unknown): v is JSONValue[] {
+function isJSONArray(v: unknown): v is MirrorState[] {
     return Array.isArray(v);
 }
 
@@ -43,12 +44,20 @@ export function applyEventBatchToState<T extends object>(
         | ((id: ContainerID) => Container | undefined)
         | {
               getContainerById?: (id: ContainerID) => Container | undefined;
-              containerToJson?: (c: Container) => JSONValue;
+              containerToMirrorState?: (c: Container) => MirrorState;
               nodeDataWithCid?: (treeId: ContainerID) => boolean;
               getNodeDataCid?: (
                   treeId: ContainerID,
                   nodeId: TreeID,
               ) => string | undefined;
+              /**
+               * Get the schema for a field within a container.
+               * For maps, pass the field key. For lists, omit the key to get the item schema.
+               */
+              getSchemaForKey?: (
+                  containerId: ContainerID,
+                  mapKey?: string,
+              ) => SchemaType | undefined;
           },
 ): T {
     const opts =
@@ -59,13 +68,14 @@ export function applyEventBatchToState<T extends object>(
         const ignoreSet = new Set<ContainerID>();
         for (const e of event.events) {
             applySingleEventToDraft(
-                draft as JSONObject,
+                draft as MirrorStateObject,
                 e,
                 ignoreSet,
                 opts.getContainerById,
-                opts.containerToJson,
+                opts.containerToMirrorState,
                 opts.nodeDataWithCid,
                 opts.getNodeDataCid,
+                opts.getSchemaForKey,
             );
         }
     })(currentState);
@@ -76,16 +86,20 @@ export function applyEventBatchToState<T extends object>(
  * Apply a single event to the immer draft state
  */
 function applySingleEventToDraft(
-    draftRoot: JSONObject,
+    draftRoot: MirrorStateObject,
     e: LoroEvent,
     ignoreSet: Set<ContainerID>,
     getContainerById?: (id: ContainerID) => Container | undefined,
-    containerToJson?: (c: Container) => JSONValue,
+    containerToMirrorState?: (c: Container) => MirrorState,
     nodeDataWithCid?: (treeId: ContainerID) => boolean,
     getNodeDataCid?: (
         treeId: ContainerID,
         nodeId: TreeID,
     ) => string | undefined,
+    getSchemaForKey?: (
+        containerId: ContainerID,
+        mapKey?: string,
+    ) => SchemaType | undefined,
 ) {
     if (isIgnoredByAncestor(e.target, ignoreSet, getContainerById)) {
         return;
@@ -95,7 +109,7 @@ function applySingleEventToDraft(
     const { parent, key, node } = getParentKeyNodeByPath(draftRoot, e.path);
 
     // If target node is missing, initialize a neutral baseline for applying deltas
-    let target: JSONValue | undefined = node;
+    let target: MirrorState | undefined = node;
     if (target === undefined) {
         if (e.diff.type === "map") {
             if (parent && key !== undefined) setAt(parent, key, {});
@@ -103,7 +117,7 @@ function applySingleEventToDraft(
                 parent && key !== undefined ? getAt(parent, key)! : draftRoot;
         } else if (e.diff.type === "list") {
             if (parent && key !== undefined)
-                setAt(parent, key, [] as JSONValue[]);
+                setAt(parent, key, [] as MirrorState[]);
             target =
                 parent && key !== undefined ? getAt(parent, key)! : draftRoot;
         } else if (e.diff.type === "text") {
@@ -112,7 +126,7 @@ function applySingleEventToDraft(
                 parent && key !== undefined ? getAt(parent, key)! : draftRoot;
         } else if (e.diff.type === "tree") {
             if (parent && key !== undefined)
-                setAt(parent, key, [] as JSONValue[]);
+                setAt(parent, key, [] as MirrorState[]);
             target =
                 parent && key !== undefined ? getAt(parent, key)! : draftRoot;
         } else if (e.diff.type === "counter") {
@@ -139,8 +153,10 @@ function applySingleEventToDraft(
                 applyMapDiff(
                     target,
                     e.diff.updated,
+                    e.target,
                     ignoreSet,
-                    containerToJson,
+                    containerToMirrorState,
+                    getSchemaForKey,
                 );
             }
             break;
@@ -148,11 +164,18 @@ function applySingleEventToDraft(
             if (!isJSONArray(target)) {
                 // Initialize if not array
                 if (parent && key !== undefined)
-                    setAt(parent, key, [] as JSONValue[]);
+                    setAt(parent, key, [] as MirrorState[]);
                 target = parent && key !== undefined ? getAt(parent, key)! : [];
             }
             if (isJSONArray(target)) {
-                applyListDelta(target, e.diff.diff, ignoreSet, containerToJson);
+                applyListDelta(
+                    target,
+                    e.diff.diff,
+                    e.target,
+                    ignoreSet,
+                    containerToMirrorState,
+                    getSchemaForKey,
+                );
             }
             break;
         case "text": {
@@ -164,7 +187,7 @@ function applySingleEventToDraft(
         case "tree":
             if (!isJSONArray(target)) {
                 if (parent && key !== undefined)
-                    setAt(parent, key, [] as JSONValue[]);
+                    setAt(parent, key, [] as MirrorState[]);
                 target = parent && key !== undefined ? getAt(parent, key)! : [];
             }
             if (isJSONArray(target)) {
@@ -176,7 +199,7 @@ function applySingleEventToDraft(
                     getNodeDataCid,
                 );
                 // Invalidate cache for this roots array after structural change
-                ROOTS_TREE_INDEX_CACHE.delete(target as JSONValue[]);
+                ROOTS_TREE_INDEX_CACHE.delete(target as MirrorState[]);
             }
             break;
         case "counter":
@@ -227,19 +250,19 @@ function applySingleEventToDraft(
  * 定位到对应节点，并把后续的访问都指向该节点的 data（若 TreeID 是最后一段，则等价于访问 node.data）。
  */
 function getParentKeyNodeByPath(
-    root: JSONObject,
+    root: MirrorStateObject,
     path: (string | number)[],
 ): {
-    parent: JSONObject | JSONValue[] | undefined;
+    parent: MirrorStateObject | MirrorState[] | undefined;
     key: string | number | undefined;
-    node: JSONValue | undefined;
+    node: MirrorState | undefined;
 } {
     if (!path || path.length === 0) {
         return { parent: undefined, key: undefined, node: root };
     }
 
-    let parent: JSONObject | JSONValue[] | undefined = undefined;
-    let current: JSONValue = root;
+    let parent: MirrorStateObject | MirrorState[] | undefined = undefined;
+    let current: MirrorState = root;
     let key: string | number | undefined = undefined;
 
     for (let i = 0; i < path.length; i++) {
@@ -247,7 +270,7 @@ function getParentKeyNodeByPath(
         // Parent should reflect the container we will index into at this step
         parent =
             isJSONArray(current) || isJSONObject(current)
-                ? (current as JSONObject | JSONValue[])
+                ? (current as MirrorStateObject | MirrorState[])
                 : undefined;
         key = seg;
 
@@ -294,9 +317,9 @@ function getParentKeyNodeByPath(
 // Build or reuse a per-roots index to resolve a node by id quickly
 // PERF: this can be slow
 function getTreeNodeLocation(
-    roots: JSONValue[],
+    roots: MirrorState[],
     id: string,
-): { list: JSONValue[]; index: number; node: JSONObject } | undefined {
+): { list: MirrorState[]; index: number; node: MirrorStateObject } | undefined {
     let index = ROOTS_TREE_INDEX_CACHE.get(roots);
     if (!index) {
         index = buildTreeIndex(roots);
@@ -313,15 +336,18 @@ function getTreeNodeLocation(
 }
 
 function buildTreeIndex(
-    roots: JSONValue[],
-): Map<string, { list: JSONValue[]; index: number; node: JSONObject }> {
+    roots: MirrorState[],
+): Map<
+    string,
+    { list: MirrorState[]; index: number; node: MirrorStateObject }
+> {
     const map = new Map<
         string,
-        { list: JSONValue[]; index: number; node: JSONObject }
+        { list: MirrorState[]; index: number; node: MirrorStateObject }
     >();
 
     // Depth-first traversal without using any
-    const stack: Array<{ list: JSONValue[]; index: number }> = [];
+    const stack: Array<{ list: MirrorState[]; index: number }> = [];
     for (let i = 0; i < roots.length; i++) {
         stack.push({ list: roots, index: i });
     }
@@ -349,10 +375,10 @@ function buildTreeIndex(
     return map;
 }
 
-function getOrInitNodeData(node: JSONObject): JSONObject {
+function getOrInitNodeData(node: MirrorStateObject): MirrorStateObject {
     const dataVal = node["data"];
     if (isJSONObject(dataVal)) return dataVal;
-    const fresh: JSONObject = {};
+    const fresh: MirrorStateObject = {};
     node["data"] = fresh;
     return fresh;
 }
@@ -361,10 +387,15 @@ function getOrInitNodeData(node: JSONObject): JSONObject {
  * Apply Map updates to a plain object
  */
 function applyMapDiff(
-    targetObj: JSONObject,
+    targetObj: MirrorStateObject,
     updated: Record<string, unknown>,
+    containerId: ContainerID,
     ignoreSet: Set<ContainerID>,
-    containerToJson?: (c: Container) => JSONValue,
+    containerToMirrorState?: (c: Container) => MirrorState,
+    getSchemaForKey?: (
+        containerId: ContainerID,
+        mapKey?: string,
+    ) => SchemaType | undefined,
 ) {
     if (!isJSONObject(targetObj)) return;
     for (const [k, v] of Object.entries(updated)) {
@@ -379,13 +410,15 @@ function applyMapDiff(
             const c = v;
             // Mark this child container so its own events are ignored later in this batch
             ignoreSet.add(c.id);
-            targetObj[k] = containerToJson
-                ? containerToJson(c)
-                : containerToMirrorJson(c);
+            targetObj[k] = containerToMirrorState
+                ? containerToMirrorState(c)
+                : containerToMirrorStateWithoutSchema(c);
             continue;
         }
 
-        targetObj[k] = v as JSONValue;
+        // Apply decode transform if schema exists for this field
+        const fieldSchema = getSchemaForKey?.(containerId, k);
+        targetObj[k] = applyDecode(fieldSchema, v) as MirrorState;
     }
 }
 
@@ -393,11 +426,18 @@ function applyMapDiff(
  * Apply a list delta to a JS array
  */
 function applyListDelta(
-    targetArr: JSONValue[],
+    targetArr: MirrorState[],
     deltas: Array<{ insert?: unknown[]; delete?: number; retain?: number }>,
+    containerId: ContainerID,
     ignoreSet: Set<ContainerID>,
-    containerToJson?: (c: Container) => JSONValue,
+    containerToMirrorState?: (c: Container) => MirrorState,
+    getSchemaForKey?: (
+        containerId: ContainerID,
+        mapKey?: string,
+    ) => SchemaType | undefined,
 ) {
+    const itemSchema = getSchemaForKey?.(containerId);
+
     let index = 0;
     for (const d of deltas) {
         if (d.retain !== undefined) {
@@ -413,11 +453,12 @@ function applyListDelta(
                     const c = it;
                     // Mark this child container so its own events are ignored later in this batch
                     ignoreSet.add(c.id);
-                    return containerToJson
-                        ? containerToJson(c)
-                        : containerToMirrorJson(c);
+                    return containerToMirrorState
+                        ? containerToMirrorState(c)
+                        : containerToMirrorStateWithoutSchema(c);
                 }
-                return it as JSONValue;
+                // Apply decode transform if schema exists for list items
+                return applyDecode(itemSchema, it) as MirrorState;
             });
             targetArr.splice(index, 0, ...items);
             index += items.length;
@@ -429,7 +470,7 @@ function applyListDelta(
  * Apply a tree diff to a JS array of nodes of shape { id, data, children }
  */
 function applyTreeDiff(
-    roots: JSONValue[],
+    roots: MirrorState[],
     deltas: Array<
         | { action: "create"; target: TreeID; parent?: TreeID; index: number }
         | {
@@ -580,9 +621,9 @@ function applyTextDelta(
 
 // Helpers for JSON state manipulation
 function setAt(
-    parent: JSONObject | JSONValue[],
+    parent: MirrorStateObject | MirrorState[],
     key: string | number,
-    value: JSONValue,
+    value: MirrorState,
 ) {
     if (Array.isArray(parent) && typeof key === "number") {
         parent[key] = value;
@@ -592,9 +633,9 @@ function setAt(
 }
 
 function getAt(
-    parent: JSONObject | JSONValue[],
+    parent: MirrorStateObject | MirrorState[],
     key: string | number,
-): JSONValue | undefined {
+): MirrorState | undefined {
     if (Array.isArray(parent) && typeof key === "number") {
         return parent[key];
     } else if (!Array.isArray(parent) && typeof key === "string") {
@@ -606,15 +647,15 @@ function getAt(
 
 // Module-level cache: for each roots array, map TreeID -> node location
 const ROOTS_TREE_INDEX_CACHE: WeakMap<
-    JSONValue[],
-    Map<string, { list: JSONValue[]; index: number; node: JSONObject }>
+    MirrorState[],
+    Map<string, { list: MirrorState[]; index: number; node: MirrorStateObject }>
 > = new WeakMap();
 
 // Convert a loro container into mirror JSON value consistently
-function containerToMirrorJson(c: Container): JSONValue {
+function containerToMirrorStateWithoutSchema(c: Container): MirrorState {
     const kind = c.kind();
     if (kind === "Counter") {
-        return (c as LoroCounter).getShallowValue() as unknown as JSONValue;
+        return (c as LoroCounter).getShallowValue() as unknown as MirrorState;
     }
     if (kind === "Tree") {
         const raw = (
@@ -622,12 +663,12 @@ function containerToMirrorJson(c: Container): JSONValue {
         ).toJSON() as unknown[];
         return normalizeTreeJson(raw, {
             isTreeData: isJSONObject,
-            createEmptyData: (): JSONObject => ({}),
-        }) as unknown as JSONValue;
+            createEmptyData: (): MirrorStateObject => ({}),
+        }) as unknown as MirrorState;
     }
     return (
         c as Exclude<Container, LoroCounter>
-    ).toJSON() as unknown as JSONValue;
+    ).toJSON() as unknown as MirrorState;
 }
 
 // Check if a target or any of its ancestors is in ignore set

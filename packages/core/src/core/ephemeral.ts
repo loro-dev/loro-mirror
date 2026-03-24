@@ -34,6 +34,11 @@ export interface EphemeralEligibleChange {
  */
 export interface PathResolverContext {
     doc: LoroDoc;
+    decodeField?: (
+        containerId: ContainerID,
+        key: string,
+        value: unknown,
+    ) => unknown;
 }
 
 type EphemeralPatch = Record<string, unknown>;
@@ -233,9 +238,13 @@ export class EphemeralPatchManager {
             const updates: Array<[string, unknown]> = [];
             for (const key of keys) {
                 if (!(key in baseTarget)) continue;
+                const hasPatchValue =
+                    next && Object.prototype.hasOwnProperty.call(next, key);
                 const desiredValue =
-                    next && Object.prototype.hasOwnProperty.call(next, key)
-                        ? next[key]
+                    hasPatchValue
+                        ? (ctx.decodeField
+                            ? ctx.decodeField(containerId, key, next[key])
+                            : next[key])
                         : baseTarget[key];
                 if (target[key] !== desiredValue) {
                     updates.push([key, desiredValue]);

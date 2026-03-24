@@ -29,15 +29,18 @@ describe("schema resolver", () => {
     });
 
     it("resolves list and tree child schemas", () => {
-        const listItemSchema = schema.String();
-        const listSchema = schema.LoroList(listItemSchema);
+        const dateField = schema.String().transform({
+            decode: (value) => new Date(value),
+            encode: (value) => value.toISOString(),
+        });
+        const listSchema = schema.LoroList(dateField);
         const treeNodeSchema = schema.LoroMap({
-            createdAt: schema.String(),
+            createdAt: dateField,
         });
         const treeSchema = schema.LoroTree(treeNodeSchema);
 
-        expect(getChildSchema(listSchema)).toBe(listItemSchema);
-        expect(getChildSchema(listSchema, 0)).toBe(listItemSchema);
+        expect(getChildSchema(listSchema)).toBe(dateField);
+        expect(getChildSchema(listSchema, 0)).toBe(dateField);
         expect(getChildSchema(treeSchema)).toBe(treeNodeSchema);
         expect(getChildSchema(treeSchema, "createdAt")).toBe(treeNodeSchema);
     });

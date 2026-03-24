@@ -150,7 +150,6 @@ const { state, setState, finalizeEphemeralPatches, store } = useLoroStore({
   schema,
   initialState,
   validateUpdates,
-  throwOnValidationError,
   debug,
 });
 ```
@@ -211,7 +210,6 @@ Provider component for the Loro Mirror context.
     doc={loroDoc}
     initialState={initialState}
     validateUpdates={true}
-    throwOnValidationError={false}
     debug={false}
 >
     {children}

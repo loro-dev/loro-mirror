@@ -180,7 +180,6 @@ describe("Mirror List Update Optimization", () => {
         const mirror = new Mirror({
             doc,
             schema: itemsSchema,
-            throwOnValidationError: true,
         });
 
         // Initial state with 3 items

@@ -3,7 +3,12 @@
  */
 
 import { Container, ContainerID, ContainerType, LoroDoc } from "loro-crdt";
-import { SchemaType } from "../schema/index.js";
+import {
+    EqualityStrategy,
+    SchemaType,
+    TransformDefinition,
+} from "../schema/index.js";
+import { getChildSchema } from "../schema/resolver.js";
 import { Change, InferContainerOptions } from "./mirror.js";
 import { CID_KEY } from "../constants.js";
 import {
@@ -12,6 +17,168 @@ import {
     isPlainObjectValue,
     matchesContainerType,
 } from "./container-inference.js";
+
+/**
+ * Schema type with transform property.
+ */
+export type SchemaWithTransform = SchemaType & {
+    transform: TransformDefinition<unknown, unknown>;
+};
+
+/**
+ * Check if a schema has a transform.
+ * Distinguishes between the .transform() builder method (function) and an actual
+ * TransformDefinition object (with decode/encode functions).
+ */
+export function hasTransform(
+    schema: SchemaType | undefined,
+): schema is SchemaWithTransform {
+    if (schema === undefined) return false;
+    // typeof check distinguishes a TransformDefinition object from the .transform() builder method (function)
+    const t = (schema as { transform?: unknown }).transform;
+    return t != null && typeof t === "object";
+}
+
+/**
+ * Get the transform from a schema, or undefined if none exists.
+ */
+export function getTransform(
+    schema: SchemaType | undefined,
+): TransformDefinition<unknown, unknown> | undefined {
+    if (hasTransform(schema)) {
+        return schema.transform;
+    }
+    return undefined;
+}
+
+/**
+ * Get the effective equality strategy for a transform.
+ * Default: "reference-equality"
+ */
+export function getEqualityStrategy(
+    schema: SchemaType | undefined,
+    strategyIfNotTransformable: EqualityStrategy<unknown>,
+): EqualityStrategy<unknown> {
+    const transform = getTransform(schema);
+    if (!transform) return strategyIfNotTransformable;
+    return transform.isEqual ?? "reference-equality";
+}
+
+/**
+ * Apply decode transform to a CRDT value.
+ * Null/undefined pass through as-is - transform is only called for real values.
+ */
+export function applyDecode(
+    schema: SchemaType | undefined,
+    crdtValue: unknown,
+): unknown {
+    if (crdtValue === null || crdtValue === undefined) {
+        return crdtValue;
+    }
+    const transform = getTransform(schema);
+    return transform ? transform.decode(crdtValue) : crdtValue;
+}
+
+/**
+ * Recursively decode JSON values using schema transforms.
+ * Mutates in-place. Used for snapshot initialization where toJSON() skips decode.
+ */
+export function decodeNestedJsonValues(
+    json: unknown,
+    schema: SchemaType | undefined,
+): unknown {
+    if (json === null || json === undefined || !schema) return json;
+
+    switch (schema.type) {
+        case "loro-map": {
+            if (!isObject(json)) return json;
+            for (const key of Object.keys(json)) {
+                const fieldSchema = getChildSchema(schema, key);
+                json[key] = decodeNestedJsonValues(json[key], fieldSchema);
+            }
+            return json;
+        }
+        case "loro-list":
+        case "loro-movable-list": {
+            if (!Array.isArray(json)) return json;
+            const itemSchema = getChildSchema(schema);
+            for (let i = 0; i < json.length; i++) {
+                json[i] = decodeNestedJsonValues(json[i], itemSchema);
+            }
+            return json;
+        }
+        case "loro-tree": {
+            if (!Array.isArray(json)) return json;
+            const nodeSchema = getChildSchema(schema);
+            const walk = (nodes: unknown[]) => {
+                for (const node of nodes) {
+                    if (node != null && typeof node == "object") {
+                        if ("data" in node && node.data !== undefined) {
+                            node.data = decodeNestedJsonValues(node.data, nodeSchema);
+                        }
+                        if ("children" in node && Array.isArray(node.children)) {
+                            walk(node.children);
+                        }
+                    }
+                }
+            };
+            walk(json);
+            return json;
+        }
+        case "loro-text":
+        case "ignore":
+            return json;
+        default:
+            return applyDecode(schema, json);
+    }
+}
+
+/**
+ * Apply encode transform to a domain value.
+ * Null/undefined pass through as-is - transform is only called for real values.
+ */
+export function applyEncode(
+    schema: SchemaType | undefined,
+    domainValue: unknown,
+): unknown {
+    if (domainValue === null || domainValue === undefined) {
+        return domainValue;
+    }
+    const transform = getTransform(schema);
+    return transform ? transform.encode(domainValue) : domainValue;
+}
+
+/**
+ * Check if two domain values are equal according to the schema's equality strategy.
+ *
+ * Reference equality is always checked first (performance optimization).
+ * If refs match, returns true (no change).
+ * If refs differ, behavior depends on isEqual setting.
+ */
+export function valuesEqual(
+    schema: SchemaType | undefined,
+    oldValue: unknown,
+    newValue: unknown,
+    strategyIfNotTransformable: EqualityStrategy<unknown>,
+): boolean {
+    if (oldValue === newValue) {
+        return true;
+    }
+
+    const strategy = getEqualityStrategy(schema, strategyIfNotTransformable);
+
+    if (strategy === "reference-equality") {
+        return false;
+    } else if (strategy === "encoded-value-equality") {
+        const encodedOld = applyEncode(schema, oldValue);
+        const encodedNew = applyEncode(schema, newValue);
+        return encodedOld === encodedNew;
+    } else if (strategy === "deep-equality") {
+        return deepEqual(oldValue, newValue);
+    } else {
+        return strategy(oldValue, newValue);
+    }
+}
 
 export function defineCidProperty(target: unknown, cid: ContainerID) {
     if (
@@ -321,8 +488,14 @@ export function tryUpdateToContainer(
           tryInferContainerType(change.value, effectiveInferOptions))
         : tryInferContainerType(change.value, effectiveInferOptions);
 
-    if (containerType == null) {
-        return change;
+    // If containerType is nullish, or schema has a transform (in which case we shouldn't infer container type), 
+    // apply encode transform if it exists and return change
+    if (containerType == null || (schema && hasTransform(schema))) {
+        const encodedValue = applyEncode(schema, change.value);
+        return encodedValue !== change.value ? {
+            ...change,
+            value: encodedValue
+        } : change;
     }
 
     if (change.kind === "insert") {
@@ -435,4 +608,79 @@ export function isTreeID(id: unknown): boolean {
     if (!(typeof id === "string")) return false;
     const r = /[0-9]+@[0-9]+/;
     return !!id.match(r);
+}
+
+/**
+ * Stringify a value safely, handling non-JSON-serializable types.
+ * Handles BigInt, Date, RegExp, functions, and custom objects.
+ */
+export function safeStringify(value: unknown, indent = 2): string {
+    const seen = new WeakSet<object>();
+
+    function replacer(val: unknown): unknown {
+        // Handle primitives
+        if (val === null || val === undefined) return val;
+        if (
+            typeof val === "string" ||
+            typeof val === "number" ||
+            typeof val === "boolean"
+        ) {
+            return val;
+        }
+
+        // Handle BigInt
+        if (typeof val === "bigint") {
+            return `[BigInt: ${val.toString()}]`;
+        }
+
+        // Handle functions
+        if (typeof val === "function") {
+            return `[Function: ${val.name || "anonymous"}]`;
+        }
+
+        // Handle symbols
+        if (typeof val === "symbol") {
+            return `[Symbol: ${val.description || ""}]`;
+        }
+
+        // Handle objects
+        if (typeof val === "object") {
+            // Check for circular references
+            if (seen.has(val)) {
+                return "[Circular]";
+            }
+            seen.add(val);
+
+            // Handle Date
+            if (val instanceof Date) {
+                return `[Date: ${val.toISOString()}]`;
+            }
+
+            // Handle RegExp
+            if (val instanceof RegExp) {
+                return `[RegExp: ${val.toString()}]`;
+            }
+
+            // Handle Error
+            if (val instanceof Error) {
+                return `[Error: ${val.message}]`;
+            }
+
+            // Handle Arrays
+            if (Array.isArray(val)) {
+                return val.map(replacer);
+            }
+
+            // Handle plain objects
+            const result: Record<string, unknown> = {};
+            for (const key of Object.keys(val)) {
+                result[key] = replacer((val as Record<string, unknown>)[key]);
+            }
+            return result;
+        }
+
+        return Object.prototype.toString.call(val);
+    }
+
+    return JSON.stringify(replacer(value), null, indent);
 }
