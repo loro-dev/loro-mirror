@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v2.0.0...loro-mirror-react-v2.1.0) (2026-03-24)
+
+
+### Features
+
+* Support transforming primitive types using a codec ([#73](https://github.com/loro-dev/loro-mirror/issues/73)) ([2045d5f](https://github.com/loro-dev/loro-mirror/commit/2045d5f6ecfb35172a7f52d3addb10dff8db61f7))
+
 ## [2.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-react-v1.2.2...loro-mirror-react-v2.0.0) (2026-03-24)
 
 

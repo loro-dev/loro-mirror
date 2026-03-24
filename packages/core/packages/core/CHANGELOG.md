@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.0.0...loro-mirror-v2.1.0) (2026-03-24)
+
+
+### Features
+
+* Support transforming primitive types using a codec ([#73](https://github.com/loro-dev/loro-mirror/issues/73)) ([2045d5f](https://github.com/loro-dev/loro-mirror/commit/2045d5f6ecfb35172a7f52d3addb10dff8db61f7))
+
+
+### Bug Fixes
+
+* infer correct type for schema.String&lt;T&gt;({ required: false }) ([#69](https://github.com/loro-dev/loro-mirror/issues/69)) ([e24056d](https://github.com/loro-dev/loro-mirror/commit/e24056d2510e40d4a0bea9499685a93d1f56f5a4))
+
 ## [2.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v1.2.2...loro-mirror-v2.0.0) (2026-03-24)
 
 
