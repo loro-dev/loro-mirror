@@ -1,4 +1,8 @@
-import { Mirror, SyncDirection, UpdateMetadata } from "../src/core/mirror.js";
+import {
+    Mirror,
+    UpdateMetadata,
+    UpdateSource,
+} from "../src/core/mirror.js";
 import { schema } from "../src/schema/index.js";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
@@ -33,7 +37,7 @@ describe("Tagging", () => {
         );
 
         expect(capturedMetadata).not.toBeNull();
-        expect(capturedMetadata!.direction).toBe(SyncDirection.TO_LORO);
+        expect(capturedMetadata!.source).toBe(UpdateSource.MIRROR);
         expect(capturedMetadata!.tags).toEqual(["test-tag", "important"]);
 
         mirror.dispose();

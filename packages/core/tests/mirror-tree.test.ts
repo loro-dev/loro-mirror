@@ -735,17 +735,17 @@ describe("LoroTree integration", () => {
         });
         const m = new Mirror({ doc, schema: s });
 
-        const directions: string[] = [];
-        m.subscribe((_st, meta) => directions.push(meta.direction));
+        const sources: string[] = [];
+        m.subscribe((_st, meta) => sources.push(meta.source));
 
         m.setState({
             tree: [{ id: "", data: { title: "X" }, children: [] }],
         } as any);
         await tick();
 
-        // Only TO_LORO notification should be recorded (FROM_LORO ignored because we suppress local commits)
-        expect(directions.filter((d) => d === "TO_LORO").length).toBe(1);
-        expect(directions.filter((d) => d === "FROM_LORO").length).toBe(0);
+        // Only MIRROR notification should be recorded (LORO ignored because we suppress local commits)
+        expect(sources.filter((source) => source === "MIRROR").length).toBe(1);
+        expect(sources.filter((source) => source === "LORO").length).toBe(0);
     });
 
     // TO_LORO edge cases

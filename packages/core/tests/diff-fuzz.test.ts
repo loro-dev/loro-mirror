@@ -32,7 +32,7 @@ const lcsLength = <T>(a: readonly T[], b: readonly T[]): number => {
     const n = a.length;
     const m = b.length;
     const dp: number[][] = Array.from({ length: n + 1 }, () =>
-        new Array<number>(m + 1).fill(0),
+        Array.from({ length: m + 1 }, () => 0),
     );
 
     for (let i = 1; i <= n; i++) {
