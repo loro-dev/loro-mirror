@@ -42,6 +42,11 @@
     ],
     "author": "Loro Team",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/loro-dev/loro-mirror",
+        "directory": "packages/react"
+    },
     "peerDependencies": {
         "loro-crdt": "^1.8.0",
         "loro-mirror": "workspace:*",
