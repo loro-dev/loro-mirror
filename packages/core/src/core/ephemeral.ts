@@ -37,6 +37,8 @@ export class EphemeralPatchManager {
     /** Tracks what the local peer last wrote, keyed by ContainerID -> fieldKey -> value */
     private localValues: Map<ContainerID, Record<string, unknown>> = new Map();
     private finalizeTimer?: ReturnType<typeof setTimeout>;
+    private finalizeCallback?: () => void;
+    private debounceUntil: number = 0;
     private defaultTimeout: number = 50_000;
 
     constructor(store: EphemeralStore) {
@@ -247,12 +249,33 @@ export class EphemeralPatchManager {
     }
 
     /**
-     * Schedule a debounced finalize. Resets any existing timer.
+     * Schedule a debounced finalize.
+     * Instead of clearing and re-creating a timer on every call (expensive at 60fps),
+     * we push out the deadline and let the existing timer's callback re-schedule
+     * itself if the deadline hasn't been reached yet.
      */
     scheduleFinalizeAfter(timeout: number | undefined, callback: () => void): void {
         const ms = timeout ?? this.defaultTimeout;
-        this.clearTimer();
-        this.finalizeTimer = setTimeout(callback, ms);
+        this.debounceUntil = Date.now() + ms;
+        this.finalizeCallback = callback;
+
+        if (this.finalizeTimer == null) {
+            this.finalizeTimer = setTimeout(() => this.onTimerFired(), ms);
+        }
+    }
+
+    private onTimerFired(): void {
+        this.finalizeTimer = undefined;
+        const remaining = this.debounceUntil - Date.now();
+        if (remaining > 0) {
+            // Deadline was pushed out — re-schedule for the remaining time
+            this.finalizeTimer = setTimeout(() => this.onTimerFired(), remaining);
+        } else {
+            // Deadline reached — execute
+            const cb = this.finalizeCallback;
+            this.finalizeCallback = undefined;
+            cb?.();
+        }
     }
 
     clearTimer(): void {
@@ -260,6 +283,8 @@ export class EphemeralPatchManager {
             clearTimeout(this.finalizeTimer);
             this.finalizeTimer = undefined;
         }
+        this.finalizeCallback = undefined;
+        this.debounceUntil = 0;
     }
 
     /**
