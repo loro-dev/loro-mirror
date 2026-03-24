@@ -1,5 +1,35 @@
 # Changelog
 
+## [3.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v2.0.0...loro-mirror-jotai-v3.0.0) (2026-03-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **core:** add ephemeral sync and replace direction with source ([#77](https://github.com/loro-dev/loro-mirror/issues/77))
+* make events synchronous by using loro-crdt@1.8.0 ([#39](https://github.com/loro-dev/loro-mirror/issues/39))
+
+### Features
+
+* **core:** add ephemeral sync and replace direction with source ([#77](https://github.com/loro-dev/loro-mirror/issues/77)) ([267d552](https://github.com/loro-dev/loro-mirror/commit/267d5522ecdd0875241a73f0e23d8265acf7fa02))
+* **core:** add withCid ($cid) support for maps and tree node.data ([#19](https://github.com/loro-dev/loro-mirror/issues/19)) ([b031b09](https://github.com/loro-dev/loro-mirror/commit/b031b096ecb4c4db54529bfd2a9b04c49ba9b0c0))
+* jotai binding ([#13](https://github.com/loro-dev/loro-mirror/issues/13)) ([5a381ab](https://github.com/loro-dev/loro-mirror/commit/5a381abd96e2c77f7f56bb6735d7e60a5f5edd6d))
+* make events synchronous by using loro-crdt@1.8.0 ([#39](https://github.com/loro-dev/loro-mirror/issues/39)) ([27aa95b](https://github.com/loro-dev/loro-mirror/commit/27aa95ba135e56ee3e3f56fb7f1a18cf448938f7))
+* make setState async to avoid correctness problem ([#24](https://github.com/loro-dev/loro-mirror/issues/24)) ([cc234c3](https://github.com/loro-dev/loro-mirror/commit/cc234c3a1648704b5b44427e0728514cb7fa4832))
+
+
+### Bug Fixes
+
+* $cid as non-enumerable property ([#48](https://github.com/loro-dev/loro-mirror/issues/48)) ([5cb6394](https://github.com/loro-dev/loro-mirror/commit/5cb6394424ee3347ea21c3f626d87b7a8958a8b0))
+* **core:** avoid writes on initState and normalize shape ([#20](https://github.com/loro-dev/loro-mirror/issues/20)) ([99bc365](https://github.com/loro-dev/loro-mirror/commit/99bc365d0352a2e1ae51ce90da6196ad0edff07b))
+* **core:** prevent divergence with null map values ([#18](https://github.com/loro-dev/loro-mirror/issues/18)) ([3fc3965](https://github.com/loro-dev/loro-mirror/commit/3fc3965d02851e64903aab1ff119f69111342861))
+* initialize subAtom state on mount with current store state ([#56](https://github.com/loro-dev/loro-mirror/issues/56)) ([ca94175](https://github.com/loro-dev/loro-mirror/commit/ca94175455842f9c0c35be4ea691edd6e9fcce5e))
+* initState shuold not override doc init state ([dc59fa8](https://github.com/loro-dev/loro-mirror/commit/dc59fa8975313afa49ebad1097a946c01b981b57))
+* jotai init ([505e419](https://github.com/loro-dev/loro-mirror/commit/505e41966d4c1089047e3394f196fb0d53a6ce18))
+* jotai sub ([90944c8](https://github.com/loro-dev/loro-mirror/commit/90944c8b2d399dd781fe73f1b591567e25cecd11))
+* **jotai:** only subscribe the state which is from loro ([#34](https://github.com/loro-dev/loro-mirror/issues/34)) ([9817678](https://github.com/loro-dev/loro-mirror/commit/981767892b1e5c0198e431eefe80d82d0033f4bf))
+* make withCid as default behavior and rm this config ([#23](https://github.com/loro-dev/loro-mirror/issues/23)) ([b97ba42](https://github.com/loro-dev/loro-mirror/commit/b97ba4209ae0057c940927bee9c279bb1327302f))
+* use explicit .js extensions for ESM-compliant imports ([#58](https://github.com/loro-dev/loro-mirror/issues/58)) ([d6ee6fe](https://github.com/loro-dev/loro-mirror/commit/d6ee6fe6f9e0781b6f8440075115d6315e3c1594))
+
 ## [2.0.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v1.2.2...loro-mirror-jotai-v2.0.0) (2026-03-24)
 
 
