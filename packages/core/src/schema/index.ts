@@ -64,12 +64,12 @@ schema.String = function <T extends string = string, O extends SchemaOptions = {
 } as {
     // Overload 1: No options - default required string
     <T extends string = string>(): StringSchemaType<T> & { options: {} };
-    // Overload 2: With required: false (single generic) - O inferred from literal
-    <T extends string = string>(
-        options: { required: false } & SchemaOptions,
-    ): StringSchemaType<T> & { options: { required: false } };
+    // Overload 2: With required: false (single generic) - infer full options type
+    <T extends string = string, O extends SchemaOptions & { required: false } = { required: false }>(
+        options: O,
+    ): StringSchemaType<T> & { options: O };
     // Overload 3: Explicit O type parameter (backwards compatible)
-    <T extends string = string, O extends SchemaOptions = SchemaOptions>(
+    <T extends string = string, O extends SchemaOptions = {}>(
         options: O,
     ): StringSchemaType<T> & { options: O };
 };

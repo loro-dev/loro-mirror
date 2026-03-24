@@ -92,4 +92,5 @@ describe("infer type", () => {
 
         expectTypeOf<InferredType>().toEqualTypeOf<UserId | undefined>();
     });
+
 });
