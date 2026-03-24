@@ -173,6 +173,47 @@ describe("setState with ephemeral routing", () => {
 
         mirror.dispose();
     });
+
+    it("should not rebuild baseState for pure ephemeral updates", () => {
+        const { mirror } = createSimpleSetup();
+        const rebuildSpy = vi.spyOn(
+            mirror as unknown as { rebuildBaseState: () => unknown },
+            "rebuildBaseState",
+        );
+
+        mirror.setState(
+            (s) => {
+                s.canvas.x = 50;
+                s.canvas.y = 75;
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        expect(rebuildSpy).not.toHaveBeenCalled();
+
+        mirror.dispose();
+    });
+
+    it("should emit a single local notification for one ephemeral setState call", () => {
+        const { mirror } = createSimpleSetup();
+        const directions: SyncDirection[] = [];
+
+        mirror.subscribe((_, metadata) => {
+            directions.push(metadata.direction);
+        });
+
+        mirror.setState(
+            (s) => {
+                s.canvas.x = 50;
+                s.canvas.y = 75;
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        expect(directions).toEqual([SyncDirection.TO_LORO]);
+
+        mirror.dispose();
+    });
 });
 
 describe("Change classification", () => {
@@ -347,6 +388,103 @@ describe("EphemeralStore remote changes", () => {
 
         expect(metadata).toBeDefined();
         expect(metadata!.direction).toBe(SyncDirection.FROM_EPHEMERAL);
+
+        mirror.dispose();
+    });
+
+    it("should apply remote ephemeral deltas without full recomposition", () => {
+        const { doc, eph, mirror } = createSimpleSetup();
+        const composeSpy = vi.spyOn(
+            (
+                mirror as unknown as { ephemeralManager?: EphemeralPatchManager }
+            ).ephemeralManager!,
+            "compose",
+        );
+
+        const canvasContainerId = doc.getMap("canvas").id;
+        eph.set(canvasContainerId, { x: 200, y: 300 } as never);
+
+        expect(mirror.getState().canvas.x).toBe(200);
+        expect(mirror.getState().canvas.y).toBe(300);
+        expect(composeSpy).not.toHaveBeenCalled();
+
+        mirror.dispose();
+    });
+});
+
+describe("patchEphemeral fast path", () => {
+    it("should update state immediately without writing to LoroDoc", () => {
+        const { doc, mirror } = createSimpleSetup();
+        const canvasCid = doc.getMap("canvas").id;
+
+        mirror.patchEphemeral(canvasCid, "x", 88, { finalizeTimeout: 50_000 });
+
+        expect(mirror.getState().canvas.x).toBe(88);
+        expect(doc.getMap("canvas").toJSON().x).toBe(0);
+
+        mirror.dispose();
+    });
+
+    it("should finalize patched values into LoroDoc", () => {
+        const { doc, mirror } = createSimpleSetup();
+        const canvasCid = doc.getMap("canvas").id;
+
+        mirror.patchEphemeral(canvasCid, "x", 88, { finalizeTimeout: 50_000 });
+        mirror.finalizeEphemeralPatches();
+
+        expect(doc.getMap("canvas").toJSON().x).toBe(88);
+
+        mirror.dispose();
+    });
+
+    it("should reject invalid targets", () => {
+        const { doc, mirror } = createSimpleSetup();
+        const canvasCid = doc.getMap("canvas").id;
+
+        expect(() => {
+            mirror.patchEphemeral(canvasCid, "missing", 1);
+        }).toThrow(/existing LoroMap keys/);
+
+        mirror.dispose();
+    });
+
+    it("should require ephemeralStore", () => {
+        const doc = new LoroDoc();
+        const testSchema = schema({
+            canvas: schema.LoroMap({
+                x: schema.Number(),
+            }),
+        });
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            initialState: { canvas: { x: 0 } },
+        });
+
+        expect(() => {
+            mirror.patchEphemeral("cid:root-canvas:Map" as ContainerID, "x", 1);
+        }).toThrow(/requires an ephemeralStore/);
+
+        mirror.dispose();
+    });
+
+    it("should not rebuild baseState and should notify once", () => {
+        const { doc, mirror } = createSimpleSetup();
+        const canvasCid = doc.getMap("canvas").id;
+        const rebuildSpy = vi.spyOn(
+            mirror as unknown as { rebuildBaseState: () => unknown },
+            "rebuildBaseState",
+        );
+        const directions: SyncDirection[] = [];
+
+        mirror.subscribe((_, metadata) => {
+            directions.push(metadata.direction);
+        });
+
+        mirror.patchEphemeral(canvasCid, "x", 55, { finalizeTimeout: 50_000 });
+
+        expect(rebuildSpy).not.toHaveBeenCalled();
+        expect(directions).toEqual([SyncDirection.TO_LORO]);
 
         mirror.dispose();
     });

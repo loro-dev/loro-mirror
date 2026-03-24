@@ -36,22 +36,57 @@ export interface PathResolverContext {
     doc: LoroDoc;
 }
 
+type EphemeralPatch = Record<string, unknown>;
+
+interface StoreEventShape {
+    by: "local" | "import" | "timeout";
+    added: string[];
+    updated: string[];
+    removed: string[];
+}
+
+export interface EphemeralPatchDelta {
+    containerId: ContainerID;
+    previous: EphemeralPatch | undefined;
+    next: EphemeralPatch | undefined;
+}
+
+export interface EphemeralStoreChangeEvent {
+    by: "local" | "import" | "timeout";
+    added: ContainerID[];
+    updated: ContainerID[];
+    removed: ContainerID[];
+    deltas: EphemeralPatchDelta[];
+}
+
 /**
  * Manages ephemeral patches: storage, composition, path resolution, and finalization.
  */
 export class EphemeralPatchManager {
     private store: EphemeralStore;
+    /** Latest patch snapshot by container id */
+    private patches: Map<ContainerID, EphemeralPatch> = new Map();
     /** Tracks what the local peer last wrote, keyed by ContainerID -> fieldKey -> value */
     private localValues: Map<ContainerID, Record<string, unknown>> = new Map();
     private debounce = new DebounceTimer();
 
     constructor(store: EphemeralStore) {
         this.store = store;
+        this.syncAllPatchesFromStore();
     }
 
     /** Subscribe to EphemeralStore changes. Returns unsubscribe function. */
-    subscribe(listener: () => void): () => void {
-        return this.store.subscribe(listener);
+    subscribe(listener: (event: EphemeralStoreChangeEvent) => void): () => void {
+        return this.store.subscribe((event) => {
+            const typedEvent = event as StoreEventShape;
+            listener({
+                by: typedEvent.by,
+                added: typedEvent.added.map((id) => id as ContainerID),
+                updated: typedEvent.updated.map((id) => id as ContainerID),
+                removed: typedEvent.removed.map((id) => id as ContainerID),
+                deltas: this.syncFromStoreEvent(typedEvent),
+            });
+        });
     }
 
     get hasLocalPatches(): boolean {
@@ -84,30 +119,59 @@ export class EphemeralPatchManager {
     /**
      * Write a set of ephemeral-eligible changes to the EphemeralStore.
      */
-    writeChanges(changes: EphemeralEligibleChange[]): void {
+    writeChanges(changes: EphemeralEligibleChange[]): EphemeralPatchDelta[] {
+        const grouped = new Map<ContainerID, EphemeralPatch>();
         for (const change of changes) {
-            const containerId = change.container;
-            const key = change.key;
-            const value = change.value;
-
-            // Update EphemeralStore
-            let currentPatch = this.store.get(containerId) as
-                | Record<string, unknown>
-                | undefined;
-            if (!currentPatch) {
-                currentPatch = {};
-            }
-            currentPatch[key] = value;
-            this.store.set(containerId, currentPatch as EphemeralValue);
-
-            // Track local writes
-            let localEntry = this.localValues.get(containerId);
-            if (!localEntry) {
-                localEntry = {};
-                this.localValues.set(containerId, localEntry);
-            }
-            localEntry[key] = value;
+            const fieldUpdates = grouped.get(change.container) ?? {};
+            fieldUpdates[change.key] = change.value;
+            grouped.set(change.container, fieldUpdates);
         }
+
+        const deltas: EphemeralPatchDelta[] = [];
+
+        for (const [containerId, fieldUpdates] of grouped) {
+            const previous = this.clonePatch(this.patches.get(containerId));
+            const nextPatch: EphemeralPatch = {
+                ...previous,
+            };
+            let hasChanges = false;
+
+            for (const [key, value] of Object.entries(fieldUpdates)) {
+                if (nextPatch[key] !== value) {
+                    hasChanges = true;
+                }
+                nextPatch[key] = value;
+            }
+
+            if (!hasChanges) {
+                continue;
+            }
+
+            this.patches.set(containerId, nextPatch);
+            this.store.set(containerId, nextPatch as EphemeralValue);
+            this.updateLocalValues(containerId, fieldUpdates);
+
+            deltas.push({
+                containerId,
+                previous,
+                next: this.clonePatch(nextPatch),
+            });
+        }
+
+        return deltas;
+    }
+
+    /**
+     * Fast path for directly patching a single primitive field.
+     */
+    writeValue(
+        containerId: ContainerID,
+        key: string,
+        value: unknown,
+    ): EphemeralPatchDelta[] {
+        return this.writeChanges([
+            { kind: "set", container: containerId, key, value },
+        ]);
     }
 
     /**
@@ -115,73 +179,80 @@ export class EphemeralPatchManager {
      * Returns the base unchanged if no patches exist.
      */
     compose<T>(base: T, ctx: PathResolverContext): T {
+        this.syncAllPatchesFromStore();
+        if (this.patches.size === 0) return base;
+
+        const deltas: EphemeralPatchDelta[] = [];
+        for (const [containerId, patch] of this.patches) {
+            deltas.push({
+                containerId,
+                previous: undefined,
+                next: this.clonePatch(patch),
+            });
+        }
+        return this.applyDelta(base, base, deltas, ctx);
+    }
+
+    /**
+     * Incrementally apply patch deltas to a previously composed state.
+     */
+    applyDelta<T>(
+        currentState: T,
+        baseState: T,
+        deltas: readonly EphemeralPatchDelta[],
+        ctx: PathResolverContext,
+    ): T {
         type Obj = Record<string | number | symbol, unknown>;
 
-        const allStates = this.store.getAllStates();
-        if (!allStates || Object.keys(allStates).length === 0) return base;
+        if (deltas.length === 0) return currentState;
 
-        let composed = base as Obj;
+        let composed = currentState as Obj;
+        const base = baseState as Obj;
         let hasChanges = false;
 
-        for (const [containerIdStr, fields] of Object.entries(allStates)) {
-            if (!fields || typeof fields !== "object") continue;
-            const containerId = containerIdStr as ContainerID;
+        for (const { containerId, previous, next } of deltas) {
             const path = this.resolvePath(containerId, ctx);
             if (!path || path.length === 0) continue;
 
-            // Navigate to the target object in state
-            let target: Obj | undefined = composed;
-            for (let i = 0; i < path.length; i++) {
-                const v = target[path[i]];
-                if (v && typeof v === "object") {
-                    target = v as Obj;
-                } else {
-                    target = undefined;
-                    break;
-                }
-            }
-            if (!target) continue;
+            const target = this.navigateToObject(composed, path);
+            const baseTarget = this.navigateToObject(base, path);
+            if (!target || !baseTarget) continue;
 
-            const fieldEntries = fields as Record<string, unknown>;
-            let needsClone = false;
-            for (const [key, value] of Object.entries(fieldEntries)) {
-                if (key in target && target[key] !== value) {
-                    needsClone = true;
-                    break;
+            const keys = new Set<string>();
+            if (previous) {
+                for (const key of Object.keys(previous)) {
+                    keys.add(key);
                 }
             }
-            if (!needsClone) continue;
+            if (next) {
+                for (const key of Object.keys(next)) {
+                    keys.add(key);
+                }
+            }
+
+            const updates: Array<[string, unknown]> = [];
+            for (const key of keys) {
+                if (!(key in baseTarget)) continue;
+                const desiredValue =
+                    next && Object.prototype.hasOwnProperty.call(next, key)
+                        ? next[key]
+                        : baseTarget[key];
+                if (target[key] !== desiredValue) {
+                    updates.push([key, desiredValue]);
+                }
+            }
+            if (updates.length === 0) continue;
 
             if (!hasChanges) {
-                composed = { ...composed };
+                composed = this.cloneNode(composed);
                 hasChanges = true;
             }
 
-            // Immutably clone each segment along the path, preserving non-enumerable $cid
-            let node: Obj = composed;
-            for (let i = 0; i < path.length; i++) {
-                const seg = path[i];
-                const child = node[seg];
-                let clone: Obj;
-                if (Array.isArray(child)) {
-                    clone = [...child] as unknown as Obj;
-                } else {
-                    const obj = child as Obj;
-                    clone = { ...obj };
-                    // Preserve non-enumerable $cid property (set via defineCidProperty)
-                    const cid = obj[CID_KEY];
-                    if (cid !== undefined) {
-                        Object.defineProperty(clone, CID_KEY, { value: cid });
-                    }
-                }
-                node[seg] = clone;
-                node = clone;
-            }
+            const node = this.clonePath(composed, path);
+            if (!node) continue;
 
-            for (const [key, value] of Object.entries(fieldEntries)) {
-                if (key in node) {
-                    node[key] = value;
-                }
+            for (const [key, value] of updates) {
+                node[key] = value;
             }
         }
 
@@ -225,12 +296,14 @@ export class EphemeralPatchManager {
                         currentPatch[k] !== localFields[k],
                 );
                 if (remainingKeys.length === 0) {
+                    this.patches.delete(containerId);
                     this.store.delete(containerId);
                 } else {
                     const remaining: Record<string, unknown> = {};
                     for (const k of remainingKeys) {
                         remaining[k] = currentPatch[k];
                     }
+                    this.patches.set(containerId, { ...remaining });
                     this.store.set(containerId, remaining as EphemeralValue);
                 }
             }
@@ -261,6 +334,7 @@ export class EphemeralPatchManager {
      */
     dispose(): void {
         this.clearTimer();
+        this.patches.clear();
         this.localValues.clear();
     }
 
@@ -277,5 +351,126 @@ export class EphemeralPatchManager {
         } catch {
             return undefined;
         }
+    }
+
+    private syncAllPatchesFromStore(): void {
+        const allStates = this.store.getAllStates();
+        this.patches.clear();
+        for (const [containerId, value] of Object.entries(allStates)) {
+            const patch = this.toPatch(value);
+            if (patch) {
+                this.patches.set(containerId as ContainerID, patch);
+            }
+        }
+    }
+
+    private syncFromStoreEvent(event: StoreEventShape): EphemeralPatchDelta[] {
+        const touched = new Set<ContainerID>();
+        const deltas: EphemeralPatchDelta[] = [];
+
+        for (const id of event.added) {
+            touched.add(id as ContainerID);
+        }
+        for (const id of event.updated) {
+            touched.add(id as ContainerID);
+        }
+        for (const id of event.removed) {
+            touched.add(id as ContainerID);
+        }
+
+        for (const containerId of touched) {
+            const previous = this.clonePatch(this.patches.get(containerId));
+            const next = this.toPatch(this.store.get(containerId));
+
+            if (next) {
+                this.patches.set(containerId, next);
+            } else {
+                this.patches.delete(containerId);
+            }
+
+            deltas.push({
+                containerId,
+                previous,
+                next: this.clonePatch(next),
+            });
+        }
+
+        return deltas;
+    }
+
+    private toPatch(value: unknown): EphemeralPatch | undefined {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+            return undefined;
+        }
+        return { ...(value as EphemeralPatch) };
+    }
+
+    private clonePatch(patch: EphemeralPatch | undefined): EphemeralPatch | undefined {
+        if (!patch) return undefined;
+        return { ...patch };
+    }
+
+    private updateLocalValues(
+        containerId: ContainerID,
+        fieldUpdates: EphemeralPatch,
+    ): void {
+        let localEntry = this.localValues.get(containerId);
+        if (!localEntry) {
+            localEntry = {};
+            this.localValues.set(containerId, localEntry);
+        }
+        for (const [key, value] of Object.entries(fieldUpdates)) {
+            localEntry[key] = value;
+        }
+    }
+
+    private navigateToObject(
+        root: Record<string | number | symbol, unknown>,
+        path: (string | number)[],
+    ): Record<string | number | symbol, unknown> | undefined {
+        let target: unknown = root;
+        for (const segment of path) {
+            if (!target || typeof target !== "object") {
+                return undefined;
+            }
+            target = (target as Record<string | number | symbol, unknown>)[segment];
+        }
+        if (!target || typeof target !== "object") {
+            return undefined;
+        }
+        return target as Record<string | number | symbol, unknown>;
+    }
+
+    private clonePath(
+        root: Record<string | number | symbol, unknown>,
+        path: (string | number)[],
+    ): Record<string | number | symbol, unknown> | undefined {
+        let node = root;
+        for (const segment of path) {
+            const child = node[segment];
+            if (!child || typeof child !== "object") {
+                return undefined;
+            }
+            const clone = this.cloneNode(
+                child as Record<string | number | symbol, unknown>,
+            );
+            node[segment] = clone;
+            node = clone;
+        }
+        return node;
+    }
+
+    private cloneNode(
+        node: Record<string | number | symbol, unknown>,
+    ): Record<string | number | symbol, unknown> {
+        if (Array.isArray(node)) {
+            return [...node] as unknown as Record<string | number | symbol, unknown>;
+        }
+        const clone = { ...node };
+        const cid = node[CID_KEY];
+        if (cid !== undefined) {
+            Object.defineProperty(clone, CID_KEY, { value: cid });
+        }
+        return clone;
     }
 }

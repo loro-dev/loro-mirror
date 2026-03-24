@@ -18,7 +18,13 @@ import {
     LoroTree,
     TreeID,
 } from "loro-crdt";
-import { EphemeralPatchManager, type EphemeralEligibleChange, type PathResolverContext } from "./ephemeral.js";
+import {
+    EphemeralPatchManager,
+    type EphemeralEligibleChange,
+    type EphemeralPatchDelta,
+    type EphemeralStoreChangeEvent,
+    type PathResolverContext,
+} from "./ephemeral.js";
 import type { InferContainerOptions } from "../schema/types.js";
 export type { InferContainerOptions } from "../schema/types.js";
 
@@ -362,6 +368,7 @@ export class Mirror<S extends SchemaType> {
 
     // Ephemeral patch manager (handles EphemeralStore, local tracking, path resolution, finalization)
     private ephemeralManager?: EphemeralPatchManager;
+    private suppressLocalEphemeralEvents = 0;
 
     /**
      * Creates a new Mirror instance
@@ -429,8 +436,8 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
-        this.state = baseState as InferType<S>;
         this.baseState = baseState as InferType<S>;
+        this.state = baseState as InferType<S>;
 
         // Initialize ephemeral manager if store provided
         if (options.ephemeralStore) {
@@ -442,6 +449,7 @@ export class Mirror<S extends SchemaType> {
 
         // Initialize Loro containers and setup subscriptions
         this.initializeContainers();
+        this.state = this.composeState(this.baseState);
 
         // Subscribe to the root doc for global updates
         this.subscriptions.push(this.doc.subscribe(this.handleLoroEvent));
@@ -716,44 +724,12 @@ export class Mirror<S extends SchemaType> {
         try {
             // Pre-register any containers referenced in this batch
             this.registerContainersFromLoroEvent(event);
-            // no-op debug hook removed
-            // Normalize event paths to canonical root paths when applicable
-            const normalized = {
-                ...event,
-                events: event.events.map((e) => {
-                    const canon = this.rootPathById.get(e.target);
-                    if (
-                        canon &&
-                        (!Array.isArray(e.path) || e.path[0] !== canon[0])
-                    ) {
-                        return { ...e, path: canon } as typeof e;
-                    }
-                    return e;
-                }),
-            } as LoroEventBatch;
+            const normalized = this.normalizeLoroEventBatch(event);
             // Incrementally update baseState using event deltas
-            this.baseState = applyEventBatchToState(
-                this.baseState as unknown as Record<string, unknown>,
+            this.baseState = this.applyNormalizedLoroEventToState(
+                this.baseState,
                 normalized,
-                {
-                    getContainerById: (id) => this.doc.getContainerById(id),
-                    containerToJson: (c) => this.containerToStateJson(c),
-                    nodeDataWithCid: (treeId) => {
-                        const s = this.getContainerSchema(treeId);
-                        return !!(s && isLoroTreeSchema(s));
-                    },
-                    getNodeDataCid: (treeId, nodeId) => {
-                        try {
-                            const node = this.doc
-                                .getTree(treeId)
-                                .getNodeByID(nodeId);
-                            return node ? node.data.id : undefined;
-                        } catch {
-                            return undefined;
-                        }
-                    },
-                },
-            ) as unknown as InferType<S>;
+            );
             // Compose state with ephemeral overlay
             this.state = this.composeState(this.baseState);
             // With canonicalized paths, applyEventBatchToState updates roots precisely.
@@ -765,6 +741,94 @@ export class Mirror<S extends SchemaType> {
             this.syncing = false;
         }
     };
+
+    private normalizeLoroEventBatch(event: LoroEventBatch): LoroEventBatch {
+        return {
+            ...event,
+            events: event.events.map((e) => {
+                const canon = this.rootPathById.get(e.target);
+                if (canon && (!Array.isArray(e.path) || e.path[0] !== canon[0])) {
+                    return { ...e, path: canon } as typeof e;
+                }
+                return e;
+            }),
+        } as LoroEventBatch;
+    }
+
+    private applyNormalizedLoroEventToState(
+        currentState: InferType<S>,
+        event: LoroEventBatch,
+    ): InferType<S> {
+        const nextState = applyEventBatchToState(
+            currentState as unknown as Record<string, unknown>,
+            event,
+            {
+                getContainerById: (id) => this.doc.getContainerById(id),
+                containerToJson: (c) => this.containerToStateJson(c),
+                nodeDataWithCid: (treeId) => {
+                    const schema = this.getContainerSchema(treeId);
+                    return !!(schema && isLoroTreeSchema(schema));
+                },
+                getNodeDataCid: (treeId, nodeId) => {
+                    try {
+                        const node = this.doc.getTree(treeId).getNodeByID(nodeId);
+                        return node ? node.data.id : undefined;
+                    } catch {
+                        return undefined;
+                    }
+                },
+            },
+        ) as unknown as InferType<S>;
+        this.stampCidForEventTargets(nextState, event);
+        return nextState;
+    }
+
+    private captureLocalDocEvent(callback: () => void): LoroEventBatch | undefined {
+        let captured: LoroEventBatch | undefined;
+        const unsubscribe = this.doc.subscribe((event) => {
+            if (event.by === "local") {
+                captured = event;
+            }
+        });
+        try {
+            callback();
+        } finally {
+            unsubscribe();
+        }
+        return captured;
+    }
+
+    private stampCidForEventTargets(
+        state: InferType<S>,
+        event: LoroEventBatch,
+    ): void {
+        const visited = new Set<ContainerID>();
+        for (const item of event.events) {
+            if (visited.has(item.target)) continue;
+            visited.add(item.target);
+
+            const container = this.doc.getContainerById(item.target);
+            if (!container || container.kind() !== "Map") {
+                continue;
+            }
+
+            const path = this.doc.getPathToContainer(container.id);
+            if (!path || path.length === 0) continue;
+
+            let target: unknown = state;
+            for (const segment of path) {
+                if (!target || typeof target !== "object") {
+                    target = undefined;
+                    break;
+                }
+                target = (target as Record<string | number, unknown>)[segment];
+            }
+
+            if (target && typeof target === "object") {
+                defineCidProperty(target, container.id);
+            }
+        }
+    }
 
     /**
      * Processes container additions/removals from the LoroDoc
@@ -1660,13 +1724,40 @@ export class Mirror<S extends SchemaType> {
         return this.ephemeralManager.compose(base, this.ephemeralCtx);
     }
 
+    private applyEphemeralDeltas(
+        deltas: readonly EphemeralPatchDelta[],
+        state: InferType<S> = this.state,
+    ): InferType<S> {
+        if (!this.ephemeralManager || deltas.length === 0) return state;
+        return this.ephemeralManager.applyDelta(
+            state,
+            this.baseState,
+            deltas,
+            this.ephemeralCtx,
+        );
+    }
+
+    private withSuppressedLocalEphemeralEvents<T>(callback: () => T): T {
+        this.suppressLocalEphemeralEvents += 1;
+        try {
+            return callback();
+        } finally {
+            this.suppressLocalEphemeralEvents -= 1;
+        }
+    }
+
     /**
      * Handle events from the EphemeralStore (both local and remote)
      */
-    private handleEphemeralEvent = () => {
+    private handleEphemeralEvent = (event: EphemeralStoreChangeEvent) => {
         if (this.syncing) return;
-        // Recompose state with updated ephemeral data
-        this.state = this.composeState(this.baseState);
+        if (
+            event.by === "local" &&
+            this.suppressLocalEphemeralEvents > 0
+        ) {
+            return;
+        }
+        this.state = this.applyEphemeralDeltas(event.deltas);
         this.notifySubscribers(SyncDirection.FROM_EPHEMERAL);
     };
 
@@ -1690,10 +1781,17 @@ export class Mirror<S extends SchemaType> {
 
         this.syncing = true;
         try {
-            this.ephemeralManager.finalize(this.doc);
-
-            // Update baseState from LoroDoc
-            this.baseState = this.rebuildBaseState();
+            const localEvent = this.captureLocalDocEvent(() => {
+                this.ephemeralManager?.finalize(this.doc);
+            });
+            if (localEvent) {
+                this.registerContainersFromLoroEvent(localEvent);
+                const normalized = this.normalizeLoroEventBatch(localEvent);
+                this.baseState = this.applyNormalizedLoroEventToState(
+                    this.baseState,
+                    normalized,
+                );
+            }
             this.state = this.composeState(this.baseState);
             this.notifySubscribers(SyncDirection.TO_LORO);
         } finally {
@@ -2151,6 +2249,79 @@ export class Mirror<S extends SchemaType> {
         return this.state;
     }
 
+    private applyLocalLoroChanges(
+        changes: Change[],
+        pendingState: InferType<S>,
+        options?: SetStateOptions,
+    ): boolean {
+        let localEvent: LoroEventBatch | undefined;
+        this.syncing = true;
+        try {
+            localEvent = this.captureLocalDocEvent(() => {
+                this.applyChangesToLoro(changes, pendingState, options);
+            });
+        } finally {
+            this.syncing = false;
+        }
+
+        if (!localEvent) {
+            return false;
+        }
+
+        this.registerContainersFromLoroEvent(localEvent);
+        const normalized = this.normalizeLoroEventBatch(localEvent);
+        this.baseState = this.applyNormalizedLoroEventToState(
+            this.baseState,
+            normalized,
+        );
+        this.state = this.applyNormalizedLoroEventToState(this.state, normalized);
+        return true;
+    }
+
+    patchEphemeral(
+        containerId: ContainerID,
+        key: string,
+        value: string | number | boolean | null,
+        options?: Pick<SetStateOptions, "finalizeTimeout" | "tags">,
+    ): void {
+        if (this.syncing) return;
+        if (!this.ephemeralManager) {
+            throw new Error("patchEphemeral requires an ephemeralStore");
+        }
+
+        const change: Change = {
+            container: containerId,
+            key,
+            value,
+            kind: "set",
+        };
+        if (!this.ephemeralManager.isEligible(change, this.doc)) {
+            throw new Error(
+                "patchEphemeral only supports primitive values on existing LoroMap keys",
+            );
+        }
+
+        const deltas = this.withSuppressedLocalEphemeralEvents(() =>
+            this.ephemeralManager?.writeValue(containerId, key, value) ?? [],
+        );
+        if (deltas.length === 0) return;
+
+        this.ephemeralManager.scheduleFinalizeAfter(
+            options?.finalizeTimeout,
+            () => {
+                this.finalizeEphemeralPatches();
+            },
+        );
+        this.state = this.applyEphemeralDeltas(deltas);
+
+        const tags = options?.tags
+            ? Array.isArray(options.tags)
+                ? options.tags
+                : [options.tags]
+            : undefined;
+        this.notifySubscribers(SyncDirection.TO_LORO, tags);
+    }
+
     /**
      * Update state and propagate changes.
      *
@@ -2284,20 +2455,22 @@ export class Mirror<S extends SchemaType> {
 
             // Apply non-ephemeral changes directly to LoroDoc
             if (loroChanges.length > 0) {
-                this.syncing = true;
-                try {
-                    this.applyChangesToLoro(loroChanges, newState, options);
-                } finally {
-                    this.syncing = false;
+                const appliedIncrementally = this.applyLocalLoroChanges(
+                    loroChanges,
+                    newState,
+                    options,
+                );
+                if (!appliedIncrementally) {
+                    this.baseState = this.rebuildBaseState();
+                    this.state = this.composeState(this.baseState);
                 }
             }
 
-            // Rebuild baseState from LoroDoc (preserving Ignore fields)
-            this.baseState = this.rebuildBaseState();
-
             // Write ephemeral-eligible changes to EphemeralStore
             if (ephemeralChanges.length > 0) {
-                this.ephemeralManager.writeChanges(ephemeralChanges);
+                const deltas = this.withSuppressedLocalEphemeralEvents(() =>
+                    this.ephemeralManager?.writeChanges(ephemeralChanges) ?? [],
+                );
                 // Schedule debounced finalization
                 this.ephemeralManager.scheduleFinalizeAfter(
                     options?.finalizeTimeout,
@@ -2305,10 +2478,8 @@ export class Mirror<S extends SchemaType> {
                         this.finalizeEphemeralPatches();
                     },
                 );
+                this.state = this.applyEphemeralDeltas(deltas);
             }
-
-            // Compose final state (base + ephemeral overlay)
-            this.state = this.composeState(this.baseState);
         } else {
             // No ephemeral store — apply everything to LoroDoc
             this.updateLoro(newState, options);

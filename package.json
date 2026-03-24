@@ -9,6 +9,7 @@
         "lint": "oxlint --type-aware",
         "format": "prettier --write .",
         "typecheck": "pnpm -r typecheck",
+        "bench:ephemeral": "pnpm --filter loro-mirror bench:ephemeral",
         "check": "pnpm build && pnpm test && pnpm lint && pnpm typecheck"
     },
     "keywords": [
