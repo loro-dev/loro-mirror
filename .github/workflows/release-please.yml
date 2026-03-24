@@ -5,6 +5,12 @@ on:
         branches:
             - main
     workflow_dispatch:
+        inputs:
+            publish_existing:
+                description: Publish unpublished workspace packages without creating a new release
+                required: false
+                default: false
+                type: boolean
 
 permissions:
     contents: write
@@ -12,6 +18,7 @@ permissions:
 
 jobs:
     release:
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish_existing) }}
         runs-on: ubuntu-latest
         outputs:
             releases_created: ${{ steps.release.outputs.releases_created }}
@@ -27,8 +34,11 @@ jobs:
 
     publish:
         needs: release
-        if: ${{ needs.release.outputs.releases_created == 'true' }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.publish_existing) || needs.release.outputs.releases_created == 'true') }}
         runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -41,7 +51,7 @@ jobs:
             - name: Setup Node
               uses: actions/setup-node@v4
               with:
-                  node-version: "20"
+                  node-version: "24"
                   registry-url: "https://registry.npmjs.org"
                   cache: "pnpm"
 
@@ -52,8 +62,6 @@ jobs:
               run: pnpm -r build
 
             - name: Publish changed packages to npm
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
               run: |
                   set -euo pipefail
                   echo "Finding unpublished workspace packages..."

@@ -42,7 +42,7 @@ type StringSchemaBuilder<T extends string, O extends SchemaOptions> =
 
 type StringSchemaFactory = {
     <T extends string = string, O extends SchemaOptions = {}>(): StringSchemaBuilder<T, O>;
-    <T extends string = string, O extends SchemaOptions & { required: false } = SchemaOptions & { required: false }>(
+    <T extends string = string, O extends SchemaOptions & { required: false } = { required: false }>(
         options: O,
     ): StringSchemaBuilder<T, O>;
     <T extends string = string, O extends SchemaOptions = {}>(

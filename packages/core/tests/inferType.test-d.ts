@@ -113,11 +113,11 @@ describe("infer type", () => {
         expectTypeOf<InferredType>().toEqualTypeOf<UserId | undefined>();
     });
 
-    test("infer required false for custom string type without explicit options type", () => {
+    test("infer custom string type with required: false (single generic)", () => {
         type UserId = string & { _brand: "userId" };
-        const requiredSchema = schema.String<UserId>({ required: false });
+        const optionalUserIdSchema = schema.String<UserId>({ required: false });
 
-        type InferredType = InferType<typeof requiredSchema>;
+        type InferredType = InferType<typeof optionalUserIdSchema>;
 
         expectTypeOf<InferredType>().toEqualTypeOf<UserId | undefined>();
     });

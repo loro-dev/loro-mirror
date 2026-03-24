@@ -6,14 +6,13 @@ import {
     SchemaType,
 } from "./types.js";
 
-type RootMapSchema = RootSchemaType<Record<string, ContainerSchemaType>>;
-type RecordMapSchema = LoroMapSchema<Record<string, SchemaType>>;
-type RecordMapSchemaWithCatchall = LoroMapSchemaWithCatchall<
+type RootSchemaRecord = RootSchemaType<Record<string, ContainerSchemaType>>;
+type MapSchemaRecord = LoroMapSchema<Record<string, SchemaType>>;
+type MapSchemaWithCatchallRecord = LoroMapSchemaWithCatchall<
     Record<string, SchemaType>,
     SchemaType
 >;
-
-type MapLikeSchema = RootMapSchema | RecordMapSchema | RecordMapSchemaWithCatchall;
+type MapLikeSchema = RootSchemaRecord | MapSchemaRecord | MapSchemaWithCatchallRecord;
 
 export function getMapFieldSchema(
     schema: MapLikeSchema | undefined,

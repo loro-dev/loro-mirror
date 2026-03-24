@@ -8,6 +8,10 @@ import {
     LoroEventBatch,
     TreeID,
 } from "loro-crdt";
+import {
+    normalizeTreeJson,
+    type NormalizedTreeNode,
+} from "./tree-utils.js";
 import { defineCidProperty, isTreeID, applyDecode } from "./utils.js";
 import { SchemaType } from "../schema/index.js";
 
@@ -19,11 +23,7 @@ interface MirrorStateObject {
 }
 
 // State representation for a tree node in mirror state
-interface StateTreeNode {
-    id: string;
-    data: MirrorStateObject;
-    children: StateTreeNode[];
-}
+type StateTreeNode = NormalizedTreeNode<MirrorStateObject>;
 
 function isJSONObject(v: unknown): v is MirrorStateObject {
     return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -383,24 +383,6 @@ function getOrInitNodeData(node: MirrorStateObject): MirrorStateObject {
     return fresh;
 }
 
-// Normalize LoroTree JSON (with `meta`) to Mirror tree node shape `{ id, data, children }`.
-function normalizeTreeJson(input: unknown[]): StateTreeNode[] {
-    if (!Array.isArray(input)) return [];
-    return input.map(mapRawTreeNode);
-}
-
-function mapRawTreeNode(n: unknown): StateTreeNode {
-    const rawId = (n as { id?: unknown })?.id;
-    const id = typeof rawId === "string" ? rawId : "";
-    const meta = (n as { meta?: unknown })?.meta;
-    const data = isJSONObject(meta) ? meta : {};
-    const rawChildren = (n as { children?: unknown })?.children;
-    const children = Array.isArray(rawChildren)
-        ? rawChildren.map(mapRawTreeNode)
-        : [];
-    return { id, data, children };
-}
-
 /**
  * Apply Map updates to a plain object
  */
@@ -679,7 +661,10 @@ function containerToMirrorStateWithoutSchema(c: Container): MirrorState {
         const raw = (
             c as Exclude<Container, LoroCounter>
         ).toJSON() as unknown[];
-        return normalizeTreeJson(raw) as unknown as MirrorState;
+        return normalizeTreeJson(raw, {
+            isTreeData: isJSONObject,
+            createEmptyData: (): MirrorStateObject => ({}),
+        }) as unknown as MirrorState;
     }
     return (
         c as Exclude<Container, LoroCounter>

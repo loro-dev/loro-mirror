@@ -1,6 +1,6 @@
 {
     "name": "loro-mirror-react",
-    "version": "1.2.2",
+    "version": "2.0.0",
     "description": "React hooks and context for Loro Mirror: type-safe CRDT-backed state with selective subscriptions.",
     "type": "module",
     "main": "dist/index.js",
@@ -42,6 +42,11 @@
     ],
     "author": "Loro Team",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/loro-dev/loro-mirror",
+        "directory": "packages/react"
+    },
     "peerDependencies": {
         "loro-crdt": "^1.8.0",
         "loro-mirror": "workspace:*",
