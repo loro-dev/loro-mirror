@@ -42,7 +42,7 @@
 ## Public API (loro-mirror)
 
 - `Mirror(options: MirrorOptions<S>)`
-    - `doc` (required), `schema?`, `initialState?`, `validateUpdates?`, `throwOnValidationError?`, `debug?`, `checkStateConsistency?`, `inferOptions?`.
+    - `doc` (required), `schema?`, `initialState?`, `validateUpdates?`, `debug?`, `checkStateConsistency?`, `inferOptions?`.
     - Methods: `getState()`, `setState(updater, options?)`, `subscribe(cb)`, `dispose()`, `checkStateConsistency()`, `getContainerIds()`.
     - `SetStateOptions` supports `{ tags?: string | string[] }`; subscriber metadata includes `{ source: UpdateSource; tags?: string[] }`.
 - `schema(definition, options?)` plus builders: `.String()`, `.Number()`, `.Boolean()`, `.Ignore()`, `.LoroMap()`, `.LoroMapRecord()`, `.LoroList()`, `.LoroMovableList()`, `.LoroText()`, `.LoroTree()`.

@@ -125,12 +125,6 @@ export interface MirrorOptions<S extends SchemaType> {
     validateUpdates?: boolean;
 
     /**
-     * Whether to throw errors on validation failures
-     * @default false
-     */
-    throwOnValidationError?: boolean;
-
-    /**
      * Debug mode - logs operations
      * @default false
      */
@@ -382,7 +376,6 @@ export class Mirror<S extends SchemaType> {
             schema: options.schema,
             initialState: options.initialState || {},
             validateUpdates: options.validateUpdates !== false,
-            throwOnValidationError: options.throwOnValidationError || false,
             debug: options.debug || false,
             checkStateConsistency: options.checkStateConsistency || false,
             inferOptions: options.inferOptions || {},

@@ -407,7 +407,6 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`schema`**: root schema – optional but recommended for strong typing and validation.
     - **`initialState`**: partial state – merged with schema defaults and current doc JSON.
     - **`validateUpdates`**: boolean (default `true`) – validate new state against schema.
-    - **`throwOnValidationError`**: boolean (default `false`) – throw on invalid updates.
     - **`debug`**: boolean (default `false`) – log diffs and applied changes.
     - **`checkStateConsistency`**: boolean (default `false`) – after non-ephemeral `setState` calls, assert the doc-backed base state equals the normalized `LoroDoc` snapshot.
     - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` – influence container-type inference when inserting containers from plain values.

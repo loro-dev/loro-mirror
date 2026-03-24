@@ -231,7 +231,6 @@ describe("Core State Management", () => {
             const store = new Mirror({
                 doc,
                 schema: testSchema,
-                throwOnValidationError: true,
             });
 
             // Wait for initial sync to complete
@@ -280,7 +279,6 @@ describe("Core State Management", () => {
             const store = new Mirror({
                 doc,
                 schema: testSchema,
-                throwOnValidationError: true,
                 checkStateConsistency: true,
             });
 

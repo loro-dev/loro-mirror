@@ -44,12 +44,6 @@ export interface LoroMirrorAtomConfig<S extends SchemaType> {
     validateUpdates?: boolean;
 
     /**
-     * Whether to throw errors on validation failures
-     * @default false
-     */
-    throwOnValidationError?: boolean;
-
-    /**
      * Debug mode - logs operations
      * @default false
      */

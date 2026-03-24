@@ -70,12 +70,11 @@ Trees are advanced usage; see Advanced: Trees at the end.
 
 ### Mirror
 
-- Constructor: `new Mirror({ doc, schema?, initialState?, validateUpdates?=true, throwOnValidationError?=false, debug?=false, checkStateConsistency?=false, inferOptions? })`
+- Constructor: `new Mirror({ doc, schema?, initialState?, validateUpdates?=true, debug?=false, checkStateConsistency?=false, inferOptions? })`
     - doc: LoroDoc to sync with
     - schema: Root schema; enables validation and typed defaults
     - initialState: Shallow-merged over schema defaults and current doc JSON
     - validateUpdates: Validate on `setState`
-    - throwOnValidationError: Throw if validation fails (default false)
     - debug: Verbose logging
     - checkStateConsistency: Extra runtime check that the doc-backed base state still matches `toNormalizedJson(doc)` after non-ephemeral `setState` updates
     - inferOptions: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` for container inference when schema is missing

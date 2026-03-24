@@ -45,12 +45,6 @@ export interface UseLoroStoreOptions<S extends SchemaType> {
     validateUpdates?: boolean;
 
     /**
-     * Whether to throw errors on validation failures
-     * @default false
-     */
-    throwOnValidationError?: boolean;
-
-    /**
      * Debug mode - logs operations
      * @default false
      */
@@ -113,7 +107,6 @@ export function useLoroStore<S extends SchemaType>(
         options.debug,
         options.initialState,
         options.schema,
-        options.throwOnValidationError,
         options.validateUpdates,
         options.ephemeralStore,
     ]);
@@ -308,7 +301,6 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
         doc,
         initialState,
         validateUpdates,
-        throwOnValidationError,
         debug,
         ephemeralStore,
     }: PropsWithChildren<Omit<UseLoroStoreOptions<S>, "schema">>) {
@@ -317,7 +309,6 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
             schema,
             initialState,
             validateUpdates,
-            throwOnValidationError,
             debug,
             ephemeralStore,
         });
