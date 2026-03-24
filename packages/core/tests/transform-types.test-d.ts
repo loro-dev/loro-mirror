@@ -16,8 +16,18 @@ describe("Transform type inference", () => {
         expectTypeOf<T>().toEqualTypeOf<Date | undefined>();
     });
 
-    it("infers Date for required field with transform", () => {
+    it("infers Date | undefined for required field with transform and no defaultValue", () => {
         const s = schema.String().transform(dateTransform);
+        type T = InferType<typeof s>;
+        expectTypeOf<T>().toEqualTypeOf<Date | undefined>();
+    });
+
+    it("infers Date for required field with transform and explicit defaultValue", () => {
+        const s = schema
+            .String({
+                defaultValue: new Date("2025-01-01T00:00:00.000Z"),
+            })
+            .transform(dateTransform);
         type T = InferType<typeof s>;
         expectTypeOf<T>().toEqualTypeOf<Date>();
     });

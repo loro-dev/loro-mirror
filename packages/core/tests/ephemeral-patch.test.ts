@@ -282,7 +282,7 @@ describe("setState with ephemeral routing", () => {
 
         expect(doc.getMap("record").get("date")).toBe(firstDate.toISOString());
         expect(mirror.getState().record.date).toBeInstanceOf(Date);
-        expect(mirror.getState().record.date.toISOString()).toBe(
+        expect(mirror.getState().record.date!.toISOString()).toBe(
             secondDate.toISOString(),
         );
 
@@ -290,7 +290,7 @@ describe("setState with ephemeral routing", () => {
 
         expect(doc.getMap("record").get("date")).toBe(secondDate.toISOString());
         expect(mirror.getState().record.date).toBeInstanceOf(Date);
-        expect(mirror.getState().record.date.toISOString()).toBe(
+        expect(mirror.getState().record.date!.toISOString()).toBe(
             secondDate.toISOString(),
         );
 

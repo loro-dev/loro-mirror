@@ -89,7 +89,7 @@ describe("Transform Equality Strategy", () => {
             expect(encodeCountAfterThird).toBeGreaterThan(encodeCountAfterSecond);
 
             const state = mirror.getState();
-            expect(state.record.date.getTime()).toBe(date2.getTime());
+            expect(state.record.date!.getTime()).toBe(date2.getTime());
         });
 
         it("works correctly in lists", () => {
@@ -164,8 +164,8 @@ describe("Transform Equality Strategy", () => {
             });
 
             const state = mirror.getState();
-            expect(state.record.date.getFullYear()).toBe(2026);
-            expect(state.record.date.getMonth()).toBe(5); // June is month 5
+            expect(state.record.date!.getFullYear()).toBe(2026);
+            expect(state.record.date!.getMonth()).toBe(5); // June is month 5
         });
 
         it("works correctly in lists with different objects", () => {
@@ -290,7 +290,7 @@ describe("Transform Equality Strategy", () => {
             expect(countAfterSecond).toBeGreaterThan(countAfterFirst);
 
             const state = mirror.getState();
-            expect(state.record.date.getFullYear()).toBe(2026);
+            expect(state.record.date!.getFullYear()).toBe(2026);
         });
 
         it("works in lists", () => {

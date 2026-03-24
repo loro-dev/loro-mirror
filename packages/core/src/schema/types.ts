@@ -36,6 +36,12 @@ export interface SchemaOptions {
     [key: string]: unknown;
 }
 
+type HasExplicitDefaultValue<S extends SchemaType> = S extends {
+    options: { defaultValue: unknown };
+}
+    ? true
+    : false;
+
 export type AnySchemaOptions = SchemaOptions & {
     /**
      * Per-Any inference overrides.
@@ -231,7 +237,7 @@ type IsSchemaRequired<S extends SchemaType> = S extends {
  */
 export type InferType<S extends SchemaType> =
     S extends { transform: TransformDefinition<infer _C, infer D> }
-    ? WithOptionality<D, S & SchemaType>
+    ? WithTransformStartupOptionality<D, S & SchemaType>
     : S extends StringSchemaType
     ? InferStringType<S>
     : S extends NumberSchemaType
@@ -314,7 +320,7 @@ export type InferSchemaType<T extends Record<string, SchemaType>> = {
  */
 export type InferInputType<S extends SchemaType> =
     S extends { transform: TransformDefinition<infer _C, infer D> }
-    ? WithOptionality<D, S & SchemaType>
+    ? WithTransformStartupOptionality<D, S & SchemaType>
     : S extends StringSchemaType
     ? InferStringType<S>
     : S extends NumberSchemaType
@@ -500,6 +506,13 @@ export interface TransformDefinition<CRDTType, DomainType> {
  */
 type WithOptionality<T, S extends SchemaType> =
     IsSchemaRequired<S> extends false ? T | undefined : T;
+
+type WithTransformStartupOptionality<T, S extends SchemaType> =
+    IsSchemaRequired<S> extends false
+        ? T | undefined
+        : HasExplicitDefaultValue<S> extends true
+          ? T
+          : T | undefined;
 
 type InferStringType<S extends SchemaType> = S extends {
     transform: TransformDefinition<infer _C, infer D>;

@@ -104,15 +104,15 @@ describe("infer type", () => {
         expectTypeOf<InferredType>().toEqualTypeOf<UserId | undefined>();
     });
 
-    test("infer string transform to domain type", () => {
+    test("infer string transform to domain type | undefined when no defaultValue", () => {
         const transformedSchema = schema.String().transform(stringDateTransform);
 
         // Transform decode/encode have correct types
         expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: string) => Date>();
         expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: Date) => string>();
 
-        // InferType resolves to domain type
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date>();
+        // InferType resolves to domain type | undefined because empty docs can omit the field
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
     });
 
     test("infer string transform with required: false", () => {
@@ -126,15 +126,15 @@ describe("infer type", () => {
         expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
     });
 
-    test("infer number transform to domain type", () => {
+    test("infer number transform to domain type | undefined when no defaultValue", () => {
         const transformedSchema = schema.Number().transform(numberDateTransform);
 
         // Transform decode/encode have correct types
         expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: number) => Date>();
         expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: Date) => number>();
 
-        // InferType resolves to domain type
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date>();
+        // InferType resolves to domain type | undefined because empty docs can omit the field
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
     });
 
     test("infer number transform with required: false", () => {
@@ -148,15 +148,15 @@ describe("infer type", () => {
         expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
     });
 
-    test("infer boolean transform to domain type", () => {
+    test("infer boolean transform to domain type | undefined when no defaultValue", () => {
         const transformedSchema = schema.Boolean().transform(booleanNumberTransform);
 
         // Transform decode/encode have correct types
         expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: boolean) => number>();
         expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: number) => boolean>();
 
-        // InferType resolves to domain type
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<number>();
+        // InferType resolves to domain type | undefined because empty docs can omit the field
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<number | undefined>();
     });
 
     test("infer boolean transform with required: false", () => {
@@ -179,7 +179,7 @@ describe("infer type", () => {
         type InferredType = InferType<typeof mapSchema>;
 
         expectTypeOf<InferredType>().toEqualTypeOf<
-            { name: string; createdAt: Date } & { $cid: string }
+            { name: string; createdAt: Date | undefined } & { $cid: string }
         >();
     });
 
@@ -194,7 +194,7 @@ describe("infer type", () => {
         type InferredType = InferType<typeof listSchema>;
 
         expectTypeOf<InferredType>().toEqualTypeOf<
-            Array<{ name: string; when: Date } & { $cid: string }>
+            Array<{ name: string; when: Date | undefined } & { $cid: string }>
         >();
     });
 
@@ -233,7 +233,7 @@ describe("infer type", () => {
         type MapInput = NonNullable<InferInputType<typeof mapSchema>>;
         type DeletedAtField = MapInput["deletedAt"];
 
-        expectTypeOf<DeletedAtField>().toEqualTypeOf<Date>();
+        expectTypeOf<DeletedAtField>().toEqualTypeOf<Date | undefined>();
     });
 
     test("transformed field with required: false inside LoroMap (string transform)", () => {
@@ -314,7 +314,7 @@ describe("infer type", () => {
         type ItemInput = NonNullable<ListInput[number]>;
         type DeletedAtField = ItemInput["deletedAt"];
 
-        expectTypeOf<DeletedAtField>().toEqualTypeOf<Date>();
+        expectTypeOf<DeletedAtField>().toEqualTypeOf<Date | undefined>();
     });
 
     test("transformed field with required: false inside LoroTree node data", () => {
@@ -350,7 +350,7 @@ describe("infer type", () => {
         type NodeData = NodeInput["data"];
         type DeletedAtField = NodeData["deletedAt"];
 
-        expectTypeOf<DeletedAtField>().toEqualTypeOf<Date>();
+        expectTypeOf<DeletedAtField>().toEqualTypeOf<Date | undefined>();
     });
 
     test("transformed field with required: false inside LoroMap with catchall", () => {
@@ -385,6 +385,22 @@ describe("infer type", () => {
         const mapSchema = schema.LoroMap({
             name: schema.String(),
             createdAt: schema.Number().transform(numberDateTransform),
+        });
+
+        type MapInput = NonNullable<InferInputType<typeof mapSchema>>;
+        type CreatedAtField = MapInput["createdAt"];
+
+        expectTypeOf<CreatedAtField>().toEqualTypeOf<Date | undefined>();
+    });
+
+    test("required transformed field with explicit defaultValue stays non-optional", () => {
+        const mapSchema = schema.LoroMap({
+            name: schema.String(),
+            createdAt: schema
+                .String({
+                    defaultValue: new Date("2025-01-01T00:00:00.000Z"),
+                })
+                .transform(stringDateTransform),
         });
 
         type MapInput = NonNullable<InferInputType<typeof mapSchema>>;

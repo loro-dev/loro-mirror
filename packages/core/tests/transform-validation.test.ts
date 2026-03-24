@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { schema } from "../src/schema/index.js";
+import { Mirror } from "../src/core/mirror.js";
+import { LoroDoc } from "loro-crdt";
 import {
     validateSchema,
     getDefaultValue,
@@ -236,7 +238,7 @@ describe("createValueFromSchema with transforms", () => {
         );
 
         expect(result).toBeInstanceOf(Date);
-        expect(result.toISOString()).toBe("2025-03-24T12:34:56.000Z");
+        expect(result!.toISOString()).toBe("2025-03-24T12:34:56.000Z");
     });
 
     it("passes through nullish values for transformed primitives", () => {
@@ -257,5 +259,23 @@ describe("getDefaultValue without transforms", () => {
         expect(getDefaultValue(schema.Boolean({ required: true }))).toBe(
             false,
         );
+    });
+});
+
+describe("startup semantics for transformed required primitives", () => {
+    it("omits the field on an empty doc when no defaultValue is provided", () => {
+        const doc = new LoroDoc();
+        const testSchema = schema({
+            record: schema.LoroMap({
+                date: schema.String({ required: true }).transform({
+                    decode: (value: string) => new Date(value),
+                    encode: (value: Date) => value.toISOString(),
+                }),
+            }),
+        });
+
+        const mirror = new Mirror({ doc, schema: testSchema });
+
+        expect("date" in mirror.getState().record).toBe(false);
     });
 });

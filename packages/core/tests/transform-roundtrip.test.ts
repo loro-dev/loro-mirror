@@ -150,7 +150,7 @@ describe("Transform Roundtrip", () => {
                 assertAfterInit: (state, doc) => {
                     expect(state.record.name).toBe("Test Record");
                     expect(state.record.createdAt).toBeInstanceOf(Date);
-                    expect(state.record.createdAt.getTime()).toBe(testDate.getTime());
+                    expect(state.record.createdAt!.getTime()).toBe(testDate.getTime());
 
                     const recordMap = doc.getMap("record");
                     expect(recordMap.get("createdAt")).toBe("2025-01-19T10:00:00.000Z");
@@ -162,7 +162,7 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterUpdate: (state, doc) => {
                     expect(state.record.createdAt).toBeInstanceOf(Date);
-                    expect(state.record.createdAt.getTime()).toBe(updatedDate.getTime());
+                    expect(state.record.createdAt!.getTime()).toBe(updatedDate.getTime());
 
                     const recordMap = doc.getMap("record");
                     expect(recordMap.get("createdAt")).toBe("2026-06-01T00:00:00.000Z");
@@ -296,7 +296,7 @@ describe("Transform Roundtrip", () => {
                 assertAfterUpdate: (state, doc) => {
                     expect(state.record.plainString).toBe("world");
                     expect(state.record.transformedString).toBeInstanceOf(Date);
-                    expect(state.record.transformedString.getTime()).toBe(updatedDate.getTime());
+                    expect(state.record.transformedString!.getTime()).toBe(updatedDate.getTime());
                     expect(state.record.plainNumber).toBe(100);
                     expect(state.record.plainBoolean).toBe(false);
 
@@ -325,8 +325,9 @@ describe("Transform Roundtrip", () => {
                     expect(recordMap.get("price")).toBe(999);
                     expect(typeof recordMap.get("price")).toBe("number");
 
-                    expect(state.record.price).toBeInstanceOf(Money);
-                    expect(state.record.price.cents).toBe(999);
+                    const price = state.record.price as Money;
+                    expect(price).toBeInstanceOf(Money);
+                    expect(price.cents).toBe(999);
                 },
                 update: (mirror) => {
                     mirror.setState({ record: { price: new Money(1499) } });
@@ -336,8 +337,9 @@ describe("Transform Roundtrip", () => {
                     expect(recordMap.get("price")).toBe(1499);
                     expect(typeof recordMap.get("price")).toBe("number");
 
-                    expect(state.record.price).toBeInstanceOf(Money);
-                    expect(state.record.price.cents).toBe(1499);
+                    const price = state.record.price as Money;
+                    expect(price).toBeInstanceOf(Money);
+                    expect(price.cents).toBe(1499);
                 },
             });
         });
@@ -360,8 +362,8 @@ describe("Transform Roundtrip", () => {
                     expect(typeof recordMap.get("location")).toBe("string");
 
                     expect(state.record.location).toBeInstanceOf(Point);
-                    expect(state.record.location.x).toBe(10);
-                    expect(state.record.location.y).toBe(20);
+                    expect(state.record.location!.x).toBe(10);
+                    expect(state.record.location!.y).toBe(20);
                 },
                 update: (mirror) => {
                     mirror.setState({ record: { location: new Point(30, 40) } });
@@ -371,8 +373,8 @@ describe("Transform Roundtrip", () => {
                     expect(recordMap.get("location")).toBe("30,40");
 
                     expect(state.record.location).toBeInstanceOf(Point);
-                    expect(state.record.location.x).toBe(30);
-                    expect(state.record.location.y).toBe(40);
+                    expect(state.record.location!.x).toBe(30);
+                    expect(state.record.location!.y).toBe(40);
                 },
             });
         });
@@ -496,7 +498,7 @@ describe("Transform Roundtrip", () => {
                     expect(recordMap.get("price")).toBe(0);
                     expect(recordMap.get("status")).toBe(false);
                     expect(state.record.createdAt).toBeInstanceOf(Date);
-                    expect(state.record.createdAt.getTime()).toBe(0);
+                    expect(state.record.createdAt!.getTime()).toBe(0);
                     expect(state.record.price).toBe("$0.00");
                     expect(state.record.status).toBe("inactive");
                 },
@@ -517,7 +519,7 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterInit: (state) => {
                     expect(state.record.big).toBe(bigValue);
-                    expect(state.record.big.toString()).toBe("9007199254740993");
+                    expect(state.record.big!.toString()).toBe("9007199254740993");
                 },
                 update: (mirror) => {
                     mirror.setState({ record: { big: BigInt("18014398509481984") } });
@@ -541,14 +543,14 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterInit: (state) => {
                     expect(state.record.price).toBeInstanceOf(Money);
-                    expect(state.record.price.format()).toBe("$19.99");
+                    expect(state.record.price!.format()).toBe("$19.99");
                 },
                 update: (mirror) => {
                     mirror.setState({ record: { price: new Money(2999) } });
                 },
                 assertAfterUpdate: (state) => {
                     expect(state.record.price).toBeInstanceOf(Money);
-                    expect(state.record.price.format()).toBe("$29.99");
+                    expect(state.record.price!.format()).toBe("$29.99");
                 },
             });
         });
@@ -576,7 +578,7 @@ describe("Transform Roundtrip", () => {
                     const recordMap = doc.getMap("record");
                     expect(typeof recordMap.get("config")).toBe("string");
                     expect(state.record.config).toEqual(initValue);
-                    expect(state.record.config.departments[0].teams[0].lead).toBe("Alice");
+                    expect(state.record.config!.departments[0].teams[0].lead).toBe("Alice");
                 },
                 update: (mirror) => {
                     mirror.setState({ record: { config: updatedValue } });
@@ -585,7 +587,7 @@ describe("Transform Roundtrip", () => {
                     const recordMap = doc.getMap("record");
                     expect(typeof recordMap.get("config")).toBe("string");
                     expect(state.record.config).toEqual(updatedValue);
-                    expect(state.record.config.departments[0].teams[0].members).toContain("Charlie");
+                    expect(state.record.config!.departments[0].teams[0].members).toContain("Charlie");
                 },
             });
         });
@@ -631,9 +633,9 @@ describe("Transform Roundtrip", () => {
                 assertAfterInit: (state, doc) => {
                     expect(state.dates).toHaveLength(3);
                     expect(state.dates[0]).toBeInstanceOf(Date);
-                    expect(state.dates[0].getTime()).toBe(dates[0].getTime());
-                    expect(state.dates[1].getTime()).toBe(dates[1].getTime());
-                    expect(state.dates[2].getTime()).toBe(dates[2].getTime());
+                    expect(state.dates[0]!.getTime()).toBe(dates[0].getTime());
+                    expect(state.dates[1]!.getTime()).toBe(dates[1].getTime());
+                    expect(state.dates[2]!.getTime()).toBe(dates[2].getTime());
 
                     const datesList = doc.getList("dates");
                     expect(datesList.get(0)).toBe("2025-01-01T00:00:00.000Z");
@@ -646,7 +648,7 @@ describe("Transform Roundtrip", () => {
                 assertAfterUpdate: (state, doc) => {
                     expect(state.dates).toHaveLength(4);
                     expect(state.dates[3]).toBeInstanceOf(Date);
-                    expect(state.dates[3].getTime()).toBe(date4.getTime());
+                    expect(state.dates[3]!.getTime()).toBe(date4.getTime());
 
                     const datesList = doc.getList("dates");
                     expect(datesList.get(3)).toBe("2025-09-15T06:00:00.000Z");
@@ -678,7 +680,7 @@ describe("Transform Roundtrip", () => {
                     expect(state.items).toHaveLength(1);
                     expect(state.items[0].id).toBe("item-1");
                     expect(state.items[0].createdAt).toBeInstanceOf(Date);
-                    expect(state.items[0].createdAt.getTime()).toBe(testDate.getTime());
+                    expect(state.items[0].createdAt!.getTime()).toBe(testDate.getTime());
 
                     const list = doc.getList("items");
                     const itemMap = list.get(0) as LoroMap;
@@ -697,7 +699,7 @@ describe("Transform Roundtrip", () => {
                     expect(state.items).toHaveLength(2);
                     expect(state.items[1].id).toBe("item-2");
                     expect(state.items[1].createdAt).toBeInstanceOf(Date);
-                    expect(state.items[1].createdAt.getTime()).toBe(date2.getTime());
+                    expect(state.items[1].createdAt!.getTime()).toBe(date2.getTime());
 
                     const list = doc.getList("items");
                     const itemMap = list.get(1) as LoroMap;
@@ -724,10 +726,12 @@ describe("Transform Roundtrip", () => {
                     expect(list.get(1)).toBe(1499);
                     expect(typeof list.get(0)).toBe("number");
 
-                    expect(state.prices[0]).toBeInstanceOf(Money);
-                    expect(state.prices[0].cents).toBe(999);
-                    expect(state.prices[1]).toBeInstanceOf(Money);
-                    expect(state.prices[1].cents).toBe(1499);
+                    const price0 = state.prices[0] as Money;
+                    const price1 = state.prices[1] as Money;
+                    expect(price0).toBeInstanceOf(Money);
+                    expect(price0.cents).toBe(999);
+                    expect(price1).toBeInstanceOf(Money);
+                    expect(price1.cents).toBe(1499);
                 },
                 update: (mirror) => {
                     mirror.setState({
@@ -740,8 +744,9 @@ describe("Transform Roundtrip", () => {
                     expect(typeof list.get(2)).toBe("number");
 
                     expect(state.prices).toHaveLength(3);
-                    expect(state.prices[2]).toBeInstanceOf(Money);
-                    expect(state.prices[2].cents).toBe(2999);
+                    const price = state.prices[2] as Money;
+                    expect(price).toBeInstanceOf(Money);
+                    expect(price.cents).toBe(2999);
                 },
             });
         });
@@ -773,7 +778,7 @@ describe("Transform Roundtrip", () => {
             const testSchema = schema({
                 dates: schema.LoroList(
                     schema.String().transform(dateTransform),
-                    (id) => id.getTime().toString(),
+                    (id) => id!.getTime().toString(),
                 ),
             });
 
@@ -793,9 +798,9 @@ describe("Transform Roundtrip", () => {
                     expect(state.dates[0]).toBeInstanceOf(Date);
                     expect(state.dates[1]).toBeInstanceOf(Date);
                     expect(state.dates[2]).toBeInstanceOf(Date);
-                    expect(state.dates[0].getTime()).toBe(dates[0].getTime());
-                    expect(state.dates[1].getTime()).toBe(dates[1].getTime());
-                    expect(state.dates[2].getTime()).toBe(dates[2].getTime());
+                    expect(state.dates[0]!.getTime()).toBe(dates[0].getTime());
+                    expect(state.dates[1]!.getTime()).toBe(dates[1].getTime());
+                    expect(state.dates[2]!.getTime()).toBe(dates[2].getTime());
 
                     const datesList = doc.getList("dates");
                     expect(datesList.get(0)).toBe("2025-01-01T00:00:00.000Z");
@@ -809,7 +814,7 @@ describe("Transform Roundtrip", () => {
             const testSchema = schema({
                 prices: schema.LoroList(
                     schema.Number().transform(currencyTransform),
-                    (p) => p,
+                    (p) => p!,
                 ),
             });
 
@@ -838,7 +843,7 @@ describe("Transform Roundtrip", () => {
             const testSchema = schema({
                 statuses: schema.LoroList(
                     schema.Boolean().transform(statusTransform),
-                    (s) => s,
+                    (s) => s!,
                 ),
             });
 
@@ -900,7 +905,7 @@ describe("Transform Roundtrip", () => {
 
             const state = mirror.getState();
             expect(state.events[0].scheduledAt).toBeInstanceOf(Date);
-            expect(state.events[0].scheduledAt.getTime()).toBe(
+            expect(state.events[0].scheduledAt!.getTime()).toBe(
                 newDate.getTime(),
             );
             expect(state.events[0].name).toBe("Event 1 Updated");
@@ -943,18 +948,18 @@ describe("Transform Roundtrip", () => {
 
             const state = mirror.getState();
             expect(state.tasks[0].id).toBe("c");
-            expect(state.tasks[0].dueAt.getTime()).toBe(d3.getTime());
+            expect(state.tasks[0].dueAt!.getTime()).toBe(d3.getTime());
             expect(state.tasks[1].id).toBe("a");
-            expect(state.tasks[1].dueAt.getTime()).toBe(d1.getTime());
+            expect(state.tasks[1].dueAt!.getTime()).toBe(d1.getTime());
             expect(state.tasks[2].id).toBe("b");
-            expect(state.tasks[2].dueAt.getTime()).toBe(d2.getTime());
+            expect(state.tasks[2].dueAt!.getTime()).toBe(d2.getTime());
         });
 
         it("object domain items (Money)", () => {
             const testSchema = schema({
                 prices: schema.LoroList(
                     schema.Number().transform(moneyTransform),
-                    (m) => m.cents.toString(),
+                    (m) => m!.cents.toString(),
                 ),
             });
 
@@ -968,8 +973,9 @@ describe("Transform Roundtrip", () => {
                     expect(list.get(0)).toBe(999);
                     expect(typeof list.get(0)).toBe("number");
 
-                    expect(state.prices[0]).toBeInstanceOf(Money);
-                    expect(state.prices[0].cents).toBe(999);
+                    const price = state.prices[0] as Money;
+                    expect(price).toBeInstanceOf(Money);
+                    expect(price.cents).toBe(999);
                 },
                 update: (mirror) => {
                     mirror.setState({
@@ -982,8 +988,9 @@ describe("Transform Roundtrip", () => {
                     expect(typeof list.get(1)).toBe("number");
 
                     expect(state.prices).toHaveLength(2);
-                    expect(state.prices[1]).toBeInstanceOf(Money);
-                    expect(state.prices[1].cents).toBe(1499);
+                    const price = state.prices[1] as Money;
+                    expect(price).toBeInstanceOf(Money);
+                    expect(price.cents).toBe(1499);
                 },
             });
         });
@@ -994,7 +1001,7 @@ describe("Transform Roundtrip", () => {
             const testSchema = schema({
                 timestamps: schema.LoroMovableList(
                     schema.String().transform(dateTransform),
-                    (d) => d.toISOString(),
+                    (d) => d!.toISOString(),
                 ),
             });
 
@@ -1043,7 +1050,7 @@ describe("Transform Roundtrip", () => {
                     expect(state.tasks).toHaveLength(1);
                     expect(state.tasks[0].id).toBe("task-1");
                     expect(state.tasks[0].dueDate).toBeInstanceOf(Date);
-                    expect(state.tasks[0].dueDate.getTime()).toBe(testDate.getTime());
+                    expect(state.tasks[0].dueDate!.getTime()).toBe(testDate.getTime());
 
                     const list = doc.getMovableList("tasks");
                     const itemMap = list.get(0) as LoroMap;
@@ -1057,7 +1064,7 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterUpdate: (state, doc) => {
                     expect(state.tasks[0].dueDate).toBeInstanceOf(Date);
-                    expect(state.tasks[0].dueDate.getTime()).toBe(updatedDate.getTime());
+                    expect(state.tasks[0].dueDate!.getTime()).toBe(updatedDate.getTime());
 
                     const list = doc.getMovableList("tasks");
                     const itemMap = list.get(0) as LoroMap;
@@ -1113,7 +1120,7 @@ describe("Transform Roundtrip", () => {
             const testSchema = schema({
                 prices: schema.LoroMovableList(
                     schema.Number().transform(moneyTransform),
-                    (m) => m.cents.toString(),
+                    (m) => m!.cents.toString(),
                 ),
             });
 
@@ -1127,8 +1134,9 @@ describe("Transform Roundtrip", () => {
                     expect(list.get(0)).toBe(999);
                     expect(typeof list.get(0)).toBe("number");
 
-                    expect(state.prices[0]).toBeInstanceOf(Money);
-                    expect(state.prices[0].cents).toBe(999);
+                    const price = state.prices[0] as Money;
+                    expect(price).toBeInstanceOf(Money);
+                    expect(price.cents).toBe(999);
                 },
                 update: (mirror) => {
                     mirror.setState({
@@ -1141,8 +1149,9 @@ describe("Transform Roundtrip", () => {
                     expect(typeof list.get(1)).toBe("number");
 
                     expect(state.prices).toHaveLength(2);
-                    expect(state.prices[1]).toBeInstanceOf(Money);
-                    expect(state.prices[1].cents).toBe(1499);
+                    const price = state.prices[1] as Money;
+                    expect(price).toBeInstanceOf(Money);
+                    expect(price.cents).toBe(1499);
                 },
             });
         });
@@ -1175,9 +1184,9 @@ describe("Transform Roundtrip", () => {
                     expect(state.timestamps[0]).toBeInstanceOf(Date);
                     expect(state.timestamps[1]).toBeInstanceOf(Date);
                     expect(state.timestamps[2]).toBeInstanceOf(Date);
-                    expect(state.timestamps[0].getTime()).toBe(dates[0].getTime());
-                    expect(state.timestamps[1].getTime()).toBe(dates[1].getTime());
-                    expect(state.timestamps[2].getTime()).toBe(dates[2].getTime());
+                    expect(state.timestamps[0]!.getTime()).toBe(dates[0].getTime());
+                    expect(state.timestamps[1]!.getTime()).toBe(dates[1].getTime());
+                    expect(state.timestamps[2]!.getTime()).toBe(dates[2].getTime());
 
                     const list = doc.getMovableList("timestamps");
                     expect(list.get(0)).toBe("2025-01-01T00:00:00.000Z");
@@ -1191,7 +1200,7 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterUpdate: (state, doc) => {
                     expect(state.timestamps[1]).toBeInstanceOf(Date);
-                    expect(state.timestamps[1].getTime()).toBe(changedDate.getTime());
+                    expect(state.timestamps[1]!.getTime()).toBe(changedDate.getTime());
 
                     const list = doc.getMovableList("timestamps");
                     expect(list.get(1)).toBe("2025-09-01T00:00:00.000Z");
@@ -1224,7 +1233,7 @@ describe("Transform Roundtrip", () => {
                     expect(state.tasks).toHaveLength(1);
                     expect(state.tasks[0].id).toBe("task-1");
                     expect(state.tasks[0].dueDate).toBeInstanceOf(Date);
-                    expect(state.tasks[0].dueDate.getTime()).toBe(testDate.getTime());
+                    expect(state.tasks[0].dueDate!.getTime()).toBe(testDate.getTime());
 
                     const list = doc.getMovableList("tasks");
                     const itemMap = list.get(0) as LoroMap;
@@ -1237,7 +1246,7 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterUpdate: (state, doc) => {
                     expect(state.tasks[0].dueDate).toBeInstanceOf(Date);
-                    expect(state.tasks[0].dueDate.getTime()).toBe(updatedDate.getTime());
+                    expect(state.tasks[0].dueDate!.getTime()).toBe(updatedDate.getTime());
 
                     const list = doc.getMovableList("tasks");
                     const itemMap = list.get(0) as LoroMap;
@@ -1281,7 +1290,7 @@ describe("Transform Roundtrip", () => {
                     expect(state.tree).toHaveLength(1);
                     expect(state.tree[0].data.title).toBe("Root Node");
                     expect(state.tree[0].data.createdAt).toBeInstanceOf(Date);
-                    expect(state.tree[0].data.createdAt.getTime()).toBe(
+                    expect(state.tree[0].data.createdAt!.getTime()).toBe(
                         testDate.getTime(),
                     );
 
@@ -1309,7 +1318,7 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterUpdate: (state, doc) => {
                     expect(state.tree[0].data.createdAt).toBeInstanceOf(Date);
-                    expect(state.tree[0].data.createdAt.getTime()).toBe(
+                    expect(state.tree[0].data.createdAt!.getTime()).toBe(
                         updatedDate.getTime(),
                     );
 
@@ -1362,10 +1371,10 @@ describe("Transform Roundtrip", () => {
                     expect(state.tree[0].children[0].data.timestamp).toBeInstanceOf(
                         Date,
                     );
-                    expect(state.tree[0].data.timestamp.getTime()).toBe(
+                    expect(state.tree[0].data.timestamp!.getTime()).toBe(
                         parentDate.getTime(),
                     );
-                    expect(state.tree[0].children[0].data.timestamp.getTime()).toBe(
+                    expect(state.tree[0].children[0].data.timestamp!.getTime()).toBe(
                         childDate.getTime(),
                     );
 
@@ -1410,9 +1419,9 @@ describe("Transform Roundtrip", () => {
                         "Child Updated",
                     );
                     expect(
-                        state.tree[0].children[0].data.timestamp.getTime(),
+                        state.tree[0].children[0].data.timestamp!.getTime(),
                     ).toBe(newChildDate.getTime());
-                    expect(state.tree[0].data.timestamp.getTime()).toBe(
+                    expect(state.tree[0].data.timestamp!.getTime()).toBe(
                         parentDate.getTime(),
                     );
 
@@ -1465,9 +1474,9 @@ describe("Transform Roundtrip", () => {
                     expect(state.outer.outerDate).toBeInstanceOf(Date);
                     expect(state.outer.inner.innerDate).toBeInstanceOf(Date);
                     expect(state.outer.inner.deepInner.deepDate).toBeInstanceOf(Date);
-                    expect(state.outer.outerDate.getTime()).toBe(d1.getTime());
-                    expect(state.outer.inner.innerDate.getTime()).toBe(d2.getTime());
-                    expect(state.outer.inner.deepInner.deepDate.getTime()).toBe(
+                    expect(state.outer.outerDate!.getTime()).toBe(d1.getTime());
+                    expect(state.outer.inner.innerDate!.getTime()).toBe(d2.getTime());
+                    expect(state.outer.inner.deepInner.deepDate!.getTime()).toBe(
                         d3.getTime(),
                     );
                 },
@@ -1485,11 +1494,11 @@ describe("Transform Roundtrip", () => {
                     });
                 },
                 assertAfterUpdate: (state) => {
-                    expect(state.outer.inner.deepInner.deepDate.getTime()).toBe(
+                    expect(state.outer.inner.deepInner.deepDate!.getTime()).toBe(
                         d4.getTime(),
                     );
-                    expect(state.outer.outerDate.getTime()).toBe(d1.getTime());
-                    expect(state.outer.inner.innerDate.getTime()).toBe(
+                    expect(state.outer.outerDate!.getTime()).toBe(d1.getTime());
+                    expect(state.outer.inner.innerDate!.getTime()).toBe(
                         d2.getTime(),
                     );
                 },
@@ -1527,13 +1536,13 @@ describe("Transform Roundtrip", () => {
                 },
                 assertAfterInit: (state, doc) => {
                     expect(state.groups[0].events[0].when).toBeInstanceOf(Date);
-                    expect(state.groups[0].events[0].when.getTime()).toBe(
+                    expect(state.groups[0].events[0].when!.getTime()).toBe(
                         eventDate.getTime(),
                     );
 
                     const groupsList = doc.getList("groups");
                     const groupMap = groupsList.get(0) as LoroMap;
-                    const eventsList = groupMap.get("events") as unknown;
+                    const eventsList = groupMap.get("events");
                     const eventsContainer = eventsList as {
                         get(i: number): LoroMap;
                     };
@@ -1604,7 +1613,7 @@ describe("Transform Roundtrip", () => {
             const state2 = mirror2.getState();
 
             expect(state2.items[0].createdAt).toBeInstanceOf(Date);
-            expect(state2.items[0].createdAt.getTime()).toBe(testDate.getTime());
+            expect(state2.items[0].createdAt!.getTime()).toBe(testDate.getTime());
         });
 
         it("decodes transforms when Mirror is created with both a pre-populated doc and initialState (flat map)", () => {
@@ -1642,7 +1651,7 @@ describe("Transform Roundtrip", () => {
 
             const state2 = mirror2.getState();
             expect(state2.record.createdAt).toBeInstanceOf(Date);
-            expect(state2.record.createdAt.getTime()).toBe(testDate.getTime());
+            expect(state2.record.createdAt!.getTime()).toBe(testDate.getTime());
             expect(state2.record.name).toBe("Test");
         });
 
@@ -1675,9 +1684,9 @@ describe("Transform Roundtrip", () => {
             const state2 = mirror2.getState();
             expect(state2.prices).toHaveLength(2);
             expect(state2.prices[0]).toBeInstanceOf(Money);
-            expect(state2.prices[0].cents).toBe(999);
+            expect(state2.prices[0]!.cents).toBe(999);
             expect(state2.prices[1]).toBeInstanceOf(Money);
-            expect(state2.prices[1].cents).toBe(1499);
+            expect(state2.prices[1]!.cents).toBe(1499);
         });
 
         it("works correctly without initialState (control case)", () => {
@@ -1707,7 +1716,7 @@ describe("Transform Roundtrip", () => {
 
             const state2 = mirror2.getState();
             expect(state2.items[0].createdAt).toBeInstanceOf(Date);
-            expect(state2.items[0].createdAt.getTime()).toBe(testDate.getTime());
+            expect(state2.items[0].createdAt!.getTime()).toBe(testDate.getTime());
         });
     });
 });
