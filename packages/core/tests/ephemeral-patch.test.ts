@@ -8,6 +8,36 @@ import { schema } from "../src/schema/index.js";
 import { LoroDoc, EphemeralStore, ContainerID, LoroMap } from "loro-crdt";
 import { describe, expect, it, vi, afterEach } from "vitest";
 
+type PrivatePatchEphemeralInvoker = {
+    patchEphemeral(
+        containerId: ContainerID,
+        key: string,
+        value: string | number | boolean | null,
+        options?: {
+            finalizeTimeout?: number;
+            tags?: string[] | string;
+        },
+    ): void;
+};
+
+function callPatchEphemeral(
+    mirror: object,
+    containerId: ContainerID,
+    key: string,
+    value: string | number | boolean | null,
+    options?: {
+        finalizeTimeout?: number;
+        tags?: string[] | string;
+    },
+): void {
+    (mirror as PrivatePatchEphemeralInvoker).patchEphemeral(
+        containerId,
+        key,
+        value,
+        options,
+    );
+}
+
 function createTestSetup() {
     const doc = new LoroDoc();
     const eph = new EphemeralStore();
@@ -421,7 +451,9 @@ describe("patchEphemeral fast path", () => {
         const { doc, mirror } = createSimpleSetup();
         const canvasCid = doc.getMap("canvas").id;
 
-        mirror.patchEphemeral(canvasCid, "x", 88, { finalizeTimeout: 50_000 });
+        callPatchEphemeral(mirror, canvasCid, "x", 88, {
+            finalizeTimeout: 50_000,
+        });
 
         expect(mirror.getState().canvas.x).toBe(88);
         expect(doc.getMap("canvas").toJSON().x).toBe(0);
@@ -433,7 +465,9 @@ describe("patchEphemeral fast path", () => {
         const { doc, mirror } = createSimpleSetup();
         const canvasCid = doc.getMap("canvas").id;
 
-        mirror.patchEphemeral(canvasCid, "x", 88, { finalizeTimeout: 50_000 });
+        callPatchEphemeral(mirror, canvasCid, "x", 88, {
+            finalizeTimeout: 50_000,
+        });
         mirror.finalizeEphemeralPatches();
 
         expect(doc.getMap("canvas").toJSON().x).toBe(88);
@@ -446,7 +480,7 @@ describe("patchEphemeral fast path", () => {
         const canvasCid = doc.getMap("canvas").id;
 
         expect(() => {
-            mirror.patchEphemeral(canvasCid, "missing", 1);
+            callPatchEphemeral(mirror, canvasCid, "missing", 1);
         }).toThrow(/existing LoroMap keys/);
 
         mirror.dispose();
@@ -466,7 +500,12 @@ describe("patchEphemeral fast path", () => {
         });
 
         expect(() => {
-            mirror.patchEphemeral("cid:root-canvas:Map" as ContainerID, "x", 1);
+            callPatchEphemeral(
+                mirror,
+                "cid:root-canvas:Map" as ContainerID,
+                "x",
+                1,
+            );
         }).toThrow(/requires an ephemeralStore/);
 
         mirror.dispose();
@@ -485,7 +524,9 @@ describe("patchEphemeral fast path", () => {
             sources.push(metadata.source);
         });
 
-        mirror.patchEphemeral(canvasCid, "x", 55, { finalizeTimeout: 50_000 });
+        callPatchEphemeral(mirror, canvasCid, "x", 55, {
+            finalizeTimeout: 50_000,
+        });
 
         expect(rebuildSpy).not.toHaveBeenCalled();
         expect(sources).toEqual([UpdateSource.MIRROR]);
