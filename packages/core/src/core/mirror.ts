@@ -1729,7 +1729,13 @@ export class Mirror<S extends SchemaType> {
 
     /** Path resolver context for EphemeralPatchManager */
     private get ephemeralCtx(): PathResolverContext {
-        return { doc: this.doc };
+        return {
+            doc: this.doc,
+            decodeField: (containerId, key, value) => {
+                const fieldSchema = this.getSchemaForChild(containerId, key);
+                return applyDecode(fieldSchema, value);
+            },
+        };
     }
 
     /**

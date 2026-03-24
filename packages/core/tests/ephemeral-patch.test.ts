@@ -248,6 +248,54 @@ describe("setState with ephemeral routing", () => {
 
         mirror.dispose();
     });
+
+    it("should decode transformed ephemeral values before exposing them in state", () => {
+        const doc = new LoroDoc();
+        const eph = new EphemeralStore();
+        const testSchema = schema({
+            record: schema.LoroMap({
+                date: schema.String().transform({
+                    decode: (value: string) => new Date(value),
+                    encode: (value: Date) => value.toISOString(),
+                }),
+            }),
+        });
+
+        const mirror = new Mirror({
+            doc,
+            schema: testSchema,
+            ephemeralStore: eph,
+        });
+
+        const firstDate = new Date("2025-01-01T00:00:00.000Z");
+        const secondDate = new Date("2025-02-01T00:00:00.000Z");
+
+        mirror.setState({
+            record: { date: firstDate },
+        });
+        mirror.setState(
+            {
+                record: { date: secondDate },
+            },
+            { finalizeTimeout: 50_000 },
+        );
+
+        expect(doc.getMap("record").get("date")).toBe(firstDate.toISOString());
+        expect(mirror.getState().record.date).toBeInstanceOf(Date);
+        expect(mirror.getState().record.date.toISOString()).toBe(
+            secondDate.toISOString(),
+        );
+
+        mirror.finalizeEphemeralPatches();
+
+        expect(doc.getMap("record").get("date")).toBe(secondDate.toISOString());
+        expect(mirror.getState().record.date).toBeInstanceOf(Date);
+        expect(mirror.getState().record.date.toISOString()).toBe(
+            secondDate.toISOString(),
+        );
+
+        mirror.dispose();
+    });
 });
 
 describe("Change classification", () => {

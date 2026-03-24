@@ -68,6 +68,30 @@ describe("validateSchema with transforms", () => {
         const result = validateSchema(s, { record: { flag: "yes" } });
         expect(result.valid).toBe(true);
     });
+
+    it("returns a validation error when validateEncodedType encode throws", () => {
+        const s = schema({
+            record: schema.LoroMap({
+                date: schema.String().transform({
+                    decode: (value: string) => new Date(value),
+                    encode: (value: Date) => value.toISOString(),
+                    validateEncodedType: true,
+                }),
+            }),
+        });
+
+        const result = validateSchema(s, {
+            record: { date: "not-a-date-object" },
+        });
+
+        expect(result.valid).toBe(false);
+        expect(result.errors).toBeDefined();
+        expect(
+            result.errors!.some((error) =>
+                error.includes("Transform encode validation error"),
+            ),
+        ).toBe(true);
+    });
 });
 
 describe("custom validate functions", () => {

@@ -395,10 +395,16 @@ function validateTransformablePrimitive<S extends SchemaType>(
 
         // Optionally check encoded type
         if (transform.validateEncodedType) {
-            const encoded = applyEncode(schema, value);
-            if (typeof encoded !== expectedType) {
+            try {
+                const encoded = applyEncode(schema, value);
+                if (typeof encoded !== expectedType) {
+                    errors.push(
+                        `Transform encode must return a ${expectedType}, got ${typeof encoded}`,
+                    );
+                }
+            } catch (error) {
                 errors.push(
-                    `Transform encode must return a ${expectedType}, got ${typeof encoded}`,
+                    `Transform encode validation error: ${String(error)}`,
                 );
             }
         }
