@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { schema } from "../src/schema/index.js";
-import { validateSchema, getDefaultValue } from "../src/schema/validators.js";
+import {
+    validateSchema,
+    getDefaultValue,
+    createValueFromSchema,
+} from "../src/schema/validators.js";
 
 describe("validateSchema with transforms", () => {
     const dateTransform = {
@@ -166,36 +170,68 @@ describe("custom validate functions", () => {
 });
 
 describe("getDefaultValue with transforms", () => {
-    it("applies decode to empty string default", () => {
-        const transform = {
-            decode: (s: string) => s.length,
-            encode: (n: number) => "x".repeat(n),
-        };
-        const fieldSchema = schema
-            .String({ required: true })
-            .transform(transform);
-        expect(getDefaultValue(fieldSchema)).toBe(0);
+    it("does not decode synthetic defaults for required transformed primitives", () => {
+        const decode = vi.fn((value: string) => {
+            throw new Error(`unexpected decode: ${value}`);
+        });
+        const fieldSchema = schema.String({ required: true }).transform({
+            decode,
+            encode: (date: Date) => date.toISOString(),
+        });
+
+        expect(getDefaultValue(fieldSchema)).toBeUndefined();
+        expect(decode).not.toHaveBeenCalled();
     });
 
-    it("applies decode to zero default for number", () => {
-        const transform = {
-            decode: (n: number) => (n === 0 ? "zero" : "nonzero"),
-            encode: (s: string) => (s === "zero" ? 0 : 1),
-        };
+    it("still uses explicit defaultValue for transformed primitives", () => {
+        const fallback = new Date("2025-01-01T00:00:00.000Z");
         const fieldSchema = schema
-            .Number({ required: true })
-            .transform(transform);
-        expect(getDefaultValue(fieldSchema)).toBe("zero");
+            .String({
+                required: true,
+                defaultValue: fallback,
+            })
+            .transform({
+                decode: (value: string) => new Date(value),
+                encode: (value: Date) => value.toISOString(),
+            });
+
+        expect(getDefaultValue(fieldSchema)).toBe(fallback);
+    });
+});
+
+describe("createValueFromSchema with transforms", () => {
+    it("decodes transformed primitive values before returning them", () => {
+        const fieldSchema = schema.String().transform({
+            decode: (value: string) => new Date(value),
+            encode: (value: Date) => value.toISOString(),
+        });
+
+        const result = createValueFromSchema(
+            fieldSchema,
+            "2025-03-24T12:34:56.000Z",
+        );
+
+        expect(result).toBeInstanceOf(Date);
+        expect(result.toISOString()).toBe("2025-03-24T12:34:56.000Z");
     });
 
-    it("applies decode to false default for boolean", () => {
-        const transform = {
-            decode: (b: boolean) => (b ? "ON" : "OFF"),
-            encode: (s: string) => s === "ON",
-        };
-        const fieldSchema = schema
-            .Boolean({ required: true })
-            .transform(transform);
-        expect(getDefaultValue(fieldSchema)).toBe("OFF");
+    it("passes through nullish values for transformed primitives", () => {
+        const fieldSchema = schema.String({ required: false }).transform({
+            decode: (value: string) => new Date(value),
+            encode: (value: Date) => value.toISOString(),
+        });
+
+        expect(createValueFromSchema(fieldSchema, undefined)).toBeUndefined();
+        expect(createValueFromSchema(fieldSchema, null)).toBeNull();
+    });
+});
+
+describe("getDefaultValue without transforms", () => {
+    it("keeps built-in defaults for required primitives", () => {
+        expect(getDefaultValue(schema.String({ required: true }))).toBe("");
+        expect(getDefaultValue(schema.Number({ required: true }))).toBe(0);
+        expect(getDefaultValue(schema.Boolean({ required: true }))).toBe(
+            false,
+        );
     });
 });

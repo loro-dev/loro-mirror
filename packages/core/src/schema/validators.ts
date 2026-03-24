@@ -436,21 +436,30 @@ export function getDefaultValue<S extends SchemaType>(
             if (schema.options.required === false) {
                 return undefined;
             }
-            return applyDecode(schema, "") as InferType<S>;
+            if (getTransform(schema)) {
+                return undefined;
+            }
+            return "" as InferType<S>;
         }
 
         case "number": {
             if (schema.options.required === false) {
                 return undefined;
             }
-            return applyDecode(schema, 0) as InferType<S>;
+            if (getTransform(schema)) {
+                return undefined;
+            }
+            return 0 as InferType<S>;
         }
 
         case "boolean": {
             if (schema.options.required === false) {
                 return undefined;
             }
-            return applyDecode(schema, false) as InferType<S>;
+            if (getTransform(schema)) {
+                return undefined;
+            }
+            return false as InferType<S>;
         }
 
         case "loro-text": {
@@ -530,7 +539,7 @@ export function createValueFromSchema<S extends SchemaType>(
         schemaType === "number" ||
         schemaType === "boolean"
     ) {
-        return value as InferType<S>;
+        return applyDecode(schema, value) as InferType<S>;
     }
 
     // For complex types, pass through as is
