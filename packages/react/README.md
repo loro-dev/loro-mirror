@@ -145,7 +145,7 @@ function TodoItem({ todo }) {
 Creates and manages a Loro Mirror store.
 
 ```tsx
-const { state, setState, store } = useLoroStore({
+const { state, setState, finalizeEphemeralPatches, store } = useLoroStore({
   doc,
   schema,
   initialState,
@@ -153,12 +153,12 @@ const { state, setState, store } = useLoroStore({
   throwOnValidationError,
   debug,
 });
+```
 
 Notes on updates:
 
 - `setState` from `useLoroStore` and the setter from `useLoroState` run synchronously; subsequent code can read the updated state immediately.
 - `useLoroCallback` and `useLoroAction` return synchronous functions that call `setState` under the hood.
-```
 
 ### `useLoroValue`
 
@@ -254,14 +254,41 @@ const addTodo = useLoroAction(
   [/* dependencies */]
 );
 
+// Usage
+addTodo('New todo');
+```
+
 ### `$cid` and list keys/selectors
 
 - `$cid` is always available on `LoroMap` state and mirrors the underlying Loro container id.
 - Use `$cid` for React `key` and as the list `idSelector` for stable identity across edits and moves: `schema.LoroList(item, x => x.$cid)`.
 
-// Usage
-addTodo('New todo');
+### Ephemeral Patches
+
+For high-frequency temporary changes (dragging, resizing), pass `ephemeralStore` to `useLoroStore` or `LoroProvider`. This changes how `setState` works: eligible changes (primitive values on existing Map keys) are automatically routed to EphemeralStore instead of LoroDoc. No separate update function is needed.
+
+```tsx
+import { EphemeralStore } from "loro-crdt";
+
+const eph = new EphemeralStore();
+
+const { state, setState, finalizeEphemeralPatches } =
+    useLoroStore({ doc, schema: mySchema, ephemeralStore: eph });
+
+// During drag — x is a primitive on an existing key → EphemeralStore
+// No LoroDoc history is created for intermediate positions.
+setState(
+    (s) => { s.items[i].x = e.clientX; },
+    { finalizeTimeout: 1_000 }, // auto-commit after 1s of inactivity
+);
+
+// On mouseup — commit ephemeral values to LoroDoc
+finalizeEphemeralPatches();
 ```
+
+Without `ephemeralStore`, the same `setState` call writes everything to LoroDoc as usual.
+
+With `createLoroContext`, the provider accepts `ephemeralStore` and `useLoroFinalizeEphemeral()` returns a callback that commits pending ephemeral patches. See the [core package README](../core/README.md#ephemeral-patches) for routing rules.
 
 ## License
 

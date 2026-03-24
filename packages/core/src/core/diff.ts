@@ -764,7 +764,7 @@ export function diffListWithIdSelector<S extends ArrayLike>(
     // old indices in new order (ids are expected to be unique).
     const commonIdsInNewOrder: string[] = [];
     const oldIndexInNewOrder: number[] = [];
-    for (const [newIndex, item] of newState.entries()) {
+    for (const item of newState) {
         const id = idSelector(item);
         if (!id) continue;
         const oldInfo = oldItemsById.get(id);

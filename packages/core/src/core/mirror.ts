@@ -7,6 +7,7 @@ import {
     Container,
     ContainerID,
     ContainerType,
+    EphemeralStore,
     isContainer,
     LoroDoc,
     LoroEventBatch,
@@ -17,6 +18,13 @@ import {
     LoroTree,
     TreeID,
 } from "loro-crdt";
+import {
+    EphemeralPatchManager,
+    type EphemeralEligibleChange,
+    type EphemeralPatchDelta,
+    type EphemeralStoreChangeEvent,
+    type PathResolverContext,
+} from "./ephemeral.js";
 import type { InferContainerOptions } from "../schema/types.js";
 export type { InferContainerOptions } from "../schema/types.js";
 
@@ -72,23 +80,23 @@ function hasKeyProp(c: Change): c is Extract<Change, { key: string | number }> {
 }
 
 /**
- * Sync direction for handling updates
+ * Source channel that caused this state update.
  */
-export enum SyncDirection {
+export enum UpdateSource {
     /**
-     * Changes coming from Loro to application state
+     * Changes coming from Loro to application state.
      */
-    FROM_LORO = "FROM_LORO",
+    LORO = "LORO",
 
     /**
-     * Changes going from application state to Loro
+     * Local state changes initiated through Mirror APIs.
      */
-    TO_LORO = "TO_LORO",
+    MIRROR = "MIRROR",
 
     /**
-     * Initial sync or manual sync operations
+     * State recomposed due to an EphemeralStore change.
      */
-    BIDIRECTIONAL = "BIDIRECTIONAL",
+    EPHEMERAL = "EPHEMERAL",
 }
 
 /**
@@ -140,6 +148,36 @@ export interface MirrorOptions<S extends SchemaType> {
      * Default values for new containers
      */
     inferOptions?: InferContainerOptions;
+
+    /**
+     * Optional `EphemeralStore` (from `loro-crdt`) for syncing temporary state
+     * without polluting LoroDoc editing history.
+     *
+     * **Setting this changes how {@link Mirror.setState} works:** when
+     * present, `setState` automatically classifies each change and routes
+     * eligible ones (primitive values on existing Map keys) to the
+     * EphemeralStore instead of LoroDoc. Structural changes (new keys,
+     * containers, list/text/tree ops) still go to LoroDoc as usual.
+     *
+     * State returned by {@link Mirror.getState} is always the composed
+     * result: `LoroDoc state + EphemeralStore overlay`. Callers don't need
+     * to be aware of where each value lives.
+     *
+     * Ephemeral values are committed to LoroDoc when the
+     * {@link SetStateOptions.finalizeTimeout | finalizeTimeout} expires
+     * (default 50 000 ms) or when {@link Mirror.finalizeEphemeralPatches}
+     * is called manually (e.g. on `mouseup`).
+     *
+     * Network sync of the EphemeralStore is the caller's responsibility:
+     * ```ts
+     * eph.subscribeLocalUpdates((bytes) => channel.send(bytes));
+     * channel.on("ephemeral", (bytes) => eph.apply(bytes));
+     * ```
+     *
+     * @see {@link Mirror.setState} for routing rules and examples
+     * @see {@link Mirror.finalizeEphemeralPatches} for committing ephemeral values
+     */
+    ephemeralStore?: EphemeralStore;
 }
 
 export type ChangeKinds = {
@@ -257,6 +295,24 @@ export interface SetStateOptions {
      * Optional message forwarded to the underlying Loro commit metadata.
      */
     message?: string;
+    /**
+     * Debounce delay (in ms) before ephemeral values are automatically
+     * committed to LoroDoc. The timer resets on every `setState` call that
+     * produces ephemeral changes, so it only fires after the user stops
+     * updating.
+     *
+     * Has no effect when no `ephemeralStore` is configured.
+     *
+     * Typical values:
+     * - `1_000` (1 s) — drag/resize interactions where you want quick persistence
+     * - `50_000` (50 s, default) — long-lived ephemeral state (e.g. cursor position)
+     *
+     * To commit immediately instead of waiting, call
+     * {@link Mirror.finalizeEphemeralPatches}.
+     *
+     * @default 50_000
+     */
+    finalizeTimeout?: number;
 }
 
 type ContainerRegistry = Map<
@@ -272,9 +328,9 @@ type ContainerRegistry = Map<
  */
 export interface UpdateMetadata {
     /**
-     * Direction of the sync operation
+     * Source channel that caused this update.
      */
-    direction: SyncDirection;
+    source: UpdateSource;
 
     /**
      * Tags associated with this update, if any
@@ -297,6 +353,8 @@ export class Mirror<S extends SchemaType> {
     private doc: LoroDoc;
     private schema?: S;
     private state: InferType<S>;
+    /** Pure LoroDoc state without ephemeral overlay */
+    private baseState: InferType<S>;
     private subscribers: Set<SubscriberCallback<InferType<S>>> = new Set();
     private syncing = false;
     private options: MirrorOptions<S>;
@@ -306,6 +364,10 @@ export class Mirror<S extends SchemaType> {
     private subscriptions: (() => void)[] = [];
     // Canonical root path (e.g., ["profile"]) per root container id
     private rootPathById: Map<ContainerID, string[]> = new Map();
+
+    // Ephemeral patch manager (handles EphemeralStore, local tracking, path resolution, finalization)
+    private ephemeralManager?: EphemeralPatchManager;
+    private suppressLocalEphemeralEvents = 0;
 
     /**
      * Creates a new Mirror instance
@@ -373,10 +435,20 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
+        this.baseState = baseState as InferType<S>;
         this.state = baseState as InferType<S>;
+
+        // Initialize ephemeral manager if store provided
+        if (options.ephemeralStore) {
+            this.ephemeralManager = new EphemeralPatchManager(options.ephemeralStore);
+            this.subscriptions.push(
+                this.ephemeralManager.subscribe(this.handleEphemeralEvent),
+            );
+        }
 
         // Initialize Loro containers and setup subscriptions
         this.initializeContainers();
+        this.state = this.composeState(this.baseState);
 
         // Subscribe to the root doc for global updates
         this.subscriptions.push(this.doc.subscribe(this.handleLoroEvent));
@@ -463,7 +535,8 @@ export class Mirror<S extends SchemaType> {
             );
         })(this.state);
 
-        this.state = newState;
+        this.baseState = newState;
+        this.state = this.composeState(newState);
     }
 
     /**
@@ -654,69 +727,125 @@ export class Mirror<S extends SchemaType> {
         try {
             // Pre-register any containers referenced in this batch
             this.registerContainersFromLoroEvent(event);
-            // no-op debug hook removed
-            // Normalize event paths to canonical root paths when applicable
-            const normalized = {
-                ...event,
-                events: event.events.map((e) => {
-                    const canon = this.rootPathById.get(e.target);
-                    if (
-                        canon &&
-                        (!Array.isArray(e.path) || e.path[0] !== canon[0])
-                    ) {
-                        return { ...e, path: canon } as typeof e;
-                    }
-                    return e;
-                }),
-            } as LoroEventBatch;
-            // Incrementally update state using event deltas
-            this.state = applyEventBatchToState(
-                this.state as unknown as Record<string, unknown>,
+            const normalized = this.normalizeLoroEventBatch(event);
+            // Incrementally update baseState using event deltas
+            this.baseState = this.applyNormalizedLoroEventToState(
+                this.baseState,
                 normalized,
-                {
-                    getContainerById: (id) => this.doc.getContainerById(id),
-                    containerToMirrorState: (c) => this.containerToMirrorState(c),
-                    nodeDataWithCid: (treeId) => {
-                        const s = this.getContainerSchema(treeId);
-                        return !!(s && isLoroTreeSchema(s));
-                    },
-                    getNodeDataCid: (treeId, nodeId) => {
-                        try {
-                            const node = this.doc
-                                .getTree(treeId)
-                                .getNodeByID(nodeId);
-                            return node ? node.data.id : undefined;
-                        } catch {
-                            return undefined;
-                        }
-                    },
-                    getSchemaForKey: (containerId, mapKey) => {
-                        if (mapKey !== undefined) {
-                            return this.getSchemaForChild(containerId, mapKey);
-                        }
-                        // No key — return item schema for list containers
-                        const containerSchema =
-                            this.getContainerSchema(containerId);
-                        if (
-                            containerSchema &&
-                            (isLoroListSchema(containerSchema) ||
-                                isLoroMovableListSchema(containerSchema))
-                        ) {
-                            return containerSchema.itemSchema;
-                        }
-                        return undefined;
-                    },
-                },
-            ) as unknown as InferType<S>;
+            );
+            // Compose state with ephemeral overlay
+            this.state = this.composeState(this.baseState);
             // With canonicalized paths, applyEventBatchToState updates roots precisely.
             // No additional root refresh is required here.
             // Notify subscribers of the update
-            this.notifySubscribers(SyncDirection.FROM_LORO);
+            this.notifySubscribers(UpdateSource.LORO);
         } finally {
             this.registerContainersFromLoroEvent(event);
             this.syncing = false;
         }
     };
+
+    private normalizeLoroEventBatch(event: LoroEventBatch): LoroEventBatch {
+        return {
+            ...event,
+            events: event.events.map((e) => {
+                const canon = this.rootPathById.get(e.target);
+                if (canon && (!Array.isArray(e.path) || e.path[0] !== canon[0])) {
+                    return { ...e, path: canon } as typeof e;
+                }
+                return e;
+            }),
+        } as LoroEventBatch;
+    }
+
+    private applyNormalizedLoroEventToState(
+        currentState: InferType<S>,
+        event: LoroEventBatch,
+    ): InferType<S> {
+        const nextState = applyEventBatchToState(
+            currentState as unknown as Record<string, unknown>,
+            event,
+            {
+                getContainerById: (id) => this.doc.getContainerById(id),
+                containerToMirrorState: (c) => this.containerToMirrorState(c),
+                nodeDataWithCid: (treeId) => {
+                    const schema = this.getContainerSchema(treeId);
+                    return !!(schema && isLoroTreeSchema(schema));
+                },
+                getNodeDataCid: (treeId, nodeId) => {
+                    try {
+                        const node = this.doc.getTree(treeId).getNodeByID(nodeId);
+                        return node ? node.data.id : undefined;
+                    } catch {
+                        return undefined;
+                    }
+                },
+                getSchemaForKey: (containerId, mapKey) => {
+                    if (mapKey !== undefined) {
+                        return this.getSchemaForChild(containerId, mapKey);
+                    }
+                    const containerSchema = this.getContainerSchema(containerId);
+                    if (
+                        containerSchema &&
+                        (isLoroListSchema(containerSchema) ||
+                            isLoroMovableListSchema(containerSchema))
+                    ) {
+                        return containerSchema.itemSchema;
+                    }
+                    return undefined;
+                },
+            },
+        ) as unknown as InferType<S>;
+        this.stampCidForEventTargets(nextState, event);
+        return nextState;
+    }
+
+    private captureLocalDocEvent(callback: () => void): LoroEventBatch | undefined {
+        let captured: LoroEventBatch | undefined;
+        const unsubscribe = this.doc.subscribe((event) => {
+            if (event.by === "local") {
+                captured = event;
+            }
+        });
+        try {
+            callback();
+        } finally {
+            unsubscribe();
+        }
+        return captured;
+    }
+
+    private stampCidForEventTargets(
+        state: InferType<S>,
+        event: LoroEventBatch,
+    ): void {
+        const visited = new Set<ContainerID>();
+        for (const item of event.events) {
+            if (visited.has(item.target)) continue;
+            visited.add(item.target);
+
+            const container = this.doc.getContainerById(item.target);
+            if (!container || container.kind() !== "Map") {
+                continue;
+            }
+
+            const path = this.doc.getPathToContainer(container.id);
+            if (!path || path.length === 0) continue;
+
+            let target: unknown = state;
+            for (const segment of path) {
+                if (!target || typeof target !== "object") {
+                    target = undefined;
+                    break;
+                }
+                target = (target as Record<string | number, unknown>)[segment];
+            }
+
+            if (target && typeof target === "object") {
+                defineCidProperty(target, container.id);
+            }
+        }
+    }
 
     /**
      * Processes container additions/removals from the LoroDoc
@@ -861,7 +990,8 @@ export class Mirror<S extends SchemaType> {
 
         this.syncing = true;
         try {
-            // Find the differences between current Loro state and new state
+            // Diff against the composed state (not baseState) so that remote
+            // ephemeral overlay values are not treated as local changes.
             const currentDocState = this.state;
 
             const changes = diffContainer(
@@ -1583,12 +1713,12 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Notify all subscribers of state change
-     * @param direction The direction of the sync operation
+     * @param source The source channel for the sync operation
      * @param tags Optional tags associated with this update
      */
-    private notifySubscribers(direction: SyncDirection, tags?: string[]) {
+    private notifySubscribers(source: UpdateSource, tags?: string[]) {
         const metadata: UpdateMetadata = {
-            direction,
+            source,
             tags,
         };
 
@@ -1597,10 +1727,102 @@ export class Mirror<S extends SchemaType> {
         }
     }
 
+    /** Path resolver context for EphemeralPatchManager */
+    private get ephemeralCtx(): PathResolverContext {
+        return { doc: this.doc };
+    }
+
+    /**
+     * Compose state by overlaying ephemeral patches on top of base state.
+     * If no ephemeral manager or no patches, returns base unchanged.
+     */
+    private composeState(base: InferType<S>): InferType<S> {
+        if (!this.ephemeralManager) return base;
+        return this.ephemeralManager.compose(base, this.ephemeralCtx);
+    }
+
+    private applyEphemeralDeltas(
+        deltas: readonly EphemeralPatchDelta[],
+        state: InferType<S> = this.state,
+    ): InferType<S> {
+        if (!this.ephemeralManager || deltas.length === 0) return state;
+        return this.ephemeralManager.applyDelta(
+            state,
+            this.baseState,
+            deltas,
+            this.ephemeralCtx,
+        );
+    }
+
+    private withSuppressedLocalEphemeralEvents<T>(callback: () => T): T {
+        this.suppressLocalEphemeralEvents += 1;
+        try {
+            return callback();
+        } finally {
+            this.suppressLocalEphemeralEvents -= 1;
+        }
+    }
+
+    /**
+     * Handle events from the EphemeralStore (both local and remote)
+     */
+    private handleEphemeralEvent = (event: EphemeralStoreChangeEvent) => {
+        if (this.syncing) return;
+        if (
+            event.by === "local" &&
+            this.suppressLocalEphemeralEvents > 0
+        ) {
+            return;
+        }
+        this.state = this.applyEphemeralDeltas(event.deltas);
+        this.notifySubscribers(UpdateSource.EPHEMERAL);
+    };
+
+    /**
+     * Immediately commit all pending ephemeral patches to LoroDoc.
+     *
+     * Call this when the temporary operation ends (e.g. on `mouseup` after a drag)
+     * to flush ephemeral values into permanent LoroDoc history without waiting for
+     * the debounced timeout.
+     *
+     * Only values that still match what this peer last wrote to the EphemeralStore
+     * are committed. Values overwritten by a remote peer are skipped.
+     *
+     * After finalization, the EphemeralStore patches are cleaned up and the
+     * debounce timer is cancelled.
+     *
+     * No-op if there are no pending local ephemeral patches.
+     */
+    finalizeEphemeralPatches(): void {
+        if (!this.ephemeralManager || !this.ephemeralManager.hasLocalPatches) return;
+
+        this.syncing = true;
+        try {
+            const localEvent = this.captureLocalDocEvent(() => {
+                this.ephemeralManager?.finalize(this.doc);
+            });
+            if (localEvent) {
+                this.registerContainersFromLoroEvent(localEvent);
+                const normalized = this.normalizeLoroEventBatch(localEvent);
+                this.baseState = this.applyNormalizedLoroEventToState(
+                    this.baseState,
+                    normalized,
+                );
+            }
+            this.state = this.composeState(this.baseState);
+            this.notifySubscribers(UpdateSource.MIRROR);
+        } finally {
+            this.syncing = false;
+        }
+    }
+
     /**
      * Clean up resources
      */
     dispose() {
+        // Clean up ephemeral resources
+        this.ephemeralManager?.dispose();
+
         this.subscribers.clear();
         this.subscriptions.forEach((x) => {
             x();
@@ -2050,15 +2272,133 @@ export class Mirror<S extends SchemaType> {
         return this.state;
     }
 
+    private applyLocalLoroChanges(
+        changes: Change[],
+        pendingState: InferType<S>,
+        options?: SetStateOptions,
+    ): boolean {
+        let localEvent: LoroEventBatch | undefined;
+        this.syncing = true;
+        try {
+            localEvent = this.captureLocalDocEvent(() => {
+                this.applyChangesToLoro(changes, pendingState, options);
+            });
+        } finally {
+            this.syncing = false;
+        }
+
+        if (!localEvent) {
+            return false;
+        }
+
+        this.registerContainersFromLoroEvent(localEvent);
+        const normalized = this.normalizeLoroEventBatch(localEvent);
+        this.baseState = this.applyNormalizedLoroEventToState(
+            this.baseState,
+            normalized,
+        );
+        this.state = this.applyNormalizedLoroEventToState(this.state, normalized);
+        return true;
+    }
+
     /**
-     * Update state and propagate changes to Loro.
+     * @internal
+     * Advanced ephemeral hot path. Prefer `setState` for the public API surface.
+     */
+    private patchEphemeral(
+        containerId: ContainerID,
+        key: string,
+        value: string | number | boolean | null,
+        options?: Pick<SetStateOptions, "finalizeTimeout" | "tags">,
+    ): void {
+        if (this.syncing) return;
+        if (!this.ephemeralManager) {
+            throw new Error("patchEphemeral requires an ephemeralStore");
+        }
+
+        const change: Change = {
+            container: containerId,
+            key,
+            value,
+            kind: "set",
+        };
+        if (!this.ephemeralManager.isEligible(change, this.doc)) {
+            throw new Error(
+                "patchEphemeral only supports primitive values on existing LoroMap keys",
+            );
+        }
+
+        const deltas = this.withSuppressedLocalEphemeralEvents(() =>
+            this.ephemeralManager?.writeValue(containerId, key, value) ?? [],
+        );
+        if (deltas.length === 0) return;
+
+        this.ephemeralManager.scheduleFinalizeAfter(
+            options?.finalizeTimeout,
+            () => {
+                this.finalizeEphemeralPatches();
+            },
+        );
+        this.state = this.applyEphemeralDeltas(deltas);
+
+        const tags = options?.tags
+            ? Array.isArray(options.tags)
+                ? options.tags
+                : [options.tags]
+            : undefined;
+        this.notifySubscribers(UpdateSource.MIRROR, tags);
+    }
+
+    /**
+     * Update state and propagate changes.
      *
-     * - If `updater` is an object, it will shallow-merge into the current state.
-     * - If `updater` is a function, it may EITHER:
-     *   - mutate a draft (Immer-style), OR
-     *   - return a brand new immutable state object.
+     * `updater` may be:
+     * - An **object** — shallow-merged into the current state.
+     * - A **function** — receives a mutable Immer draft (mutate in place)
+     *   or returns a new immutable state object.
      *
-     * This supports both immutable and mutative update styles without surprises.
+     * ---
+     *
+     * ### Behavior depends on `ephemeralStore` configuration
+     *
+     * **Without `ephemeralStore`** (default) — all changes are written to
+     * LoroDoc synchronously. This is the standard path for persistent edits.
+     *
+     * **With `ephemeralStore`** — Mirror diffs the new state against the
+     * current composed state (`LoroDoc + EphemeralStore overlay`) and
+     * classifies each change automatically:
+     *
+     * | Condition | Destination |
+     * |---|---|
+     * | Primitive value (`string`, `number`, `boolean`, `null`) on an **existing key** of an **existing LoroMap** | → `EphemeralStore` (no LoroDoc write) |
+     * | Everything else (new keys, new containers, list/text/tree ops) | → `LoroDoc` directly |
+     *
+     * This means a single `setState` call can write some changes to
+     * EphemeralStore and others to LoroDoc in the same invocation.
+     *
+     * Ephemeral values are committed to LoroDoc when:
+     * 1. The {@link SetStateOptions.finalizeTimeout | finalizeTimeout}
+     *    expires (default 50 000 ms), or
+     * 2. You call {@link finalizeEphemeralPatches} manually (e.g. on `mouseup`).
+     *
+     * The debounce timer resets on each `setState` call that produces
+     * ephemeral changes, so it only fires after the user stops updating.
+     *
+     * @example
+     * ```ts
+     * // Without ephemeralStore — writes directly to LoroDoc
+     * mirror.setState((s) => { s.count = 1; });
+     *
+     * // With ephemeralStore — x/y go to EphemeralStore, push goes to LoroDoc
+     * mirror.setState(
+     *     (s) => {
+     *         s.items[0].x = e.clientX;   // → EphemeralStore (primitive on existing key)
+     *         s.items[0].y = e.clientY;   // → EphemeralStore
+     *         s.items.push({ x: 0, y: 0, name: "new" }); // → LoroDoc (structural change)
+     *     },
+     *     { finalizeTimeout: 1_000 },
+     * );
+     * ```
      */
     setState(
         updater: (state: Readonly<InferInputType<S>>) => InferInputType<S>,
@@ -2080,6 +2420,7 @@ export class Mirror<S extends SchemaType> {
         options?: SetStateOptions,
     ): void {
         if (this.syncing) return; // Prevent recursive updates
+
         // Calculate new state; support mutative or return-based updater via Immer
         const newState =
             typeof updater === "function"
@@ -2090,7 +2431,6 @@ export class Mirror<S extends SchemaType> {
                         ) => InferType<S> | void
                     )(draft as InferType<S>);
                     if (res && res !== (draft as unknown)) {
-                        // Return a replacement so Immer finalizes it
                         return res as unknown as typeof draft;
                     }
                 })
@@ -2119,29 +2459,80 @@ export class Mirror<S extends SchemaType> {
                 : [options.tags]
             : undefined;
 
-        // Update Loro based on new state
-        // Refresh in-memory state from Doc to capture assigned IDs (e.g., TreeIDs)
-        // and any canonical normalization (like Tree meta->data mapping).
-        this.updateLoro(newState, options);
-        // Strip undefined values from the state to match LoroDoc behavior
-        // (undefined values are treated as non-existent fields)
-        this.state = stripUndefined(newState);
-        const shouldCheck = this.options.checkStateConsistency;
-        if (shouldCheck) {
-            this.checkStateConsistency();
+        if (this.ephemeralManager) {
+            // Route changes through ephemeral classification
+            const changes = diffContainer(
+                this.doc,
+                this.state,
+                newState,
+                "",
+                this.schema,
+                this.options?.inferOptions,
+            );
+
+            const ephemeralChanges: EphemeralEligibleChange[] = [];
+            const loroChanges: Change[] = [];
+            for (const change of changes) {
+                if (this.ephemeralManager.isEligible(change, this.doc)) {
+                    ephemeralChanges.push(change);
+                } else {
+                    loroChanges.push(change);
+                }
+            }
+
+            // Apply non-ephemeral changes directly to LoroDoc
+            if (loroChanges.length > 0) {
+                const appliedIncrementally = this.applyLocalLoroChanges(
+                    loroChanges,
+                    newState,
+                    options,
+                );
+                if (!appliedIncrementally) {
+                    this.baseState = this.rebuildBaseState();
+                    this.state = this.composeState(this.baseState);
+                }
+            }
+
+            // Write ephemeral-eligible changes to EphemeralStore
+            if (ephemeralChanges.length > 0) {
+                const deltas = this.withSuppressedLocalEphemeralEvents(() =>
+                    this.ephemeralManager?.writeChanges(ephemeralChanges) ?? [],
+                );
+                // Schedule debounced finalization
+                this.ephemeralManager.scheduleFinalizeAfter(
+                    options?.finalizeTimeout,
+                    () => {
+                        this.finalizeEphemeralPatches();
+                    },
+                );
+                this.state = this.applyEphemeralDeltas(deltas);
+            }
+        } else {
+            // No ephemeral store — apply everything to LoroDoc
+            this.updateLoro(newState, options);
+            this.baseState = stripUndefined(newState);
+            this.state = this.composeState(this.baseState);
+
+            if (this.options.checkStateConsistency) {
+                this.checkStateConsistency();
+            }
         }
 
         // Notify subscribers
-        this.notifySubscribers(SyncDirection.TO_LORO, tags);
+        this.notifySubscribers(UpdateSource.MIRROR, tags);
     }
 
     checkStateConsistency() {
-        const state = this.state;
-        if (!deepEqual(state, this.buildRootStateSnapshot())) {
+        // Compare baseState (doc-only + Ignore) against a fresh doc snapshot.
+        // Using this.state would include the ephemeral overlay and always diverge
+        // when ephemeral patches are active.
+        const base = this.baseState as unknown as Record<string, unknown>;
+        const snapshot = this.buildRootStateSnapshot(base);
+        if (!deepEqual(base, snapshot)) {
             console.error(
                 "State diverged",
-                safeStringify(state),
-                safeStringify(this.buildRootStateSnapshot()),
+                safeStringify(base),
+                safeStringify(snapshot),
             );
             throw new Error("[InternalError] State diverged");
         }
@@ -2242,7 +2633,26 @@ export class Mirror<S extends SchemaType> {
         return c.toJSON();
     }
 
-    private buildRootStateSnapshot(): Record<string, unknown> {
+    /**
+     * Build a state snapshot from LoroDoc.
+     * When `prevState` is provided, Ignore fields are preserved from it
+     * (they only exist in memory and are not backed by LoroDoc).
+     */
+    private rebuildBaseState(): InferType<S> {
+        return this.buildRootStateSnapshot(
+            this.baseState as Record<string, unknown>,
+        ) as InferType<S>;
+    }
+
+    /**
+     * Build a fresh state snapshot from the LoroDoc.
+     *
+     * When `prevState` is provided, Ignore fields are preserved from it
+     * (they only exist in memory and are not backed by LoroDoc).
+     */
+    private buildRootStateSnapshot(
+        prevState?: Record<string, unknown>,
+    ): Record<string, unknown> {
         if (!this.schema || this.schema.type !== "schema") {
             // Fallback to previous normalization if no schema
             return toNormalizedJson(this.doc) as Record<string, unknown>;
@@ -2254,6 +2664,13 @@ export class Mirror<S extends SchemaType> {
         >;
         for (const key in rootSchema.definition) {
             const fieldSchema = rootSchema.definition[key];
+            // Preserve Ignore fields from previous state — they are memory-only
+            if ((fieldSchema as { type: string }).type === "ignore") {
+                if (prevState && key in prevState) {
+                    root[key] = prevState[key];
+                }
+                continue;
+            }
             const containerType = schemaToContainerType(fieldSchema);
             if (!containerType) continue;
             const container = getRootContainerByType(

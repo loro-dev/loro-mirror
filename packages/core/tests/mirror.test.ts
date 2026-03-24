@@ -1,4 +1,4 @@
-import { Mirror, SyncDirection } from "../src/core/mirror.js";
+import { Mirror, UpdateSource } from "../src/core/mirror.js";
 import { valueIsContainer, valueIsContainerOfType } from "../src/core/utils.js";
 import { schema } from "../src/schema/index.js";
 import { LoroDoc, LoroList, LoroMap } from "loro-crdt";
@@ -230,11 +230,11 @@ describe("Mirror - State Consistency", () => {
 
         // Track mirror state changes via subscriber
         const stateChanges: Array<{ meta: { counter: unknown } }> = [];
-        const directions: SyncDirection[] = [];
+        const sources: UpdateSource[] = [];
 
         mirror.subscribe((state, meta) => {
             stateChanges.push({ ...state }); // Clone to avoid reference issues
-            directions.push(meta.direction);
+            sources.push(meta.source);
         });
 
         // Update LoroDoc
@@ -247,11 +247,11 @@ describe("Mirror - State Consistency", () => {
         // Check updated value - use getPrimitiveValue to handle wrapped values
         expect(mirror.getState().meta.counter).toBe(5);
 
-        // Verify subscriber was called with correct direction
+        // Verify subscriber was called with correct source
         expect(stateChanges.length).toBeGreaterThan(0);
         const latestChange = stateChanges[stateChanges.length - 1].meta.counter;
         expect(latestChange).toBe(5);
-        expect(directions[directions.length - 1]).toBe(SyncDirection.FROM_LORO);
+        expect(sources[sources.length - 1]).toBe(UpdateSource.LORO);
 
         // Clean up
         mirror.dispose();

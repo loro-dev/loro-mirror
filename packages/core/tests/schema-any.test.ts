@@ -134,7 +134,7 @@ describe("schema.Any", () => {
         const s = schema({
             map: schema.LoroMap({}).catchall(schema.Any()),
         });
-        new Mirror({ doc, schema: s });
+        const mirror = new Mirror({ doc, schema: s });
 
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -149,6 +149,7 @@ describe("schema.Any", () => {
         ).toBe(false);
 
         warn.mockRestore();
+        mirror.dispose();
     });
 
     it("does not throw when setState writes inferred containers under Any subtree", async () => {

@@ -80,7 +80,7 @@ function TodoApp() {
         addTodo({text: "New todo", status: "todo"})
       }}>Add Todo</button>
       <ul>
-        {state.todos.map((todo) => (
+        {todos.map((todo) => (
           <li key={todo.$cid /* stable key from Loro container id */}>
             {todo.text}: {todo.status}
           </li>
@@ -97,6 +97,41 @@ function TodoApp() {
   container id.
 - Use `$cid` as a stable list selector and React key:
   `schema.LoroList(item, x => x.$cid)` and `<li key={todo.$cid}>`.
+
+### Ephemeral Patches
+
+For high-frequency temporary changes, use `loroMirrorAtoms` (instead of `loroMirrorAtom`) to get a `finalizeAtom` alongside the state atom. Pass `ephemeralStore` and the write side of `stateAtom` automatically routes eligible changes (primitive values on existing Map keys) through EphemeralStore instead of LoroDoc. No separate atom is needed for ephemeral vs persistent updates.
+
+```tsx
+import { EphemeralStore } from 'loro-crdt';
+import { loroMirrorAtoms } from 'loro-mirror-jotai';
+
+const { stateAtom, finalizeAtom } = loroMirrorAtoms({
+    doc,
+    schema: canvasSchema,
+    ephemeralStore: new EphemeralStore(), // ← changes how writes work
+});
+
+function Canvas() {
+    const [state, setState] = useAtom(stateAtom);
+    const finalize = useSetAtom(finalizeAtom);
+
+    const onDrag = (x: number, y: number) => {
+        // x/y are primitives on existing keys → EphemeralStore
+        // No LoroDoc history for intermediate positions
+        setState({ x, y });
+    };
+
+    const onDragEnd = () => finalize(); // commit to LoroDoc
+}
+```
+
+Without `ephemeralStore`, `setState` writes everything to LoroDoc as usual.
+
+- `stateAtom` — read/write atom; reads return composed state (`LoroDoc + EphemeralStore overlay`); writes go through ephemeral routing when `ephemeralStore` is configured
+- `finalizeAtom` — write-only; commits pending ephemeral patches to LoroDoc
+
+See the [core package README](../core/README.md#ephemeral-patches) for routing rules and finalization details.
 
 ## License
 

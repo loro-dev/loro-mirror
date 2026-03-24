@@ -10,8 +10,13 @@ import React, {
     useRef,
     useState,
 } from "react";
-import { InferType, InferInputType, SchemaType, Mirror } from "loro-mirror";
-import type { LoroDoc } from "loro-crdt";
+import {
+    InferType,
+    InferInputType,
+    SchemaType,
+    Mirror,
+} from "loro-mirror";
+import type { LoroDoc, EphemeralStore } from "loro-crdt";
 // (No external state helper needed; Mirror handles Immer internally)
 
 /**
@@ -50,6 +55,18 @@ export interface UseLoroStoreOptions<S extends SchemaType> {
      * @default false
      */
     debug?: boolean;
+
+    /**
+     * Optional EphemeralStore for syncing temporary state without polluting
+     * LoroDoc history.
+     *
+     * **Setting this changes how `setState` works:** eligible changes
+     * (primitive values on existing Map keys) are automatically routed to
+     * EphemeralStore instead of LoroDoc. Structural changes still go to
+     * LoroDoc. Pass `{ finalizeTimeout }` in `setState` options to control
+     * the auto-commit delay, or call `finalizeEphemeralPatches()` manually.
+     */
+    ephemeralStore?: EphemeralStore;
 }
 
 /**
@@ -98,6 +115,7 @@ export function useLoroStore<S extends SchemaType>(
         options.schema,
         options.throwOnValidationError,
         options.validateUpdates,
+        options.ephemeralStore,
     ]);
 
     // Get the current state
@@ -133,9 +151,14 @@ export function useLoroStore<S extends SchemaType>(
         [getMirror],
     ) as unknown as SetStateFn;
 
+    const finalizeEphemeralPatches = useCallback(() => {
+        getMirror().finalizeEphemeralPatches();
+    }, [getMirror]);
+
     return {
         state,
         setState,
+        finalizeEphemeralPatches,
         store: getMirror(),
     };
 }
@@ -287,6 +310,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
         validateUpdates,
         throwOnValidationError,
         debug,
+        ephemeralStore,
     }: PropsWithChildren<Omit<UseLoroStoreOptions<S>, "schema">>) {
         const { store } = useLoroStore({
             doc,
@@ -295,6 +319,7 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
             validateUpdates,
             throwOnValidationError,
             debug,
+            ephemeralStore,
         });
 
         return (
@@ -363,6 +388,14 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
         return useLoroCallback(store, updater, deps);
     }
 
+    // Hook to finalize ephemeral patches from context
+    function useLoroFinalizeEphemeral(): () => void {
+        const store = useLoroContext();
+        return useCallback(() => {
+            store.finalizeEphemeralPatches();
+        }, [store]);
+    }
+
     return {
         LoroContext,
         LoroProvider,
@@ -370,5 +403,6 @@ export function createLoroContext<S extends SchemaType>(schema: S) {
         useLoroState,
         useLoroSelector,
         useLoroAction,
+        useLoroFinalizeEphemeral,
     };
 }
