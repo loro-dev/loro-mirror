@@ -1537,7 +1537,6 @@ describe("EphemeralPatchManager edge cases", () => {
             // Write a change
             manager.writeChanges(
                 [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
-                ctx,
             );
 
             // Externally clear the store (simulates remote overwrite or clear)
@@ -1563,7 +1562,6 @@ describe("EphemeralPatchManager edge cases", () => {
             // Write local change on x only
             manager.writeChanges(
                 [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
-                ctx,
             );
 
             // Add a remote ephemeral value on y (not tracked as local)
@@ -1737,7 +1735,6 @@ describe("EphemeralPatchManager edge cases", () => {
             let callbackFired = false;
             manager.writeChanges(
                 [{ kind: "set", container: mapId, key: "x", value: 50 } as any],
-                ctx,
             );
             manager.scheduleFinalizeAfter(100, () => { callbackFired = true; });
 

@@ -36,8 +36,6 @@ export class EphemeralPatchManager {
     private store: EphemeralStore;
     /** Tracks what the local peer last wrote, keyed by ContainerID -> fieldKey -> value */
     private localValues: Map<ContainerID, Record<string, unknown>> = new Map();
-    /** Cached container paths (only for paths without list indices) */
-    private containerPaths: Map<ContainerID, (string | number)[]> = new Map();
     private finalizeTimer?: ReturnType<typeof setTimeout>;
     private defaultTimeout: number = 50_000;
 
@@ -79,7 +77,7 @@ export class EphemeralPatchManager {
     /**
      * Write a set of ephemeral-eligible changes to the EphemeralStore.
      */
-    writeChanges(changes: Change[], ctx: PathResolverContext): void {
+    writeChanges(changes: Change[]): void {
         for (const change of changes) {
             if (!("key" in change) || typeof change.key !== "string") continue;
             const containerId = change.container as ContainerID;
@@ -103,11 +101,6 @@ export class EphemeralPatchManager {
                 this.localValues.set(containerId, localEntry);
             }
             localEntry[key] = value;
-
-            // Cache the container path
-            if (!this.containerPaths.has(containerId)) {
-                this.resolvePath(containerId, ctx);
-            }
         }
     }
 
@@ -249,7 +242,6 @@ export class EphemeralPatchManager {
         }
 
         this.localValues.clear();
-        this.containerPaths.clear();
 
         return hasChanges;
     }
@@ -276,22 +268,18 @@ export class EphemeralPatchManager {
     dispose(): void {
         this.clearTimer();
         this.localValues.clear();
-        this.containerPaths.clear();
     }
 
     /**
      * Resolve a ContainerID to a path of keys/indices from the state root.
+     * Always computed fresh — no caching, since list indices can change after moves.
      */
-    private resolvePath(
+    resolvePath(
         containerId: ContainerID,
         ctx: PathResolverContext,
     ): (string | number)[] | undefined {
-        const cached = this.containerPaths.get(containerId);
-        if (cached) return cached;
-
         const rootPath = ctx.rootPathById.get(containerId);
         if (rootPath) {
-            this.containerPaths.set(containerId, rootPath);
             return rootPath;
         }
 
@@ -344,10 +332,6 @@ export class EphemeralPatchManager {
             }
 
             if (segments.length > 0) {
-                const hasIndex = segments.some((s) => typeof s === "number");
-                if (!hasIndex) {
-                    this.containerPaths.set(containerId, segments);
-                }
                 return segments;
             }
         } catch {

@@ -1784,7 +1784,7 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Write ephemeral-eligible changes to EphemeralStore
-        this.ephemeralManager!.writeChanges(ephemeralChanges, this.ephemeralCtx);
+        this.ephemeralManager!.writeChanges(ephemeralChanges);
 
         // Compose final state
         this.state = this.composeState(this.baseState);
