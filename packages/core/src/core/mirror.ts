@@ -44,6 +44,7 @@ import {
     isLoroUnionSchema,
     LoroListSchema,
     LoroMapSchema,
+    LoroMapSchemaWithCatchall,
     RootSchemaType,
     SchemaType,
     validateSchema,
@@ -461,7 +462,8 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
-        this.state = baseState as InferType<S>;
+        this.baseState = baseState as InferType<S>;
+        this.state = this.baseState;
 
         // Initialize ephemeral manager if store provided
         if (options.ephemeralStore) {
@@ -641,7 +643,7 @@ export class Mirror<S extends SchemaType> {
                             effectiveMapSchema &&
                             isLoroMapSchema(effectiveMapSchema)
                         ) {
-                            const candidate = this.getSchemaForMapKey(
+                            const candidate = getMapFieldSchema(
                                 effectiveMapSchema as
                                     | LoroMapSchema<Record<string, SchemaType>>
                                     | LoroMapSchemaWithCatchall<
@@ -2840,7 +2842,7 @@ export class Mirror<S extends SchemaType> {
                 const tag = map.get(containerSchema.discriminant);
                 if (typeof tag === "string" && containerSchema.variants[tag]) {
                     const variantSchema = containerSchema.variants[tag];
-                    return this.getSchemaForMapKey(
+                    return getMapFieldSchema(
                         variantSchema as
                             | LoroMapSchema<Record<string, SchemaType>>
                             | LoroMapSchemaWithCatchall<
@@ -2855,7 +2857,7 @@ export class Mirror<S extends SchemaType> {
         }
 
         if (isLoroMapSchema(containerSchema)) {
-            return this.getSchemaForMapKey(
+            return getMapFieldSchema(
                 containerSchema as
                     | LoroMapSchema<Record<string, SchemaType>>
                     | LoroMapSchemaWithCatchall<
