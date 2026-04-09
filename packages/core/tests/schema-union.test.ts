@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { LoroDoc } from "loro-crdt";
-import { schema, validateSchema, getDefaultValue } from "../src/index.js";
+import {
+    schema,
+    validateSchema,
+    getDefaultValue,
+    type TransformDefinition,
+} from "../src/index.js";
 import { Mirror } from "../src/core/mirror.js";
 import {
     isLoroUnionSchema,
@@ -83,7 +88,10 @@ describe("schema.Union", () => {
         it("rejects discriminant key in variant definition at schema creation", () => {
             expect(() => {
                 schema.Union("type", {
-                    bad: schema.LoroMap({ type: schema.String(), value: schema.Number() }),
+                    bad: schema.LoroMap({
+                        type: schema.String(),
+                        value: schema.Number(),
+                    }),
                 });
             }).toThrow(/must not contain the discriminant key/);
         });
@@ -102,7 +110,9 @@ describe("schema.Union", () => {
 
             const result = validateSchema(badUnion, { kind: "bad" });
             expect(result.valid).toBe(false);
-            expect(result.errors?.[0]).toContain("must not contain the discriminant key");
+            expect(result.errors?.[0]).toContain(
+                "must not contain the discriminant key",
+            );
         });
     });
 
@@ -468,7 +478,10 @@ describe("Union edge cases", () => {
         const _guard: boolean = isLoroUnionSchema(u);
         expect(_guard).toBe(true);
         // Verify the type is accessible (compile-time check)
-        const _typeCheck: LoroUnionSchema<string, Record<string, never>> = u as never;
+        const _typeCheck: LoroUnionSchema<
+            string,
+            Record<string, never>
+        > = u as never;
         void _typeCheck;
     });
 
@@ -681,5 +694,199 @@ describe("Union edge cases", () => {
         expect(state.content.$cid).toBeDefined();
         expect(typeof state.content.$cid).toBe("string");
         mirror.dispose();
+    });
+});
+
+describe("Union with transforms inside variant fields", () => {
+    const epochTransform: TransformDefinition<number, Date> = {
+        decode: (n: number) => new Date(n),
+        encode: (d: Date) => d.getTime(),
+    };
+
+    it("transform decode/encode works for fields in union variants", () => {
+        const s = schema({
+            events: schema.LoroList(
+                schema.Union("type", {
+                    meeting: schema.LoroMap({
+                        title: schema.String(),
+                        startAt: schema.Number().transform(epochTransform),
+                    }),
+                    reminder: schema.LoroMap({
+                        note: schema.String(),
+                    }),
+                }),
+                (item) => item.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { events: [] },
+            checkStateConsistency: true,
+        });
+
+        const epoch = new Date("2025-06-15T10:00:00Z").getTime();
+
+        mirror.setState((draft) => {
+            draft.events.push({
+                type: "meeting",
+                title: "Standup",
+                startAt: new Date(epoch),
+            });
+            draft.events.push({ type: "reminder", note: "Buy milk" });
+        });
+
+        const state = mirror.getState();
+        expect(state.events).toHaveLength(2);
+        expect(state.events[0].type).toBe("meeting");
+        if (state.events[0].type === "meeting") {
+            // The value should be decoded back to a Date
+            expect(state.events[0].startAt).toBeInstanceOf(Date);
+            expect((state.events[0].startAt as Date).getTime()).toBe(epoch);
+        }
+        expect(state.events[1].type).toBe("reminder");
+    });
+
+    it("transform works after same-variant update", () => {
+        const s = schema({
+            item: schema.Union("kind", {
+                timestamped: schema.LoroMap({
+                    value: schema.String(),
+                    updatedAt: schema.Number().transform(epochTransform),
+                }),
+                plain: schema.LoroMap({ value: schema.String() }),
+            }),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: {
+                item: {
+                    kind: "timestamped",
+                    value: "hello",
+                    updatedAt: new Date("2025-01-01"),
+                },
+            },
+        });
+
+        const cidBefore = mirror.getState().item.$cid;
+
+        mirror.setState((draft) => {
+            if (draft.item.kind === "timestamped") {
+                draft.item.value = "updated";
+                draft.item.updatedAt = new Date("2025-06-01");
+            }
+        });
+
+        const state = mirror.getState();
+        expect(state.item.kind).toBe("timestamped");
+        expect(state.item.$cid).toBe(cidBefore); // same container
+        if (state.item.kind === "timestamped") {
+            expect(state.item.value).toBe("updated");
+            expect(state.item.updatedAt).toBeInstanceOf(Date);
+            expect((state.item.updatedAt as Date).getFullYear()).toBe(2025);
+        }
+    });
+});
+
+describe("MovableList of unions", () => {
+    it("supports push, update, and variant switch", () => {
+        const s = schema({
+            items: schema.LoroMovableList(
+                schema.Union("type", {
+                    text: schema.LoroMap({ body: schema.String() }),
+                    number: schema.LoroMap({ value: schema.Number() }),
+                }),
+                (item) => item.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { items: [] },
+        });
+
+        // Push items
+        mirror.setState((draft) => {
+            draft.items.push(
+                { type: "text", body: "Hello" },
+                { type: "number", value: 42 },
+            );
+        });
+
+        let state = mirror.getState();
+        expect(state.items).toHaveLength(2);
+        expect(state.items[0].type).toBe("text");
+        expect(state.items[1].type).toBe("number");
+
+        // Same-variant update (use Immer mutation to avoid enumerable $cid issues)
+        mirror.setState((draft) => {
+            if (draft.items[0].type === "text") {
+                draft.items[0].body = "Updated";
+            }
+        });
+
+        state = mirror.getState();
+        expect(state.items[0].type).toBe("text");
+        if (state.items[0].type === "text") {
+            expect(state.items[0].body).toBe("Updated");
+        }
+
+        // Variant switch
+        mirror.setState((draft) => {
+            draft.items[1] = {
+                type: "text",
+                body: "Was a number",
+                $cid: draft.items[1].$cid,
+            };
+        });
+
+        state = mirror.getState();
+        expect(state.items[1].type).toBe("text");
+        if (state.items[1].type === "text") {
+            expect(state.items[1].body).toBe("Was a number");
+        }
+    });
+
+    it("supports removal from movable list of unions", () => {
+        const s = schema({
+            items: schema.LoroMovableList(
+                schema.Union("type", {
+                    a: schema.LoroMap({ x: schema.Number() }),
+                    b: schema.LoroMap({ y: schema.String() }),
+                }),
+                (item) => item.$cid,
+            ),
+        });
+
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: s,
+            initialState: { items: [] },
+        });
+
+        mirror.setState((draft) => {
+            draft.items.push(
+                { type: "a", x: 1 },
+                { type: "b", y: "hi" },
+                { type: "a", x: 2 },
+            );
+        });
+
+        mirror.setState((draft) => {
+            draft.items.splice(1, 1);
+        });
+
+        const state = mirror.getState();
+        expect(state.items).toHaveLength(2);
+        expect(state.items[0].type).toBe("a");
+        expect(state.items[1].type).toBe("a");
     });
 });
