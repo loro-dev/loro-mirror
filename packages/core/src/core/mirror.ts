@@ -53,6 +53,7 @@ import {
     getChildContainerSchema,
     getChildSchema,
     getMapFieldSchema,
+    resolveUnionVariant,
 } from "../schema/resolver.js";
 import {
     deepEqual,
@@ -2618,13 +2619,21 @@ export class Mirror<S extends SchemaType> {
             const m = c as LoroMap;
             const obj: MirrorStateObject = {};
             defineCidProperty(obj, c.id);
+            // Resolve union schema to the active variant's map schema so
+            // field-level decode (transforms) can find the correct child schema.
+            const effectiveSchema = isLoroUnionSchema(schema)
+                ? resolveUnionVariant(
+                      schema,
+                      Object.fromEntries(m.keys().map((k) => [k, m.get(k)])),
+                  )
+                : schema;
             for (const k of m.keys()) {
                 const v = m.get(k);
                 if (isContainer(v)) {
                     obj[k] = this.containerToMirrorState(v);
                 } else {
                     // Decode primitive values using field schema
-                    const fieldSchema = getChildSchema(schema, k);
+                    const fieldSchema = getChildSchema(effectiveSchema, k);
                     obj[k] = applyDecode(fieldSchema, v) as MirrorState;
                 }
             }
