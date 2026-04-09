@@ -391,6 +391,12 @@ export class Mirror<S extends SchemaType> {
         // so that doc.toJSON() reflects empty shapes and matches normalized state.
         this.ensureRootContainersFromInitialState();
 
+        // Register root container schemas early so that buildRootStateSnapshot()
+        // can apply decode transforms (e.g. String->Date) when reading the doc.
+        // Without this, containerToMirrorState would find no schema in the
+        // registry and return raw CRDT values instead of decoded domain values.
+        this.registerRootContainerSchemas();
+
         // Initialize in-memory state without writing to LoroDoc:
         // 1) Start from schema defaults (if any)
         // 2) Overlay current LoroDoc snapshot (normalized)
@@ -507,6 +513,48 @@ export class Mirror<S extends SchemaType> {
                 this.rootPathById.set(container.id, [key]);
                 this.registerContainerWithRegistry(container.id, undefined);
             }
+        }
+    }
+
+    /**
+     * Register root container schemas so that containerToMirrorState can
+     * apply decode transforms during the initial buildRootStateSnapshot().
+     * This must run before the first snapshot read in the constructor.
+     */
+    private registerRootContainerSchemas() {
+        if (!this.schema || this.schema.type !== "schema") return;
+
+        for (const key in this.schema.definition) {
+            if (
+                !Object.prototype.hasOwnProperty.call(
+                    this.schema.definition,
+                    key,
+                )
+            ) {
+                continue;
+            }
+            const fieldSchema = this.schema.definition[key];
+            if (
+                ![
+                    "loro-map",
+                    "loro-list",
+                    "loro-text",
+                    "loro-movable-list",
+                    "loro-tree",
+                    "loro-union",
+                ].includes(fieldSchema.type)
+            ) {
+                continue;
+            }
+            const containerType = schemaToContainerType(fieldSchema);
+            if (!containerType) continue;
+            const container = getRootContainerByType(
+                this.doc,
+                key,
+                containerType,
+            );
+            this.rootPathById.set(container.id, [key]);
+            this.registerContainer(container.id, fieldSchema);
         }
     }
 
