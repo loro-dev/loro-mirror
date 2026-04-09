@@ -469,6 +469,23 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
+        // Persist initialState primitive values to the LoroDoc for root-level
+        // LoroMap containers when the doc doesn't already have those keys.
+        // This ensures EphemeralPatchManager.isEligible() can recognise these
+        // keys as "existing Map keys" for ephemeral routing. Without this,
+        // initialState values stay in-memory only and ephemeral writes are
+        // incorrectly sent to LoroDoc instead of the EphemeralStore.
+        if (this.schema && this.schema.type === "schema") {
+            this.persistInitialMapPrimitives(
+                baseState,
+                (
+                    this.schema as RootSchemaType<
+                        Record<string, ContainerSchemaType>
+                    >
+                ).definition,
+            );
+        }
+
         this.baseState = baseState as InferType<S>;
         this.state = this.baseState;
 
@@ -513,6 +530,49 @@ export class Mirror<S extends SchemaType> {
                 this.rootPathById.set(container.id, [key]);
                 this.registerContainerWithRegistry(container.id, undefined);
             }
+        }
+    }
+
+    /**
+     * Write primitive values from the in-memory baseState into root-level
+     * LoroMap containers when the doc doesn't already have those keys.
+     *
+     * This is needed because initialState populates the in-memory state but
+     * doesn't write to LoroDoc. When an EphemeralStore is configured, the
+     * ephemeral eligibility check (`isEligible`) requires the key to already
+     * exist on the LoroMap. Without this, ephemeral-eligible changes are
+     * incorrectly routed to LoroDoc.
+     */
+    private persistInitialMapPrimitives(
+        baseState: Record<string, unknown>,
+        rootDef: Record<string, ContainerSchemaType>,
+    ): void {
+        let committed = false;
+        for (const key in rootDef) {
+            const fieldSchema = rootDef[key];
+            if (fieldSchema.type !== "loro-map") continue;
+            const stateVal = baseState[key];
+            if (!isObject(stateVal)) continue;
+            const map = this.doc.getMap(key);
+            for (const [fieldKey, fieldVal] of Object.entries(stateVal)) {
+                if (fieldKey === CID_KEY) continue;
+                // Only persist primitives; containers are handled separately
+                if (fieldVal !== null && typeof fieldVal === "object") continue;
+                if (fieldVal === undefined) continue;
+                if (map.get(fieldKey) === undefined) {
+                    map.set(
+                        fieldKey,
+                        applyEncode(
+                            getMapFieldSchema(fieldSchema, fieldKey),
+                            fieldVal,
+                        ),
+                    );
+                    committed = true;
+                }
+            }
+        }
+        if (committed) {
+            this.doc.commit();
         }
     }
 
