@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.1.0...loro-mirror-v2.1.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **core:** preserve movable root containers from initial state ([#81](https://github.com/loro-dev/loro-mirror/issues/81)) ([9808bc5](https://github.com/loro-dev/loro-mirror/commit/9808bc5441b645a3b05abda5b746d97bb9e5433b))
+
 ## [2.1.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.0.0...loro-mirror-v2.1.0) (2026-03-24)
 
 
