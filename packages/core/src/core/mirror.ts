@@ -460,20 +460,46 @@ export class Mirror<S extends SchemaType> {
             string,
             unknown
         >;
+        const rootSchema =
+            this.schema && this.schema.type === "schema"
+                ? (this.schema as RootSchemaType<
+                      Record<string, ContainerSchemaType>
+                  >)
+                : undefined;
         for (const [key, value] of Object.entries(init)) {
-            let container: Container | null = null;
-            if (Array.isArray(value)) {
-                container = this.doc.getList(key);
-            } else if (typeof value === "string") {
-                container = this.doc.getText(key);
-            } else if (isObject(value)) {
-                container = this.doc.getMap(key);
-            }
-            if (container) {
-                this.rootPathById.set(container.id, [key]);
-                this.registerContainerWithRegistry(container.id, undefined);
-            }
+            const fieldSchema = rootSchema?.definition[key];
+            const containerType =
+                (fieldSchema
+                    ? schemaToContainerType(fieldSchema)
+                    : undefined) ??
+                this.inferRootContainerTypeFromInitialValue(value);
+            if (!containerType) continue;
+
+            const container = getRootContainerByType(
+                this.doc,
+                key,
+                containerType,
+            );
+            this.rootPathById.set(container.id, [key]);
+            this.registerContainerWithRegistry(container.id, undefined);
         }
+    }
+
+    private inferRootContainerTypeFromInitialValue(
+        value: unknown,
+    ): ContainerType | undefined {
+        if (Array.isArray(value)) {
+            return this.options.inferOptions?.defaultMovableList
+                ? "MovableList"
+                : "List";
+        }
+        if (typeof value === "string") {
+            return "Text";
+        }
+        if (isObject(value)) {
+            return "Map";
+        }
+        return undefined;
     }
 
     /**

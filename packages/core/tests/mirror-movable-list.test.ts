@@ -753,6 +753,40 @@ describe("MovableList (inferred)", () => {
         );
     });
 
+    it("keeps initialState root arrays snapshot-safe with defaultMovableList", async () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            initialState: {
+                payload: {},
+                items: [],
+            },
+            inferOptions: { defaultMovableList: true },
+            validateUpdates: false,
+        });
+        const state = {
+            payload: { title: "hello", count: 42 },
+            items: [
+                { id: "a", value: 1 },
+                { id: "b", value: 2 },
+            ],
+        };
+
+        mirror.setState(state);
+        await waitForSync();
+
+        const serialized = doc.getDeepValueWithID() as Record<string, unknown>;
+        expect(
+            valueIsContainerOfType(serialized["items"], ":MovableList"),
+        ).toBe(true);
+
+        const restored = new LoroDoc();
+        restored.import(doc.export({ mode: "snapshot" }));
+
+        expect(restored.toJSON()).toStrictEqual(state);
+        expect(restored.toJSON()).toStrictEqual(doc.toJSON());
+    });
+
     it("preserves nested map container identity for object items", async () => {
         const doc = new LoroDoc();
         const mirror = new Mirror({
