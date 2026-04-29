@@ -14,6 +14,7 @@ import type {
     SchemaType,
     InferType,
     InferInputType,
+    RootInitialValue,
 } from "loro-mirror";
 
 type MirrorUpdateSource = "LORO" | "MIRROR" | "EPHEMERAL";
@@ -33,9 +34,14 @@ export interface LoroMirrorAtomConfig<S extends SchemaType> {
     schema: S;
 
     /**
-     * Initial state (optional)
+     * Initial state (optional). Root entries must be container-shaped
+     * (objects, arrays, strings, or `null`/`undefined`); bare numbers and
+     * booleans are rejected, since LoroDoc only stores containers at the
+     * document root.
      */
-    initialState?: Partial<InferInputType<S>>;
+    initialState?: Partial<InferInputType<S>> & {
+        [key: string]: RootInitialValue;
+    };
 
     /**
      * Whether to validate state updates against the schema

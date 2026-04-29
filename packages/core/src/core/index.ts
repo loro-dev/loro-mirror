@@ -8,5 +8,6 @@ export type {
     SetStateOptions,
     SubscriberCallback,
     UpdateMetadata,
-    InferContainerOptions
+    InferContainerOptions,
+    RootInitialValue
 } from "./mirror.js";

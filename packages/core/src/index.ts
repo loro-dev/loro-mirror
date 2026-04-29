@@ -13,6 +13,7 @@ export {
     type UpdateMetadata,
     type SubscriberCallback,
     type InferContainerOptions,
+    type RootInitialValue,
     UpdateSource,
 } from "./core/index.js";
 
