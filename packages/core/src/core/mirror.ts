@@ -78,6 +78,19 @@ interface MirrorStateObject {
     [k: string]: MirrorState;
 }
 
+/**
+ * Values allowed for root-level keys of `initialState`. LoroDoc only stores
+ * container types at the root, so primitives (bare `number`/`boolean`) are
+ * disallowed. A root-level `string` is permitted because it maps to a root
+ * `LoroText` container.
+ */
+export type RootInitialValue =
+    | string
+    | ReadonlyArray<unknown>
+    | { readonly [key: string]: unknown }
+    | null
+    | undefined;
+
 function hasKeyProp(c: Change): c is Extract<Change, { key: string | number }> {
     return (c as { key?: unknown }).key !== undefined;
 }
@@ -117,9 +130,16 @@ export interface MirrorOptions<S extends SchemaType> {
     schema?: S;
 
     /**
-     * Initial state (optional)
+     * Initial state (optional).
+     *
+     * LoroDoc can only hold container values at the root (Map, List,
+     * MovableList, Text, Tree), so root entries must be container-shaped:
+     * objects, arrays, strings, or `null`/`undefined`. Bare numbers and
+     * booleans are rejected at the type level (and at runtime).
      */
-    initialState?: Partial<import("../schema/index.js").InferInputType<S>>;
+    initialState?: Partial<import("../schema/index.js").InferInputType<S>> & {
+        [key: string]: RootInitialValue;
+    };
 
     /**
      * Whether to validate state updates against the schema
@@ -473,7 +493,22 @@ export class Mirror<S extends SchemaType> {
                     ? schemaToContainerType(fieldSchema)
                     : undefined) ??
                 this.inferRootContainerTypeFromInitialValue(value);
-            if (!containerType) continue;
+            if (!containerType) {
+                // null/undefined are treated as "absent" and silently skipped.
+                if (value == null) continue;
+                // LoroDoc cannot store primitives at the document root — only
+                // containers (Map, List, MovableList, Text, Tree). Silently
+                // dropping the value would cause Mirror state to drift from
+                // doc state on the next sync, so fail loudly instead.
+                const fieldType = fieldSchema?.type;
+                const observed = Array.isArray(value) ? "array" : typeof value;
+                const detail = fieldType
+                    ? `schema type "${fieldType}"`
+                    : `value of type "${observed}"`;
+                throw new Error(
+                    `initialState["${key}"] is a primitive (${detail}), but LoroDoc only supports container types (Map, List, MovableList, Text, Tree) at the root. Wrap it under a root LoroMap (e.g. a "meta" map).`,
+                );
+            }
 
             const container = getRootContainerByType(
                 this.doc,

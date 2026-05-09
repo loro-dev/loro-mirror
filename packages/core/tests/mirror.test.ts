@@ -1027,6 +1027,83 @@ describe("Mirror - State Consistency", () => {
         expect(doc.toJSON()).toStrictEqual(mirror.getState());
     });
 
+    it("throws when initialState contains a primitive at the root (no schema)", () => {
+        const doc = new LoroDoc();
+        expect(
+            () =>
+                new Mirror({
+                    doc,
+                    initialState: { version: 0, notes: [] } as any,
+                }),
+        ).toThrow(/initialState\["version"\].*root/i);
+    });
+
+    it("rejects root-level primitives at the type level", () => {
+        // Type-only assertions; the function body is never executed.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const _typeChecks = () => {
+            const doc = new LoroDoc();
+            // @ts-expect-error - bare number at root must be a TS error
+            new Mirror({ doc, initialState: { version: 0 } });
+            // @ts-expect-error - bare boolean at root must be a TS error
+            new Mirror({ doc, initialState: { active: true } });
+            // Allowed: containers (object/array/string), null, undefined
+            new Mirror({
+                doc: new LoroDoc(),
+                initialState: {
+                    list: [],
+                    text: "hi",
+                    map: { a: 1 },
+                    absent: null,
+                    also: undefined,
+                },
+            });
+        };
+        expect(_typeChecks).toBeDefined();
+    });
+
+    it("throws when initialState contains a boolean at the root (no schema)", () => {
+        const doc = new LoroDoc();
+        expect(
+            () =>
+                new Mirror({
+                    doc,
+                    initialState: { isActive: true } as any,
+                }),
+        ).toThrow(/initialState\["isActive"\].*root/i);
+    });
+
+    it("throws when initialState contains a primitive at the root (with schema)", () => {
+        const doc = new LoroDoc();
+        const badSchema = schema({
+            // Bypass type-level constraint to simulate runtime misuse.
+            version: schema.Number() as any,
+            notes: schema.LoroList(schema.LoroMap({})),
+        } as any);
+        expect(
+            () =>
+                new Mirror({
+                    doc,
+                    schema: badSchema,
+                    initialState: { version: 0, notes: [] } as any,
+                }),
+        ).toThrow(/initialState\["version"\].*root/i);
+    });
+
+    it("ignores null/undefined root values in initialState", () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            initialState: {
+                missing: null,
+                absent: undefined,
+                notes: [],
+            } as any,
+        });
+        expect(doc.toJSON()).toStrictEqual({ notes: [] });
+        expect(mirror.getState()).toMatchObject({ notes: [] });
+    });
+
     it("getContainerIds returns all registered container IDs for complex nested structures", async () => {
         const doc = new LoroDoc();
 

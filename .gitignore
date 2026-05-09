@@ -3,3 +3,4 @@ dist
 # Ignore TS incremental build info everywhere in the repo
 *.tsbuildinfo
 .DS_Store
+.claude/
