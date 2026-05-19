@@ -41,8 +41,10 @@ import {
     isLoroMapSchema,
     isLoroMovableListSchema,
     isLoroTreeSchema,
+    isLoroUnionSchema,
     LoroListSchema,
     LoroMapSchema,
+    LoroMapSchemaWithCatchall,
     RootSchemaType,
     SchemaType,
     validateSchema,
@@ -51,6 +53,7 @@ import {
     getChildContainerSchema,
     getChildSchema,
     getMapFieldSchema,
+    resolveUnionVariant,
 } from "../schema/resolver.js";
 import {
     deepEqual,
@@ -408,6 +411,12 @@ export class Mirror<S extends SchemaType> {
         // so that doc.toJSON() reflects empty shapes and matches normalized state.
         this.ensureRootContainersFromInitialState();
 
+        // Register root container schemas early so that buildRootStateSnapshot()
+        // can apply decode transforms (e.g. String->Date) when reading the doc.
+        // Without this, containerToMirrorState would find no schema in the
+        // registry and return raw CRDT values instead of decoded domain values.
+        this.registerRootContainerSchemas();
+
         // Initialize in-memory state without writing to LoroDoc:
         // 1) Start from schema defaults (if any)
         // 2) Overlay current LoroDoc snapshot (normalized)
@@ -451,12 +460,60 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
+        // Persist union discriminants to the Loro doc when initialState
+        // provides them and the doc doesn't already have them.
+        //
+        // Unlike regular primitive fields (where losing an initialState default
+        // just means falling back to the schema default), the discriminant is
+        // structural metadata that determines which variant schema interprets
+        // the rest of the map's data. Without it in the doc, a fresh Mirror on
+        // the same doc would have no way to know which variant is active,
+        // making the stored fields semantically ambiguous.
+        if (this.schema && this.schema.type === "schema") {
+            const rootDef = (
+                this.schema as RootSchemaType<
+                    Record<string, ContainerSchemaType>
+                >
+            ).definition;
+            for (const key in rootDef) {
+                const fieldSchema = rootDef[key];
+                if (!isLoroUnionSchema(fieldSchema)) continue;
+                const stateVal = baseState[key];
+                if (!isObject(stateVal)) continue;
+                const tag = stateVal[fieldSchema.discriminant];
+                if (typeof tag !== "string") continue;
+                const map = this.doc.getMap(key);
+                if (map.get(fieldSchema.discriminant) === undefined) {
+                    map.set(fieldSchema.discriminant, tag);
+                }
+            }
+        }
+
+        // Persist initialState primitive values to the LoroDoc for root-level
+        // LoroMap containers when the doc doesn't already have those keys.
+        // This ensures EphemeralPatchManager.isEligible() can recognise these
+        // keys as "existing Map keys" for ephemeral routing. Without this,
+        // initialState values stay in-memory only and ephemeral writes are
+        // incorrectly sent to LoroDoc instead of the EphemeralStore.
+        if (this.schema && this.schema.type === "schema") {
+            this.persistInitialMapPrimitives(
+                baseState,
+                (
+                    this.schema as RootSchemaType<
+                        Record<string, ContainerSchemaType>
+                    >
+                ).definition,
+            );
+        }
+
         this.baseState = baseState as InferType<S>;
-        this.state = baseState as InferType<S>;
+        this.state = this.baseState;
 
         // Initialize ephemeral manager if store provided
         if (options.ephemeralStore) {
-            this.ephemeralManager = new EphemeralPatchManager(options.ephemeralStore);
+            this.ephemeralManager = new EphemeralPatchManager(
+                options.ephemeralStore,
+            );
             this.subscriptions.push(
                 this.ephemeralManager.subscribe(this.handleEphemeralEvent),
             );
@@ -538,6 +595,91 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
+     * Write primitive values from the in-memory baseState into root-level
+     * LoroMap containers when the doc doesn't already have those keys.
+     *
+     * This is needed because initialState populates the in-memory state but
+     * doesn't write to LoroDoc. When an EphemeralStore is configured, the
+     * ephemeral eligibility check (`isEligible`) requires the key to already
+     * exist on the LoroMap. Without this, ephemeral-eligible changes are
+     * incorrectly routed to LoroDoc.
+     */
+    private persistInitialMapPrimitives(
+        baseState: Record<string, unknown>,
+        rootDef: Record<string, ContainerSchemaType>,
+    ): void {
+        let committed = false;
+        for (const key in rootDef) {
+            const fieldSchema = rootDef[key];
+            if (fieldSchema.type !== "loro-map") continue;
+            const stateVal = baseState[key];
+            if (!isObject(stateVal)) continue;
+            const map = this.doc.getMap(key);
+            for (const [fieldKey, fieldVal] of Object.entries(stateVal)) {
+                if (fieldKey === CID_KEY) continue;
+                // Only persist primitives; containers are handled separately
+                if (fieldVal !== null && typeof fieldVal === "object") continue;
+                if (fieldVal === undefined) continue;
+                if (map.get(fieldKey) === undefined) {
+                    map.set(
+                        fieldKey,
+                        applyEncode(
+                            getMapFieldSchema(fieldSchema, fieldKey),
+                            fieldVal,
+                        ),
+                    );
+                    committed = true;
+                }
+            }
+        }
+        if (committed) {
+            this.doc.commit();
+        }
+    }
+
+    /**
+     * Register root container schemas so that containerToMirrorState can
+     * apply decode transforms during the initial buildRootStateSnapshot().
+     * This must run before the first snapshot read in the constructor.
+     */
+    private registerRootContainerSchemas() {
+        if (!this.schema || this.schema.type !== "schema") return;
+
+        for (const key in this.schema.definition) {
+            if (
+                !Object.prototype.hasOwnProperty.call(
+                    this.schema.definition,
+                    key,
+                )
+            ) {
+                continue;
+            }
+            const fieldSchema = this.schema.definition[key];
+            if (
+                ![
+                    "loro-map",
+                    "loro-list",
+                    "loro-text",
+                    "loro-movable-list",
+                    "loro-tree",
+                    "loro-union",
+                ].includes(fieldSchema.type)
+            ) {
+                continue;
+            }
+            const containerType = schemaToContainerType(fieldSchema);
+            if (!containerType) continue;
+            const container = getRootContainerByType(
+                this.doc,
+                key,
+                containerType,
+            );
+            this.rootPathById.set(container.id, [key]);
+            this.registerContainer(container.id, fieldSchema);
+        }
+    }
+
+    /**
      * Initialize containers based on schema
      */
     private initializeContainers() {
@@ -563,6 +705,7 @@ export class Mirror<S extends SchemaType> {
                             "loro-text",
                             "loro-movable-list",
                             "loro-tree",
+                            "loro-union",
                         ].includes(fieldSchema.type)
                     ) {
                         const containerType =
@@ -583,17 +726,13 @@ export class Mirror<S extends SchemaType> {
             }
         }
 
-        // Build initial state snapshot from the current document
+        // Stamp $cid and other metadata from the doc snapshot into the
+        // existing state without overwriting data populated by initialState.
         const currentDocState = this.buildRootStateSnapshot();
-        const newState = produce<InferType<S>>((draft) => {
-            Object.assign(
-                draft as unknown as Record<string, unknown>,
-                currentDocState,
-            );
-        })(this.state);
-
-        this.baseState = newState;
-        this.state = this.composeState(newState);
+        deepMergeSnapshot(
+            this.state as unknown as Record<string, unknown>,
+            currentDocState,
+        );
     }
 
     /**
@@ -651,17 +790,38 @@ export class Mirror<S extends SchemaType> {
         if (!container.isAttached) return;
 
         const parentSchema = this.getContainerSchema(container.id);
-        const parentLocalInfer = this.inferOptionsByContainerId.get(container.id);
+        const parentLocalInfer = this.inferOptionsByContainerId.get(
+            container.id,
+        );
 
         try {
             if (container.kind() === "Map") {
                 const map = container as LoroMap;
+                // Resolve union schema → variant map schema for child lookups
+                let effectiveMapSchema = parentSchema;
+                if (isLoroUnionSchema(parentSchema)) {
+                    const tag = map.get(parentSchema.discriminant);
+                    if (typeof tag === "string" && parentSchema.variants[tag]) {
+                        effectiveMapSchema = parentSchema.variants[tag];
+                    }
+                }
                 for (const key of map.keys()) {
                     const value = map.get(key);
                     if (isContainer(value)) {
                         let nestedSchema: ContainerSchemaType | undefined;
-                        if (parentSchema && isLoroMapSchema(parentSchema)) {
-                            const candidate = getMapFieldSchema(parentSchema, key);
+                        if (
+                            effectiveMapSchema &&
+                            isLoroMapSchema(effectiveMapSchema)
+                        ) {
+                            const candidate = getMapFieldSchema(
+                                effectiveMapSchema as
+                                    | LoroMapSchema<Record<string, SchemaType>>
+                                    | LoroMapSchemaWithCatchall<
+                                          Record<string, SchemaType>,
+                                          SchemaType
+                                      >,
+                                key,
+                            );
                             if (candidate?.type === "any") {
                                 this.inferOptionsByContainerId.set(
                                     value.id,
@@ -799,7 +959,10 @@ export class Mirror<S extends SchemaType> {
             ...event,
             events: event.events.map((e) => {
                 const canon = this.rootPathById.get(e.target);
-                if (canon && (!Array.isArray(e.path) || e.path[0] !== canon[0])) {
+                if (
+                    canon &&
+                    (!Array.isArray(e.path) || e.path[0] !== canon[0])
+                ) {
                     return { ...e, path: canon } as typeof e;
                 }
                 return e;
@@ -823,7 +986,9 @@ export class Mirror<S extends SchemaType> {
                 },
                 getNodeDataCid: (treeId, nodeId) => {
                     try {
-                        const node = this.doc.getTree(treeId).getNodeByID(nodeId);
+                        const node = this.doc
+                            .getTree(treeId)
+                            .getNodeByID(nodeId);
                         return node ? node.data.id : undefined;
                     } catch {
                         return undefined;
@@ -841,7 +1006,9 @@ export class Mirror<S extends SchemaType> {
         return nextState;
     }
 
-    private captureLocalDocEvent(callback: () => void): LoroEventBatch | undefined {
+    private captureLocalDocEvent(
+        callback: () => void,
+    ): LoroEventBatch | undefined {
         let captured: LoroEventBatch | undefined;
         const unsubscribe = this.doc.subscribe((event) => {
             if (event.by === "local") {
@@ -933,7 +1100,9 @@ export class Mirror<S extends SchemaType> {
                             } else if (
                                 !schema &&
                                 parentLocalInfer &&
-                                !this.inferOptionsByContainerId.has(container.id)
+                                !this.inferOptionsByContainerId.has(
+                                    container.id,
+                                )
                             ) {
                                 this.inferOptionsByContainerId.set(
                                     container.id,
@@ -941,7 +1110,10 @@ export class Mirror<S extends SchemaType> {
                                 );
                             }
 
-                            this.registerContainer(container.id, containerSchema);  
+                            this.registerContainer(
+                                container.id,
+                                containerSchema,
+                            );
 
                             if (
                                 schema &&
@@ -1143,7 +1315,7 @@ export class Mirror<S extends SchemaType> {
             let container: Container | null = null;
 
             // Create or get the container based on the schema type
-            if (type === "loro-map") {
+            if (type === "loro-map" || type === "loro-union") {
                 container = this.doc.getMap(keyStr);
             } else if (type === "loro-list") {
                 container = this.doc.getList(keyStr);
@@ -1207,9 +1379,9 @@ export class Mirror<S extends SchemaType> {
                         const childInfer =
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                    container.id,
-                                    fieldSchema,
-                                )
+                                      container.id,
+                                      fieldSchema,
+                                  )
                                 : undefined;
                         const inserted = this.insertContainerIntoMap(
                             map,
@@ -1263,9 +1435,9 @@ export class Mirror<S extends SchemaType> {
                             value,
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                    container.id,
-                                    fieldSchema,
-                                )
+                                      container.id,
+                                      fieldSchema,
+                                  )
                                 : undefined,
                         );
                     } else {
@@ -1310,9 +1482,9 @@ export class Mirror<S extends SchemaType> {
                             value,
                             fieldSchema?.type === "any"
                                 ? this.getInferOptionsForChild(
-                                    container.id,
-                                    fieldSchema,
-                                )
+                                      container.id,
+                                      fieldSchema,
+                                  )
                                 : undefined,
                         );
                     } else if (kind === "move") {
@@ -1331,36 +1503,38 @@ export class Mirror<S extends SchemaType> {
                             container.id,
                             key,
                         );
-	                        const infer =
-	                            fieldSchema?.type === "any"
-	                                ? this.getInferOptionsForChild(
-	                                    container.id,
-	                                    fieldSchema,
-	                                )
-	                                : !schema
-	                                    ? this.getInferOptionsForContainer(container.id)
-	                                    : undefined;
-	                        const [detachedContainer, _containerType] =
-	                            this.createContainerFromSchema(
-	                                schema,
-	                                value,
-	                                infer,
-	                            );
-	                        const newContainer = list.setContainer(
-	                            index,
-	                            detachedContainer,
-	                        );
+                        const infer =
+                            fieldSchema?.type === "any"
+                                ? this.getInferOptionsForChild(
+                                      container.id,
+                                      fieldSchema,
+                                  )
+                                : !schema
+                                  ? this.getInferOptionsForContainer(
+                                        container.id,
+                                    )
+                                  : undefined;
+                        const [detachedContainer, _containerType] =
+                            this.createContainerFromSchema(
+                                schema,
+                                value,
+                                infer,
+                            );
+                        const newContainer = list.setContainer(
+                            index,
+                            detachedContainer,
+                        );
 
-	                        if (!schema && infer) {
-	                            this.inferOptionsByContainerId.set(
-	                                newContainer.id,
-	                                infer,
-	                            );
-	                        }
-	                        this.registerContainer(newContainer.id, schema);
-	                        this.initializeContainer(newContainer, schema, value);
-	                        // Stamp $cid into pending state when replacing with a map container
-	                        this.stampCid(value, newContainer.id);
+                        if (!schema && infer) {
+                            this.inferOptionsByContainerId.set(
+                                newContainer.id,
+                                infer,
+                            );
+                        }
+                        this.registerContainer(newContainer.id, schema);
+                        this.initializeContainer(newContainer, schema, value);
+                        // Stamp $cid into pending state when replacing with a map container
+                        this.stampCid(value, newContainer.id);
                     } else {
                         throw new Error();
                     }
@@ -1727,8 +1901,9 @@ export class Mirror<S extends SchemaType> {
             containerType &&
             (!containerSchema || isValueOfContainerType(containerType, item))
         ) {
-            const childInfer =
-                containerSchema ? undefined : (effectiveInfer || baseInfer);
+            const childInfer = containerSchema
+                ? undefined
+                : effectiveInfer || baseInfer;
             this.insertContainerIntoList(
                 list,
                 containerSchema,
@@ -1818,10 +1993,7 @@ export class Mirror<S extends SchemaType> {
      */
     private handleEphemeralEvent = (event: EphemeralStoreChangeEvent) => {
         if (this.syncing) return;
-        if (
-            event.by === "local" &&
-            this.suppressLocalEphemeralEvents > 0
-        ) {
+        if (event.by === "local" && this.suppressLocalEphemeralEvents > 0) {
             return;
         }
         this.state = this.applyEphemeralDeltas(event.deltas);
@@ -1844,7 +2016,8 @@ export class Mirror<S extends SchemaType> {
      * No-op if there are no pending local ephemeral patches.
      */
     finalizeEphemeralPatches(): void {
-        if (!this.ephemeralManager || !this.ephemeralManager.hasLocalPatches) return;
+        if (!this.ephemeralManager || !this.ephemeralManager.hasLocalPatches)
+            return;
 
         this.syncing = true;
         try {
@@ -1893,7 +2066,8 @@ export class Mirror<S extends SchemaType> {
         childInferOptions?: InferContainerOptions,
     ) {
         const infer =
-            childInferOptions || (!schema ? this.getInferOptionsForContainer(map.id) : undefined);
+            childInferOptions ||
+            (!schema ? this.getInferOptionsForContainer(map.id) : undefined);
         const [detachedContainer, _containerType] =
             this.createContainerFromSchema(schema, value, infer);
         const insertedContainer = map.setContainer(key, detachedContainer);
@@ -1932,7 +2106,21 @@ export class Mirror<S extends SchemaType> {
             if (!isObject(value)) {
                 return;
             }
-            const mapSchema = schema?.type === "loro-map" ? schema : undefined;
+            // Resolve union schema to the concrete variant's LoroMapSchema
+            let resolvedSchema = schema;
+            if (isLoroUnionSchema(schema) && isObject(value)) {
+                const tag = value[schema.discriminant] as string;
+                if (tag && schema.variants[tag]) {
+                    resolvedSchema = schema.variants[tag];
+                }
+            }
+            const mapSchema = resolvedSchema as
+                | LoroMapSchema<Record<string, SchemaType>>
+                | LoroMapSchemaWithCatchall<
+                      Record<string, SchemaType>,
+                      SchemaType
+                  >
+                | undefined;
             const baseInfer = this.getInferOptionsForContainer(map.id);
             for (const [key, val] of Object.entries(value)) {
                 // Skip injected CID field
@@ -2115,7 +2303,8 @@ export class Mirror<S extends SchemaType> {
         childInferOptions?: InferContainerOptions,
     ) {
         const infer =
-            childInferOptions || (!schema ? this.getInferOptionsForContainer(list.id) : undefined);
+            childInferOptions ||
+            (!schema ? this.getInferOptionsForContainer(list.id) : undefined);
         const [detachedContainer, _containerType] =
             this.createContainerFromSchema(schema, value, infer);
         let insertedContainer: Container | undefined;
@@ -2213,7 +2402,15 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Schema for this container (optional)
-        const schema = this.getContainerSchema(map.id);
+        let schema = this.getContainerSchema(map.id);
+
+        // Resolve union schema to the active variant's LoroMapSchema
+        if (schema && isLoroUnionSchema(schema)) {
+            const tag = value[schema.discriminant] as string | undefined;
+            if (tag && schema.variants[tag]) {
+                schema = schema.variants[tag];
+            }
+        }
 
         // Stamp $cid on the pending value
         if (schema && isObject(value)) {
@@ -2336,7 +2533,10 @@ export class Mirror<S extends SchemaType> {
             this.baseState,
             normalized,
         );
-        this.state = this.applyNormalizedLoroEventToState(this.state, normalized);
+        this.state = this.applyNormalizedLoroEventToState(
+            this.state,
+            normalized,
+        );
         return true;
     }
 
@@ -2367,8 +2567,10 @@ export class Mirror<S extends SchemaType> {
             );
         }
 
-        const deltas = this.withSuppressedLocalEphemeralEvents(() =>
-            this.ephemeralManager?.writeValue(containerId, key, value) ?? [],
+        const deltas = this.withSuppressedLocalEphemeralEvents(
+            () =>
+                this.ephemeralManager?.writeValue(containerId, key, value) ??
+                [],
         );
         if (deltas.length === 0) return;
 
@@ -2464,20 +2666,20 @@ export class Mirror<S extends SchemaType> {
         const newState =
             typeof updater === "function"
                 ? produce<InferType<S>>(this.state, (draft) => {
-                    const res = (
-                        updater as (
-                            state: InferType<S>,
-                        ) => InferType<S> | void
-                    )(draft as InferType<S>);
-                    if (res && res !== (draft as unknown)) {
-                        return res as unknown as typeof draft;
-                    }
-                })
+                      const res = (
+                          updater as (
+                              state: InferType<S>,
+                          ) => InferType<S> | void
+                      )(draft as InferType<S>);
+                      if (res && res !== (draft as unknown)) {
+                          return res as unknown as typeof draft;
+                      }
+                  })
                 : (Object.assign(
-                    {},
-                    this.state as unknown as Record<string, unknown>,
-                    updater as Record<string, unknown>,
-                ) as InferType<S>);
+                      {},
+                      this.state as unknown as Record<string, unknown>,
+                      updater as Record<string, unknown>,
+                  ) as InferType<S>);
 
         // Validate state if needed
         if (this.options.validateUpdates) {
@@ -2534,8 +2736,10 @@ export class Mirror<S extends SchemaType> {
 
             // Write ephemeral-eligible changes to EphemeralStore
             if (ephemeralChanges.length > 0) {
-                const deltas = this.withSuppressedLocalEphemeralEvents(() =>
-                    this.ephemeralManager?.writeChanges(ephemeralChanges) ?? [],
+                const deltas = this.withSuppressedLocalEphemeralEvents(
+                    () =>
+                        this.ephemeralManager?.writeChanges(ephemeralChanges) ??
+                        [],
                 );
                 // Schedule debounced finalization
                 this.ephemeralManager.scheduleFinalizeAfter(
@@ -2584,16 +2788,24 @@ export class Mirror<S extends SchemaType> {
             const m = c as LoroMap;
             const obj: MirrorStateObject = {};
             defineCidProperty(obj, c.id);
-                for (const k of m.keys()) {
-                    const v = m.get(k);
-                    if (isContainer(v)) {
-                        obj[k] = this.containerToMirrorState(v);
-                    } else {
-                        // Decode primitive values using field schema
-                        const fieldSchema = getChildSchema(schema, k);
-                        obj[k] = applyDecode(fieldSchema, v) as MirrorState;
-                    }
+            // Resolve union schema to the active variant's map schema so
+            // field-level decode (transforms) can find the correct child schema.
+            const effectiveSchema = isLoroUnionSchema(schema)
+                ? resolveUnionVariant(
+                      schema,
+                      Object.fromEntries(m.keys().map((k) => [k, m.get(k)])),
+                  )
+                : schema;
+            for (const k of m.keys()) {
+                const v = m.get(k);
+                if (isContainer(v)) {
+                    obj[k] = this.containerToMirrorState(v);
+                } else {
+                    // Decode primitive values using field schema
+                    const fieldSchema = getChildSchema(effectiveSchema, k);
+                    obj[k] = applyDecode(fieldSchema, v) as MirrorState;
                 }
+            }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
             const arr: MirrorState[] = [];
@@ -2794,7 +3006,55 @@ export class Mirror<S extends SchemaType> {
         containerId: ContainerID,
         childKey: string | number,
     ): SchemaType | undefined {
-        return getChildSchema(this.getContainerSchema(containerId), childKey);
+        const containerSchema = this.getContainerSchema(containerId);
+
+        if (!containerSchema) {
+            return undefined;
+        }
+
+        // Resolve union → variant map schema for child key lookups
+        if (isLoroUnionSchema(containerSchema)) {
+            const container = this.doc.getContainerById(containerId);
+            if (container && container.kind() === "Map") {
+                const map = container as LoroMap;
+                const tag = map.get(containerSchema.discriminant);
+                if (typeof tag === "string" && containerSchema.variants[tag]) {
+                    const variantSchema = containerSchema.variants[tag];
+                    return getMapFieldSchema(
+                        variantSchema as
+                            | LoroMapSchema<Record<string, SchemaType>>
+                            | LoroMapSchemaWithCatchall<
+                                  Record<string, SchemaType>,
+                                  SchemaType
+                              >,
+                        String(childKey),
+                    );
+                }
+            }
+            return undefined;
+        }
+
+        if (isLoroMapSchema(containerSchema)) {
+            return getMapFieldSchema(
+                containerSchema as
+                    | LoroMapSchema<Record<string, SchemaType>>
+                    | LoroMapSchemaWithCatchall<
+                          Record<string, SchemaType>,
+                          SchemaType
+                      >,
+                String(childKey),
+            );
+        } else if (
+            isLoroListSchema(containerSchema) ||
+            isLoroMovableListSchema(containerSchema)
+        ) {
+            return containerSchema.itemSchema;
+        } else if (isLoroTreeSchema(containerSchema)) {
+            // Tree nodes' data map schema
+            return containerSchema.nodeSchema;
+        }
+
+        return undefined;
     }
 
     /* Get all container IDs registered with the mirror */
@@ -2811,7 +3071,9 @@ export class Mirror<S extends SchemaType> {
 export function toNormalizedJson(doc: LoroDoc) {
     const withEnumerableCid = doc.toJsonWithReplacer((_k, v) => {
         if (isContainer(v) && v.kind() === "Tree") {
-            return normalizeTreeJsonForMirror(v.toJSON()) as unknown as typeof v;
+            return normalizeTreeJsonForMirror(
+                v.toJSON(),
+            ) as unknown as typeof v;
         }
 
         if (isContainer(v) && v.kind() === "Map") {
@@ -2845,7 +3107,10 @@ function restoreCidDescriptors(value: unknown): unknown {
             if (!descriptor || descriptor.enumerable) {
                 const cidValue = obj[CID_KEY];
                 delete obj[CID_KEY];
-                Object.defineProperty(obj, CID_KEY, { value: cidValue });
+                Object.defineProperty(obj, CID_KEY, {
+                    value: cidValue,
+                    configurable: true,
+                });
             }
         }
         return obj;
@@ -2883,6 +3148,55 @@ function normalizeTreeJsonForMirror(input: unknown) {
         isTreeData: isObject,
         createEmptyData: () => ({}),
     });
+}
+
+/**
+ * Recursively merge a doc snapshot into the current state so that metadata
+ * like $cid is stamped without overwriting data populated by initialState.
+ * For each key in the snapshot:
+ * - If the state has an object and the snapshot has an object, recurse and
+ *   stamp $cid from the snapshot.
+ * - If the state key is missing, use the snapshot value.
+ * - Otherwise keep the existing state value.
+ */
+function deepMergeSnapshot(
+    state: Record<string, unknown>,
+    snapshot: Record<string, unknown>,
+) {
+    for (const key of Object.keys(snapshot)) {
+        const sv = snapshot[key];
+        const tv = state[key];
+        if (isObject(sv) && isObject(tv)) {
+            // Stamp $cid from the snapshot object onto the state object
+            const cidDesc = Object.getOwnPropertyDescriptor(sv, CID_KEY);
+            if (cidDesc) {
+                defineCidProperty(tv, cidDesc.value as ContainerID);
+            }
+            deepMergeSnapshot(
+                tv as Record<string, unknown>,
+                sv as Record<string, unknown>,
+            );
+        } else if (Array.isArray(sv) && Array.isArray(tv)) {
+            // For arrays, recurse into matching elements to stamp $cid
+            for (let i = 0; i < Math.min(sv.length, tv.length); i++) {
+                if (isObject(sv[i]) && isObject(tv[i])) {
+                    const cidDesc = Object.getOwnPropertyDescriptor(
+                        sv[i],
+                        CID_KEY,
+                    );
+                    if (cidDesc) {
+                        defineCidProperty(tv[i], cidDesc.value as ContainerID);
+                    }
+                    deepMergeSnapshot(
+                        tv[i] as Record<string, unknown>,
+                        sv[i] as Record<string, unknown>,
+                    );
+                }
+            }
+        } else if (!(key in state)) {
+            state[key] = sv;
+        }
+    }
 }
 
 // Deep merge initialState into a base state with awareness of the provided root schema.
@@ -2936,6 +3250,54 @@ function mergeInitialIntoBaseWithSchema(
             } as unknown as RootSchemaType<
                 Record<string, ContainerSchemaType>
             >);
+            continue;
+        }
+        if (t === "loro-union") {
+            // Union is stored as a Map — ensure an object shape and merge init data
+            if (!(k in base) || !isObject(base[k])) base[k] = {};
+            const nestedBase = base[k] as Record<string, unknown>;
+            const nestedInit: Record<string, unknown> = isObject(initVal)
+                ? initVal
+                : {};
+            // Resolve the variant from the discriminant so we recurse
+            // with the correct variant schema
+            const unionSchema = fieldSchema as unknown as {
+                discriminant: string;
+                variants: Record<
+                    string,
+                    LoroMapSchema<Record<string, SchemaType>>
+                >;
+            };
+            const existingTag = nestedBase[unionSchema.discriminant] as
+                | string
+                | undefined;
+            const initTag = nestedInit[unionSchema.discriminant] as
+                | string
+                | undefined;
+            // Prefer existing tag over initial — don't overwrite if already set
+            const tag = existingTag ?? initTag;
+            if (tag) {
+                if (!existingTag) {
+                    // Discriminant is not part of the variant definition — set it directly
+                    nestedBase[unionSchema.discriminant] = tag;
+                }
+                const variantSchema = unionSchema.variants[tag];
+                if (variantSchema) {
+                    mergeInitialIntoBaseWithSchema(nestedBase, nestedInit, {
+                        type: "schema",
+                        definition: variantSchema.definition as Record<
+                            string,
+                            ContainerSchemaType
+                        >,
+                        options: {},
+                        getContainerType() {
+                            return "Map";
+                        },
+                    } as unknown as RootSchemaType<
+                        Record<string, ContainerSchemaType>
+                    >);
+                }
+            }
             continue;
         }
         if (t === "loro-list" || t === "loro-movable-list") {

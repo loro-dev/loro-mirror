@@ -102,6 +102,7 @@ Types: `UpdateSource`, `UpdateMetadata`, `SetStateOptions`.
     - `schema.LoroTree(nodeMapSchema)` — hierarchical data (advanced)
     - `schema.LoroMapRecord(valueSchema)` — dynamic key map with a single value schema
     - `schema.LoroMap({...}).catchall(valueSchema)` — mix fixed keys with a catchall value schema
+    - `schema.Union(discriminant, variants, options?)` — discriminated union of `LoroMap` variants; stored as a `LoroMap` at the Loro level
 
 Signatures:
 
@@ -110,6 +111,7 @@ Signatures:
 - `schema.LoroMovableList(itemSchema, idSelector: (item) => string, options?)`
 - `schema.LoroText(options?)`
 - `schema.LoroTree(nodeMapSchema, options?)`
+- `schema.Union(discriminant: string, variants: { [name]: LoroMapSchema }, options?)` — the discriminant key is auto-injected into each variant's inferred TypeScript type. Switching variants replaces the entire container.
 
 SchemaOptions for any field: `{ required?: boolean; defaultValue?: unknown; description?: string; validate?: (value) => boolean | string }`.
 
@@ -127,7 +129,8 @@ Reserved key `$cid`:
 
 - `validateSchema(schema, value)` — returns `{ valid: boolean; errors?: string[] }`
 - `getDefaultValue(schema)` — default value inferred from schema/options
-- `toNormalizedJson(doc)` — JSON matching Mirror’s state shape (e.g., Tree `meta` -> `data`)
+- `toNormalizedJson(doc)` — JSON matching Mirror's state shape (e.g., Tree `meta` -> `data`)
+- Type guards: `isLoroMapSchema`, `isLoroListSchema`, `isLoroMovableListSchema`, `isLoroTextSchema`, `isLoroTreeSchema`, `isLoroUnionSchema`, `isContainerSchema`, `isRootSchemaType`, `isListLikeSchema`
 
 ## Ephemeral Patches
 

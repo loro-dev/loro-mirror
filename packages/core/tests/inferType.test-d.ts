@@ -18,7 +18,7 @@ const numberDateTransform: TransformDefinition<number, Date> = {
 };
 
 const booleanNumberTransform: TransformDefinition<boolean, number> = {
-    decode: (s: boolean) => s ? 1 : 0,
+    decode: (s: boolean) => (s ? 1 : 0),
     encode: (d: number) => !!d,
 };
 
@@ -123,69 +123,117 @@ describe("infer type", () => {
     });
 
     test("infer string transform to domain type | undefined when no defaultValue", () => {
-        const transformedSchema = schema.String().transform(stringDateTransform);
+        const transformedSchema = schema
+            .String()
+            .transform(stringDateTransform);
 
         // Transform decode/encode have correct types
-        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: string) => Date>();
-        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: Date) => string>();
+        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<
+            (value: string) => Date
+        >();
+        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<
+            (value: Date) => string
+        >();
 
         // InferType resolves to domain type | undefined because empty docs can omit the field
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<
+            Date | undefined
+        >();
     });
 
     test("infer string transform with required: false", () => {
-        const transformedSchema = schema.String({ required: false }).transform(stringDateTransform);
+        const transformedSchema = schema
+            .String({ required: false })
+            .transform(stringDateTransform);
 
         // Transform decode/encode have correct types
-        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: string) => Date>();
-        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: Date) => string>();
+        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<
+            (value: string) => Date
+        >();
+        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<
+            (value: Date) => string
+        >();
 
         // InferType resolves to domain type | undefined
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<
+            Date | undefined
+        >();
     });
 
     test("infer number transform to domain type | undefined when no defaultValue", () => {
-        const transformedSchema = schema.Number().transform(numberDateTransform);
+        const transformedSchema = schema
+            .Number()
+            .transform(numberDateTransform);
 
         // Transform decode/encode have correct types
-        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: number) => Date>();
-        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: Date) => number>();
+        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<
+            (value: number) => Date
+        >();
+        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<
+            (value: Date) => number
+        >();
 
         // InferType resolves to domain type | undefined because empty docs can omit the field
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<
+            Date | undefined
+        >();
     });
 
     test("infer number transform with required: false", () => {
-        const transformedSchema = schema.Number({ required: false }).transform(numberDateTransform);
+        const transformedSchema = schema
+            .Number({ required: false })
+            .transform(numberDateTransform);
 
         // Transform decode/encode have correct types
-        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: number) => Date>();
-        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: Date) => number>();
+        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<
+            (value: number) => Date
+        >();
+        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<
+            (value: Date) => number
+        >();
 
         // InferType resolves to domain type | undefined
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<Date | undefined>();
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<
+            Date | undefined
+        >();
     });
 
     test("infer boolean transform to domain type | undefined when no defaultValue", () => {
-        const transformedSchema = schema.Boolean().transform(booleanNumberTransform);
+        const transformedSchema = schema
+            .Boolean()
+            .transform(booleanNumberTransform);
 
         // Transform decode/encode have correct types
-        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: boolean) => number>();
-        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: number) => boolean>();
+        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<
+            (value: boolean) => number
+        >();
+        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<
+            (value: number) => boolean
+        >();
 
         // InferType resolves to domain type | undefined because empty docs can omit the field
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<number | undefined>();
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<
+            number | undefined
+        >();
     });
 
     test("infer boolean transform with required: false", () => {
-        const transformedSchema = schema.Boolean({ required: false }).transform(booleanNumberTransform);
+        const transformedSchema = schema
+            .Boolean({ required: false })
+            .transform(booleanNumberTransform);
 
         // Transform decode/encode have correct types
-        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<(value: boolean) => number>();
-        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<(value: number) => boolean>();
+        expectTypeOf(transformedSchema.transform.decode).toEqualTypeOf<
+            (value: boolean) => number
+        >();
+        expectTypeOf(transformedSchema.transform.encode).toEqualTypeOf<
+            (value: number) => boolean
+        >();
 
         // InferType resolves to domain type | undefined
-        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<number | undefined>();
+        expectTypeOf<InferType<typeof transformedSchema>>().toEqualTypeOf<
+            number | undefined
+        >();
     });
 
     test("infer transform in LoroMap", () => {
@@ -425,5 +473,38 @@ describe("infer type", () => {
         type CreatedAtField = MapInput["createdAt"];
 
         expectTypeOf<CreatedAtField>().toEqualTypeOf<Date>();
+    });
+
+    test("infer union", () => {
+        const unionSchema = schema.Union("type", {
+            dog: schema.LoroMap({ breed: schema.String() }),
+            cat: schema.LoroMap({ color: schema.String() }),
+        });
+
+        type InferredType = InferType<typeof unionSchema>;
+
+        expectTypeOf<InferredType>().toEqualTypeOf<
+            | { type: "dog"; breed: string; $cid: string }
+            | { type: "cat"; color: string; $cid: string }
+        >();
+    });
+
+    test("infer optional union", () => {
+        const unionSchema = schema.Union(
+            "kind",
+            {
+                text: schema.LoroMap({ content: schema.String() }),
+                image: schema.LoroMap({ src: schema.String() }),
+            },
+            { required: false },
+        );
+
+        type InferredType = InferType<typeof unionSchema>;
+
+        expectTypeOf<InferredType>().toEqualTypeOf<
+            | { kind: "text"; content: string; $cid: string }
+            | { kind: "image"; src: string; $cid: string }
+            | undefined
+        >();
     });
 });

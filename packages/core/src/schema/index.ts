@@ -15,6 +15,7 @@ import {
     LoroMovableListSchema,
     LoroTextSchemaType,
     LoroTreeSchema,
+    LoroUnionSchema,
     NumberSchemaType,
     RootSchemaDefinition,
     RootSchemaType,
@@ -350,4 +351,43 @@ schema.LoroTree = function <T extends Record<string, SchemaType>>(
             return "Tree";
         },
     };
+};
+
+/**
+ * Define a discriminated union.
+ *
+ * Each variant is a LoroMap. The discriminant key (e.g., "type") is
+ * auto-injected into each variant's inferred TypeScript type.
+ */
+schema.Union = function <
+    D extends string,
+    V extends Record<string, LoroMapSchema<Record<string, SchemaType>>>,
+    O extends SchemaOptions = {},
+>(
+    discriminant: D,
+    variants: V,
+    options?: O,
+): LoroUnionSchema<D, V> & { options: O } {
+    for (const [variantName, variantSchema] of Object.entries(variants)) {
+        if (
+            Object.prototype.hasOwnProperty.call(
+                variantSchema.definition,
+                discriminant,
+            )
+        ) {
+            throw new Error(
+                `Union variant "${variantName}" must not contain the discriminant key "${discriminant}" in its definition. ` +
+                    `The discriminant is managed automatically by the union.`,
+            );
+        }
+    }
+    return {
+        type: "loro-union" as const,
+        discriminant,
+        variants,
+        options: options || ({} as O),
+        getContainerType: () => {
+            return "Map";
+        },
+    } as LoroUnionSchema<D, V> & { options: O };
 };

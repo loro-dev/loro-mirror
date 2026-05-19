@@ -8,7 +8,7 @@ import {
     SchemaType,
     TransformDefinition,
 } from "../schema/index.js";
-import { getChildSchema } from "../schema/resolver.js";
+import { getChildSchema, resolveUnionVariant } from "../schema/resolver.js";
 import { Change, InferContainerOptions } from "./mirror.js";
 import { CID_KEY } from "../constants.js";
 import {
@@ -114,15 +114,30 @@ export function decodeNestedJsonValues(
                 for (const node of nodes) {
                     if (node != null && typeof node == "object") {
                         if ("data" in node && node.data !== undefined) {
-                            node.data = decodeNestedJsonValues(node.data, nodeSchema);
+                            node.data = decodeNestedJsonValues(
+                                node.data,
+                                nodeSchema,
+                            );
                         }
-                        if ("children" in node && Array.isArray(node.children)) {
+                        if (
+                            "children" in node &&
+                            Array.isArray(node.children)
+                        ) {
                             walk(node.children);
                         }
                     }
                 }
             };
             walk(json);
+            return json;
+        }
+        case "loro-union": {
+            // Resolve to the active variant's map schema and decode its fields.
+            if (!isObject(json)) return json;
+            const resolved = resolveUnionVariant(schema, json);
+            if (resolved && resolved.type === "loro-map") {
+                return decodeNestedJsonValues(json, resolved);
+            }
             return json;
         }
         case "loro-text":
@@ -181,12 +196,14 @@ export function valuesEqual(
 }
 
 export function defineCidProperty(target: unknown, cid: ContainerID) {
-    if (
-        !isObject(target) ||
-        Object.prototype.hasOwnProperty.call(target, CID_KEY)
-    )
-        return;
-    Object.defineProperty(target, CID_KEY, { value: cid });
+    if (!isObject(target)) return;
+    const existing = Object.getOwnPropertyDescriptor(target, CID_KEY);
+    if (existing && !existing.configurable) return;
+    Object.defineProperty(target, CID_KEY, {
+        value: cid,
+        enumerable: false,
+        configurable: true,
+    });
 }
 
 /**
@@ -482,20 +499,25 @@ export function tryUpdateToContainer(
         return change;
     }
 
-    const effectiveInferOptions = applySchemaToInferOptions(schema, inferOptions);
+    const effectiveInferOptions = applySchemaToInferOptions(
+        schema,
+        inferOptions,
+    );
     const containerType = schema
         ? (schemaToContainerType(schema) ??
           tryInferContainerType(change.value, effectiveInferOptions))
         : tryInferContainerType(change.value, effectiveInferOptions);
 
-    // If containerType is nullish, or schema has a transform (in which case we shouldn't infer container type), 
+    // If containerType is nullish, or schema has a transform (in which case we shouldn't infer container type),
     // apply encode transform if it exists and return change
     if (containerType == null || (schema && hasTransform(schema))) {
         const encodedValue = applyEncode(schema, change.value);
-        return encodedValue !== change.value ? {
-            ...change,
-            value: encodedValue
-        } : change;
+        return encodedValue !== change.value
+            ? {
+                  ...change,
+                  value: encodedValue,
+              }
+            : change;
     }
 
     if (change.kind === "insert") {
