@@ -8,7 +8,7 @@ describe("Transform Error Handling", () => {
         it("propagates error when decode throws on setState initialization", () => {
             const doc = new LoroDoc();
             const throwingTransform = {
-                decode: (s: string) => {
+                decode: (_s: string) => {
                     throw new Error("Decode failed: invalid format");
                 },
                 encode: (d: Date) => d.toISOString(),
@@ -56,7 +56,7 @@ describe("Transform Error Handling", () => {
             const mirror1 = new Mirror({ doc: doc1, schema: testSchema });
             mirror1.setState({ record: { date: new Date() } });
 
-            const mirror2 = new Mirror({ doc: doc2, schema: testSchema });
+            const _mirror2 = new Mirror({ doc: doc2, schema: testSchema });
             shouldThrow = true;
 
             // The import triggers event handling which calls decode
@@ -104,7 +104,7 @@ describe("Transform Error Handling", () => {
             const doc = new LoroDoc();
             const throwingTransform = {
                 decode: (s: string) => new Date(s),
-                encode: (d: Date) => {
+                encode: (_d: Date) => {
                     throw new Error("Encode failed: cannot serialize");
                 },
             };
@@ -126,7 +126,7 @@ describe("Transform Error Handling", () => {
             const doc = new LoroDoc();
             const badTransform = {
                 decode: (s: string) => ({ value: s }),
-                encode: (obj: { value: string }) => 123 as unknown as string, // Returns number instead of string
+                encode: (_obj: { value: string }) => 123 as unknown as string, // Returns number instead of string
                 validateEncodedType: true, // Enable encode type checking
             };
 
@@ -157,7 +157,9 @@ describe("Transform Error Handling", () => {
             };
 
             const testSchema = schema({
-                dates: schema.LoroList(schema.String().transform(throwingTransform)),
+                dates: schema.LoroList(
+                    schema.String().transform(throwingTransform),
+                ),
             });
 
             // Pre-populate with bad data
@@ -177,13 +179,16 @@ describe("Transform Error Handling", () => {
                 decode: (s: string) => new Date(s),
                 encode: (d: Date) => {
                     encodeCount++;
-                    if (encodeCount > 1) throw new Error("Encode failed on second item");
+                    if (encodeCount > 1)
+                        throw new Error("Encode failed on second item");
                     return d.toISOString();
                 },
             };
 
             const testSchema = schema({
-                dates: schema.LoroList(schema.String().transform(throwingTransform)),
+                dates: schema.LoroList(
+                    schema.String().transform(throwingTransform),
+                ),
             });
 
             const mirror = new Mirror({ doc, schema: testSchema });

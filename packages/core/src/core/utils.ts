@@ -114,9 +114,15 @@ export function decodeNestedJsonValues(
                 for (const node of nodes) {
                     if (node != null && typeof node == "object") {
                         if ("data" in node && node.data !== undefined) {
-                            node.data = decodeNestedJsonValues(node.data, nodeSchema);
+                            node.data = decodeNestedJsonValues(
+                                node.data,
+                                nodeSchema,
+                            );
                         }
-                        if ("children" in node && Array.isArray(node.children)) {
+                        if (
+                            "children" in node &&
+                            Array.isArray(node.children)
+                        ) {
                             walk(node.children);
                         }
                     }
@@ -418,7 +424,8 @@ export function valueIsContainerOfType(
 export function containerIdToContainerType(
     containerId: ContainerID,
 ): ContainerType | undefined {
-    return containerId.split(":")[2] as ContainerType;
+    const parts = containerId.split(":");
+    return parts[parts.length - 1] as ContainerType;
 }
 
 export function getRootContainerByType(
@@ -482,20 +489,25 @@ export function tryUpdateToContainer(
         return change;
     }
 
-    const effectiveInferOptions = applySchemaToInferOptions(schema, inferOptions);
+    const effectiveInferOptions = applySchemaToInferOptions(
+        schema,
+        inferOptions,
+    );
     const containerType = schema
         ? (schemaToContainerType(schema) ??
           tryInferContainerType(change.value, effectiveInferOptions))
         : tryInferContainerType(change.value, effectiveInferOptions);
 
-    // If containerType is nullish, or schema has a transform (in which case we shouldn't infer container type), 
+    // If containerType is nullish, or schema has a transform (in which case we shouldn't infer container type),
     // apply encode transform if it exists and return change
     if (containerType == null || (schema && hasTransform(schema))) {
         const encodedValue = applyEncode(schema, change.value);
-        return encodedValue !== change.value ? {
-            ...change,
-            value: encodedValue
-        } : change;
+        return encodedValue !== change.value
+            ? {
+                  ...change,
+                  value: encodedValue,
+              }
+            : change;
     }
 
     if (change.kind === "insert") {
