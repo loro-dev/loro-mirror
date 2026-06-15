@@ -166,8 +166,10 @@ Loro Mirror provides a declarative schema system that enables:
     - `schema.LoroMap(definition, options?)` - Object container that can nest arbitrary field schemas
         - Supports dynamic key-value definition with `catchall`: `schema.LoroMap({...}).catchall(valueSchema)`
         - Always injects a read-only `$cid` field in mirrored state equal to the underlying Loro container id. Applies uniformly to root maps, nested maps, list items, and tree node `data` maps.
+        - `options.mergeableMapChildContainers?: boolean` makes new direct child containers under this Map use Loro's mergeable container APIs.
     - `schema.LoroMapRecord(valueSchema, options?)` - Equivalent to `LoroMap({}).catchall(valueSchema)` for homogeneous maps
         - Entries’ mirrored state always include `$cid`.
+        - `options.mergeableMapChildContainers?: boolean` applies to dynamic entries in the record.
     - `schema.LoroList(itemSchema, idSelector?, options?)` - Ordered list container
         - Providing an `idSelector` (e.g., `(item) => item.id`) enables minimal add/remove/update/move diffs
     - `schema.LoroMovableList(itemSchema, idSelector, options?)` - List with native move operations, requires an `idSelector`
@@ -409,7 +411,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`validateUpdates`**: boolean (default `true`) – validate new state against schema.
     - **`debug`**: boolean (default `false`) – log diffs and applied changes.
     - **`checkStateConsistency`**: boolean (default `false`) – after non-ephemeral `setState` calls, assert the doc-backed base state equals the normalized `LoroDoc` snapshot.
-    - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` – influence container-type inference when inserting containers from plain values.
+    - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean; mergeableMapChildContainers?: boolean }` – influence container-type inference and Map child-container creation.
 
 - `getState(): State`: Returns the current in-memory state view.
 - `setState(updater, options?)`: Update state and sync to Loro. Runs synchronously. When `ephemeralStore` is configured, eligible changes are automatically routed through EphemeralStore. See [Ephemeral Patches](#ephemeral-patches).
@@ -427,6 +429,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 
 - **Lists and IDs**: If your list schema provides an `idSelector`, list updates use minimal add/remove/update/move operations; otherwise index-based diffs are applied.
 - **Container inference**: When schema is missing/ambiguous for a field, the mirror infers container types from values. `inferOptions.defaultLoroText` makes strings become `LoroText`; `inferOptions.defaultMovableList` makes arrays become `LoroMovableList`.
+- **Mergeable Map child containers**: By default, when two peers concurrently create a child container under the _same_ Map key, each peer's child gets a distinct container ID; the Map slot is last-writer-wins, so one peer's child (and everything written into it) is silently dropped after sync. Enabling this makes the child's identity derive from its logical position (parent container id + key + type), so every peer resolves to the same CRDT object and their content merges. Configure it on the parent Map via `schema.LoroMap(..., { mergeableMapChildContainers: true })` or `schema.LoroMapRecord(..., { mergeableMapChildContainers: true })`; `inferOptions.mergeableMapChildContainers` is the schema-less/global fallback. The default is `false` for backward-compatible `setContainer` document format, and existing same-type child containers are reused rather than migrated or overwritten. All collaborating clients must use `loro-crdt >= 1.13.3` to interpret mergeable child markers. Concurrent first writes merge CRDT content rather than behaving like LWW replacement, so identical concurrent text/list writes can appear twice. Avoid very deep chains of mergeable child maps because mergeable container IDs encode the logical path and grow with depth. See <https://loro.dev/blog/mergeable-containers> for the underlying model.
 - **Consistency checks**: Enabling `checkStateConsistency` is useful while developing or writing tests; it auto-checks only non-ephemeral `setState` calls. Calling `checkStateConsistency()` manually compares the doc-backed base state against the normalized document snapshot, so active ephemeral overlay values are intentionally ignored.
 
 ### Types
@@ -476,6 +479,10 @@ mirror.setState(
     },
     { tags: ["ui:add"] },
 );
+
+// Cleanup
+unsubscribe();
+mirror.dispose();
 ```
 
 ### Ephemeral Patches
@@ -495,7 +502,10 @@ channel.on("ephemeral", (bytes) => eph.apply(bytes));
 
 // During drag — x/y are primitives on existing keys → EphemeralStore
 mirror.setState(
-    (s) => { s.items[0].x = e.clientX; s.items[0].y = e.clientY; },
+    (s) => {
+        s.items[0].x = e.clientX;
+        s.items[0].y = e.clientY;
+    },
     { finalizeTimeout: 1_000 }, // auto-commit after 1s of inactivity
 );
 
@@ -505,9 +515,9 @@ mirror.finalizeEphemeralPatches();
 
 **Routing rules** (with `ephemeralStore` configured):
 
-| Change type | Destination |
-|---|---|
-| Primitive value on an existing key of an existing Map | `EphemeralStore` |
+| Change type                                              | Destination        |
+| -------------------------------------------------------- | ------------------ |
+| Primitive value on an existing key of an existing Map    | `EphemeralStore`   |
 | New Map / new key / container value / List·Text·Tree ops | `LoroDoc` directly |
 
 Without `ephemeralStore`, all changes go to LoroDoc as usual. See the [core package README](./packages/core/README.md#ephemeral-patches) for full details.
@@ -517,11 +527,6 @@ Without `ephemeralStore`, all changes go to LoroDoc as usual. See the [core pack
 - Every Loro container has a stable container ID provided by Loro (e.g., a map’s `container.id`).
 - For any `schema.LoroMap(...)`, Mirror injects a read-only `$cid` field into the mirrored state that equals the underlying Loro container ID.
 - `$cid` lives only in the app state and is never written back to the document. Mirror uses it for efficient diffs; you can use it as a stable list selector: `schema.LoroList(item, (x) => x.$cid)`.
-
-// Cleanup
-unsubscribe();
-mirror.dispose();
-```
 
 ## License
 

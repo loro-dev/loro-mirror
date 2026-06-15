@@ -77,7 +77,7 @@ Trees are advanced usage; see Advanced: Trees at the end.
     - validateUpdates: Validate on `setState`
     - debug: Verbose logging
     - checkStateConsistency: Extra runtime check that the doc-backed base state still matches `toNormalizedJson(doc)` after non-ephemeral `setState` updates
-    - inferOptions: `{ defaultLoroText?: boolean; defaultMovableList?: boolean }` for container inference when schema is missing
+    - inferOptions: `{ defaultLoroText?: boolean; defaultMovableList?: boolean; mergeableMapChildContainers?: boolean }` for container inference and Map child-container creation
 - Methods:
     - getState(): Current state
     - setState(updater | partial, options?): Mutate a draft or return a new object. Runs synchronously so downstream logic can immediately read the latest state. When `ephemeralStore` is configured, eligible changes are automatically routed through EphemeralStore. See [Ephemeral Patches](#ephemeral-patches) below.
@@ -112,12 +112,44 @@ Signatures:
 - `schema.LoroTree(nodeMapSchema, options?)`
 
 SchemaOptions for any field: `{ required?: boolean; defaultValue?: unknown; description?: string; validate?: (value) => boolean | string }`.
+Map-only option: `{ mergeableMapChildContainers?: boolean }` on `schema.LoroMap` or `schema.LoroMapRecord`.
 
 Any options:
 
 - `schema.Any({ defaultLoroText?: boolean; defaultMovableList?: boolean })`
     - `defaultLoroText` defaults to `false` for Any when omitted (primitive string), overriding the global `inferOptions.defaultLoroText`.
     - `defaultMovableList` inherits from the global inference options unless specified.
+
+Mergeable Map child containers:
+
+By default, child containers are created with `LoroMap.setContainer`. If two peers concurrently create a child container under the _same_ Map key (e.g. both first-write `records.note`), each peer's child gets a **distinct** container ID. Because the Map slot is last-writer-wins, one peer's child — and everything written into it — is silently dropped after sync.
+
+**Mergeable containers** fix this: the child's identity is derived from its _logical position_ (parent container id + key + type) instead of the creating operation, so every peer's `ensureMergeable*` call resolves to the **same** CRDT object and their content merges. See <https://loro.dev/blog/mergeable-containers> for the full model.
+
+Enable it on the parent Map when multiple peers may create the same child for the first time concurrently:
+
+```ts
+const appSchema = schema({
+    records: schema.LoroMapRecord(
+        schema.LoroMap({ entries: schema.LoroList(schema.String()) }),
+        { mergeableMapChildContainers: true }, // ← opt in on the parent map
+    ),
+});
+
+// docA.setState({ records: { note: { entries: ["A"] } } }) and
+// docB.setState({ records: { note: { entries: ["B"] } } }) now converge to one
+// `note` map whose `entries` contains both "A" and "B" after sync — instead of
+// one peer's `note` clobbering the other's.
+```
+
+- Prefer configuring the parent Map: `schema.LoroMap(..., { mergeableMapChildContainers: true })` or `schema.LoroMapRecord(..., { mergeableMapChildContainers: true })`.
+- `inferOptions.mergeableMapChildContainers` remains the schema-less/global fallback and defaults to `false` for backward-compatible document format and `LoroMap.setContainer` semantics.
+- When enabled for a parent Map, new direct child containers under that `LoroMap`'s keys are created with Loro's `ensureMergeableMap/List/MovableList/Text/Tree` APIs, so concurrent first creation at the same parent/key/type shares one logical child container.
+- Existing same-type child containers are reused as-is, including regular `setContainer` children from old data.
+- All collaborating clients must use `loro-crdt >= 1.13.3` to interpret mergeable child markers. Older clients preserve the data as ordinary binary values but do not expose the mergeable child semantics.
+- Concurrent first writes merge CRDT content rather than acting like LWW replacement. If two peers insert the same text or list item while offline, both writes can be visible after sync.
+- Avoid very deep chains of mergeable child maps because mergeable container IDs encode the logical path and grow with depth.
+- List items and tree nodes keep the existing `insertContainer`/node-data behavior because they are not identified by a stable Map key.
 
 Reserved key `$cid`:
 
@@ -155,11 +187,11 @@ A single `setState` call can write to both destinations in one invocation. `getS
 
 ### Routing rules
 
-| Change type | Destination | Example |
-|---|---|---|
-| Primitive value (`string`, `number`, `boolean`, `null`) on an **existing key** of an **existing LoroMap** | `EphemeralStore` | `s.items[0].x = 100` |
-| New Map / new key / container value | `LoroDoc` | `s.items.push({...})` |
-| List / Text / Tree operations | `LoroDoc` | `s.items.splice(...)` |
+| Change type                                                                                               | Destination      | Example               |
+| --------------------------------------------------------------------------------------------------------- | ---------------- | --------------------- |
+| Primitive value (`string`, `number`, `boolean`, `null`) on an **existing key** of an **existing LoroMap** | `EphemeralStore` | `s.items[0].x = 100`  |
+| New Map / new key / container value                                                                       | `LoroDoc`        | `s.items.push({...})` |
+| List / Text / Tree operations                                                                             | `LoroDoc`        | `s.items.splice(...)` |
 
 The rule is intentionally conservative: only simple value-swaps on known keys go to EphemeralStore. Anything structural always goes to LoroDoc.
 
@@ -200,7 +232,7 @@ mirror.setState(
 // Mixed: push goes to LoroDoc, x/y go to EphemeralStore (same call)
 mirror.setState((s) => {
     s.items.push({ x: 0, y: 0, name: "new" }); // → LoroDoc
-    s.items[0].x = 999;                          // → EphemeralStore
+    s.items[0].x = 999; // → EphemeralStore
 });
 
 // On mouseup — commit ephemeral values to LoroDoc immediately
