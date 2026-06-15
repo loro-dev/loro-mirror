@@ -598,36 +598,6 @@ export class Mirror<S extends SchemaType> {
         this.state = this.composeState(newState);
     }
 
-    /**
-     * Register a container with the Mirror
-     */
-    private registerContainer(
-        containerID: ContainerID,
-        schemaType: ContainerSchemaType | undefined,
-    ) {
-        try {
-            const container = this.doc.getContainerById(containerID);
-
-            if (!container) {
-                if (this.options.debug) {
-                    console.warn(
-                        `registerContainer: container not found for id ${containerID}`,
-                    );
-                }
-                return;
-            }
-
-            this.registerContainerHandle(container, schemaType);
-        } catch (error) {
-            if (this.options.debug) {
-                console.warn(
-                    `Error registering container: ${containerID}`,
-                    error,
-                );
-            }
-        }
-    }
-
     private registerContainerHandle(
         container: Container,
         schemaType: ContainerSchemaType | undefined,
@@ -1926,11 +1896,26 @@ export class Mirror<S extends SchemaType> {
             map.id,
             childInferOptions,
         );
-        const [detachedContainer, containerType] =
-            this.createContainerFromSchema(schema, value, infer);
-        const insertedContainer = infer?.mergeableMapChildContainers
-            ? this.insertMergeableContainerIntoMap(map, key, containerType)
-            : map.setContainer(key, detachedContainer);
+        let insertedContainer: Container | undefined;
+        if (infer?.mergeableMapChildContainers) {
+            const containerType = this.getContainerTypeForInsert(
+                schema,
+                value,
+                infer,
+            );
+            insertedContainer = this.insertMergeableContainerIntoMap(
+                map,
+                key,
+                containerType,
+            );
+        } else {
+            const [detachedContainer] = this.createContainerFromSchema(
+                schema,
+                value,
+                infer,
+            );
+            insertedContainer = map.setContainer(key, detachedContainer);
+        }
 
         if (!insertedContainer) {
             throw new Error("Failed to insert container into map");
@@ -2143,7 +2128,26 @@ export class Mirror<S extends SchemaType> {
     }
 
     /**
-     * Create a new container based on a given schema.
+     * Resolve the container type for an insert without allocating a detached container.
+     */
+    private getContainerTypeForInsert(
+        schema: ContainerSchemaType | undefined,
+        value: unknown,
+        inferOptions?: InferContainerOptions,
+    ): ContainerType {
+        const containerType = schema
+            ? schemaToContainerType(schema)
+            : tryInferContainerType(value, inferOptions);
+
+        if (!containerType) {
+            throw new Error(`Unknown schema type: ${containerType}`);
+        }
+
+        return containerType;
+    }
+
+    /**
+     * Create a new detached container based on a given schema.
      *
      * If the schema is undefined, we infer the container type from the value.
      */
@@ -2152,9 +2156,11 @@ export class Mirror<S extends SchemaType> {
         value: unknown,
         inferOptions?: InferContainerOptions,
     ): [Container, ContainerType] {
-        const containerType = schema
-            ? schemaToContainerType(schema)
-            : tryInferContainerType(value, inferOptions);
+        const containerType = this.getContainerTypeForInsert(
+            schema,
+            value,
+            inferOptions,
+        );
 
         switch (containerType) {
             case "Map":
