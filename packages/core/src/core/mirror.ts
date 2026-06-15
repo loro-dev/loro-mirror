@@ -2287,6 +2287,9 @@ export class Mirror<S extends SchemaType> {
         // Process each field in the new value
         for (const [key, val] of Object.entries(value)) {
             if (key === CID_KEY) continue; // Skip CID
+            // Treat explicit undefined the same as an absent key. This avoids
+            // writing Loro nulls when updating newly ensured mergeable maps.
+            if (val === undefined) continue;
             // If we have a loro-map schema, use it; otherwise, infer
             if (schema && schema.type === "loro-map") {
                 this.updateMapEntry(map, key, val, schema);

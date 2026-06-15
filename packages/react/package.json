@@ -48,7 +48,7 @@
         "directory": "packages/react"
     },
     "peerDependencies": {
-        "loro-crdt": "^1.13.1",
+        "loro-crdt": "^1.13.2",
         "loro-mirror": "workspace:*",
         "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
     },

@@ -41,6 +41,45 @@ const makeFixedTextSchema = () =>
         ),
     });
 
+const makeNestedContainerSchema = () =>
+    schema({
+        root: schema.LoroMap(
+            {
+                note: schema.LoroMap(
+                    {
+                        body: schema.LoroText(),
+                        tags: schema.LoroList(schema.String()),
+                    },
+                    { mergeableMapChildContainers: true },
+                ),
+            },
+            { mergeableMapChildContainers: true },
+        ),
+    });
+
+const makeTextContainerSchema = () =>
+    schema({
+        root: schema.LoroMap(
+            {
+                body: schema.LoroText(),
+            },
+            { mergeableMapChildContainers: true },
+        ),
+    });
+
+const makeOptionalFieldSchema = () =>
+    schema({
+        root: schema.LoroMap(
+            {
+                note: schema.LoroMap({
+                    title: schema.String(),
+                    opt: schema.String({ required: false }),
+                }),
+            },
+            { mergeableMapChildContainers: true },
+        ),
+    });
+
 describe("mergeable map child containers", () => {
     it("keeps old setContainer semantics by default", async () => {
         const docA = new LoroDoc();
@@ -156,6 +195,118 @@ describe("mergeable map child containers", () => {
         expect(mirrorA.getState().root.note.body).toBe("B");
         expect(mirrorB.getState().root.note.title).toBe("A");
         expect(mirrorB.getState().root.note.body).toBe("B");
+    });
+
+    it("merges schema opted-in nested grandchildren on concurrent first creation", async () => {
+        const docA = new LoroDoc();
+        const docB = new LoroDoc();
+        const mirrorA = new Mirror({
+            doc: docA,
+            schema: makeNestedContainerSchema(),
+        });
+        const mirrorB = new Mirror({
+            doc: docB,
+            schema: makeNestedContainerSchema(),
+        });
+
+        mirrorA.setState({
+            root: { note: { body: "A", tags: [] } },
+        });
+        mirrorB.setState({
+            root: { note: { body: "", tags: ["B"] } },
+        });
+
+        syncDocs(docA, docB);
+        await waitForSync();
+
+        expect(mirrorA.getState().root.note.body).toBe("A");
+        expect(mirrorB.getState().root.note.body).toBe("A");
+        expect(mirrorA.getState().root.note.tags).toEqual(["B"]);
+        expect(mirrorB.getState().root.note.tags).toEqual(["B"]);
+    });
+
+    it("can edit an empty mergeable child created by an earlier setState", () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: makeRecordTextSchema(),
+        });
+
+        mirror.setState({
+            records: { note: {} },
+        });
+
+        expect(() => {
+            mirror.setState({
+                records: { note: { title: "later" } },
+            });
+        }).not.toThrow();
+        expect(mirror.getState().records.note.title).toBe("later");
+    });
+
+    it("keeps opted-in LoroText fields as text containers", () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: makeTextContainerSchema(),
+        });
+
+        mirror.setState({
+            root: { body: "hello" },
+        });
+
+        const body = doc.getMap("root").get("body");
+        expect(isContainer(body)).toBe(true);
+        if (!isContainer(body)) {
+            throw new Error("Expected LoroText to be stored as a container");
+        }
+        expect(body.kind()).toBe("Text");
+        expect(mirror.getState().root.body).toBe("hello");
+    });
+
+    it("skips explicit undefined fields without writing nulls or diverging", () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: makeOptionalFieldSchema(),
+            checkStateConsistency: true,
+        });
+
+        mirror.setState({
+            root: {
+                note: {
+                    title: "x",
+                    opt: undefined,
+                },
+            },
+        });
+
+        const noteAfterFirstWrite = doc.getMap("root").get("note");
+        expect(isContainer(noteAfterFirstWrite)).toBe(true);
+        if (!isContainer(noteAfterFirstWrite)) {
+            throw new Error("Expected note to be stored as a container");
+        }
+        expect(noteAfterFirstWrite.toJSON()).toEqual({
+            title: "x",
+        });
+        expect(() => {
+            mirror.setState({
+                root: {
+                    note: {
+                        title: "y",
+                        opt: undefined,
+                    },
+                },
+            });
+        }).not.toThrow();
+        const noteAfterSecondWrite = doc.getMap("root").get("note");
+        expect(isContainer(noteAfterSecondWrite)).toBe(true);
+        if (!isContainer(noteAfterSecondWrite)) {
+            throw new Error("Expected note to be stored as a container");
+        }
+        expect(noteAfterSecondWrite.toJSON()).toEqual({
+            title: "y",
+        });
     });
 
     it("lets parent map options override global mergeable defaults", async () => {
