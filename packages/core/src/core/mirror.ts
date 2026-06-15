@@ -609,15 +609,22 @@ export class Mirror<S extends SchemaType> {
             const container = this.doc.getContainerById(containerID);
 
             if (!container) {
-                console.warn(
-                    `registerContainer: container not found for id ${containerID}`,
-                );
+                if (this.options.debug) {
+                    console.warn(
+                        `registerContainer: container not found for id ${containerID}`,
+                    );
+                }
                 return;
             }
 
             this.registerContainerHandle(container, schemaType);
         } catch (error) {
-            console.warn(`Error registering container: ${containerID}`, error);
+            if (this.options.debug) {
+                console.warn(
+                    `Error registering container: ${containerID}`,
+                    error,
+                );
+            }
         }
     }
 
@@ -765,10 +772,12 @@ export class Mirror<S extends SchemaType> {
                 }
             }
         } catch (error) {
-            console.warn(
-                `Error registering nested containers for ${container.id}:`,
-                error,
-            );
+            if (this.options.debug) {
+                console.warn(
+                    `Error registering nested containers for ${container.id}:`,
+                    error,
+                );
+            }
         }
     }
 
