@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v2.1.1...loro-mirror-jotai-v2.2.0) (2026-06-15)
+
+
+### Features
+
+* support mergeable map child containers ([#85](https://github.com/loro-dev/loro-mirror/issues/85)) ([370f6f0](https://github.com/loro-dev/loro-mirror/commit/370f6f045bf9033f9158808e79e6c62369462f62))
+
+
+### Bug Fixes
+
+* **core:** reject root-level primitives in initialState ([#83](https://github.com/loro-dev/loro-mirror/issues/83)) ([7a521bc](https://github.com/loro-dev/loro-mirror/commit/7a521bcf876dd07917d57bd935fbd01f87800dbd))
+
 ## [2.1.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-jotai-v2.1.0...loro-mirror-jotai-v2.1.1) (2026-04-29)
 
 
