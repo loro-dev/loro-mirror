@@ -25,7 +25,7 @@ export type InferContainerOptions = {
      * `mergeableMapChildContainers` on the parent `schema.LoroMap` /
      * `schema.LoroMapRecord` options. Opt-in (default `false`) to keep the
      * document format compatible with older `setContainer` child-container
-     * semantics. Requires `loro-crdt >= 1.13.2`.
+     * semantics. Requires `loro-crdt >= 1.13.3`.
      *
      * @see https://loro.dev/blog/mergeable-containers
      */
@@ -62,7 +62,7 @@ export interface SchemaOptions {
      *
      * Opt-in (default `false`) to keep the document format compatible with older
      * `setContainer` child-container semantics. All collaborating clients must
-     * use `loro-crdt >= 1.13.2`.
+     * use `loro-crdt >= 1.13.3`.
      *
      * @see https://loro.dev/blog/mergeable-containers
      */

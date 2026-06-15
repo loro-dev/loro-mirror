@@ -146,7 +146,7 @@ const appSchema = schema({
 - `inferOptions.mergeableMapChildContainers` remains the schema-less/global fallback and defaults to `false` for backward-compatible document format and `LoroMap.setContainer` semantics.
 - When enabled for a parent Map, new direct child containers under that `LoroMap`'s keys are created with Loro's `ensureMergeableMap/List/MovableList/Text/Tree` APIs, so concurrent first creation at the same parent/key/type shares one logical child container.
 - Existing same-type child containers are reused as-is, including regular `setContainer` children from old data.
-- All collaborating clients must use `loro-crdt >= 1.13.2` to interpret mergeable child markers. Older clients preserve the data as ordinary binary values but do not expose the mergeable child semantics.
+- All collaborating clients must use `loro-crdt >= 1.13.3` to interpret mergeable child markers. Older clients preserve the data as ordinary binary values but do not expose the mergeable child semantics.
 - Concurrent first writes merge CRDT content rather than acting like LWW replacement. If two peers insert the same text or list item while offline, both writes can be visible after sync.
 - Avoid very deep chains of mergeable child maps because mergeable container IDs encode the logical path and grow with depth.
 - List items and tree nodes keep the existing `insertContainer`/node-data behavior because they are not identified by a stable Map key.
