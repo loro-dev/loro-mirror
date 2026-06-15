@@ -33,8 +33,8 @@ importers:
         specifier: ^10.0.3
         version: 10.1.1
       loro-crdt:
-        specifier: ^1.13.2
-        version: 1.13.2
+        specifier: ^1.13.3
+        version: 1.13.3
     devDependencies:
       '@types/node':
         specifier: ^20.10.5
@@ -49,8 +49,8 @@ importers:
         specifier: ^2.0.0
         version: 2.13.1(@types/react@18.3.18)(react@18.3.1)
       loro-crdt:
-        specifier: ^1.13.2
-        version: 1.13.2
+        specifier: ^1.13.3
+        version: 1.13.3
       loro-mirror:
         specifier: workspace:*
         version: link:../core
@@ -86,8 +86,8 @@ importers:
   packages/react:
     dependencies:
       loro-crdt:
-        specifier: ^1.13.2
-        version: 1.13.2
+        specifier: ^1.13.3
+        version: 1.13.3
       loro-mirror:
         specifier: workspace:*
         version: link:../core
@@ -1047,8 +1047,8 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
-  loro-crdt@1.13.2:
-    resolution: {integrity: sha512-Br9tZZk9x/HP83By9RvOCqzWh8v8tnOhVlR6/ibYNtLSmysO7ZgwzjNpqsCABqaSOcGC7TBkx5sG8tfosdJMQA==}
+  loro-crdt@1.13.3:
+    resolution: {integrity: sha512-vh+hYxvsGL9MrsUaquPpawbrL97R4Qb84nc41xTh0zEEz7tJsdioH4mhbsLi0R659LFj3/xII2ML2ScZYJTw9Q==}
 
   loupe@2.3.7:
     resolution: {integrity: sha512-zSMINGVYkdpYSOBmLi0D1Uo7JU9nVdQKrHxC8eYlV+9YKK9WePqAlL7lSlorG/U2Fw1w0hTBmaa/jrQ3UbPHtA==}
@@ -2299,7 +2299,7 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
-  loro-crdt@1.13.2: {}
+  loro-crdt@1.13.3: {}
 
   loupe@2.3.7:
     dependencies:
