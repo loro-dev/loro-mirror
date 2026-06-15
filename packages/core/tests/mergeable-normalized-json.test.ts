@@ -62,7 +62,6 @@ describe("toNormalizedJson resolves mergeable child containers", () => {
                 records: schema.LoroMapRecord(
                     schema.LoroMap({
                         body: schema.LoroText(),
-                        n: schema.Number({ required: false }),
                     }),
                     { mergeableMapChildContainers: true },
                 ),
@@ -94,7 +93,7 @@ describe("toNormalizedJson resolves mergeable child containers", () => {
         const mirror = new Mirror({ doc, schema: s });
         mirror.setState({
             profile: { name: "x", tags: ["a"] },
-            tree: [{ data: { title: "root" }, children: [] }],
+            tree: [{ id: "root", data: { title: "root" }, children: [] }],
         });
         expect(stripCid(toNormalizedJson(doc))).toEqual(
             stripCid(mirror.getState()),
