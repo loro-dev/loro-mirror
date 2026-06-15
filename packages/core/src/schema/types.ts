@@ -17,10 +17,17 @@ export type InferContainerOptions = {
     defaultMovableList?: boolean;
     /**
      * When true, new child containers created under `LoroMap` keys use Loro's
-     * `ensureMergeable*` APIs instead of `setContainer`.
+     * `ensureMergeable*` APIs instead of `setContainer`, so peers that
+     * concurrently create the same parent/key/type child converge on one logical
+     * container instead of last-writer-wins silently dropping one peer's child.
      *
-     * This is opt-in to keep the default document format compatible with older
-     * LoroMap child-container semantics.
+     * This is the schema-less/global fallback; prefer setting
+     * `mergeableMapChildContainers` on the parent `schema.LoroMap` /
+     * `schema.LoroMapRecord` options. Opt-in (default `false`) to keep the
+     * document format compatible with older `setContainer` child-container
+     * semantics. Requires `loro-crdt >= 1.13.2`.
+     *
+     * @see https://loro.dev/blog/mergeable-containers
      */
     mergeableMapChildContainers?: boolean;
 };
@@ -43,7 +50,21 @@ export interface SchemaOptions {
     validate?: (value: unknown) => boolean | string;
     /**
      * When set on a `schema.LoroMap` or `schema.LoroMapRecord`, new direct child
-     * containers under that map's keys are created with Loro's mergeable APIs.
+     * containers under that map's keys are created with Loro's `ensureMergeable*`
+     * APIs instead of `setContainer`.
+     *
+     * By default, two peers that concurrently create a child container under the
+     * same Map key produce distinct container IDs; the Map slot is
+     * last-writer-wins, so one peer's child (and its contents) is silently
+     * dropped after sync. With this enabled, the child's identity derives from
+     * its logical position (parent container id + key + type), so every peer
+     * resolves to the same CRDT object and their content merges.
+     *
+     * Opt-in (default `false`) to keep the document format compatible with older
+     * `setContainer` child-container semantics. All collaborating clients must
+     * use `loro-crdt >= 1.13.2`.
+     *
+     * @see https://loro.dev/blog/mergeable-containers
      */
     mergeableMapChildContainers?: boolean;
     [key: string]: unknown;

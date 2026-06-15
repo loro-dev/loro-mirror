@@ -122,6 +122,26 @@ Any options:
 
 Mergeable Map child containers:
 
+By default, child containers are created with `LoroMap.setContainer`. If two peers concurrently create a child container under the _same_ Map key (e.g. both first-write `records.note`), each peer's child gets a **distinct** container ID. Because the Map slot is last-writer-wins, one peer's child — and everything written into it — is silently dropped after sync.
+
+**Mergeable containers** fix this: the child's identity is derived from its _logical position_ (parent container id + key + type) instead of the creating operation, so every peer's `ensureMergeable*` call resolves to the **same** CRDT object and their content merges. See <https://loro.dev/blog/mergeable-containers> for the full model.
+
+Enable it on the parent Map when multiple peers may create the same child for the first time concurrently:
+
+```ts
+const appSchema = schema({
+    records: schema.LoroMapRecord(
+        schema.LoroMap({ entries: schema.LoroList(schema.String()) }),
+        { mergeableMapChildContainers: true }, // ← opt in on the parent map
+    ),
+});
+
+// docA.setState({ records: { note: { entries: ["A"] } } }) and
+// docB.setState({ records: { note: { entries: ["B"] } } }) now converge to one
+// `note` map whose `entries` contains both "A" and "B" after sync — instead of
+// one peer's `note` clobbering the other's.
+```
+
 - Prefer configuring the parent Map: `schema.LoroMap(..., { mergeableMapChildContainers: true })` or `schema.LoroMapRecord(..., { mergeableMapChildContainers: true })`.
 - `inferOptions.mergeableMapChildContainers` remains the schema-less/global fallback and defaults to `false` for backward-compatible document format and `LoroMap.setContainer` semantics.
 - When enabled for a parent Map, new direct child containers under that `LoroMap`'s keys are created with Loro's `ensureMergeableMap/List/MovableList/Text/Tree` APIs, so concurrent first creation at the same parent/key/type shares one logical child container.
