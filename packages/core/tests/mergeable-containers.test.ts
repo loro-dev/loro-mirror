@@ -67,6 +67,44 @@ const makeTextContainerSchema = () =>
         ),
     });
 
+const selectItemId = (item: unknown) => {
+    if (item && typeof item === "object" && "id" in item) {
+        const id = (item as { id: unknown }).id;
+        return typeof id === "string" ? id : "";
+    }
+    return "";
+};
+
+const makeMovableListContainerSchema = () =>
+    schema({
+        root: schema.LoroMap(
+            {
+                items: schema.LoroMovableList(
+                    schema.LoroMap({
+                        id: schema.String(),
+                        text: schema.String(),
+                    }),
+                    selectItemId,
+                ),
+            },
+            { mergeableMapChildContainers: true },
+        ),
+    });
+
+const makeTreeContainerSchema = () =>
+    schema({
+        root: schema.LoroMap(
+            {
+                tree: schema.LoroTree(
+                    schema.LoroMap({
+                        title: schema.String(),
+                    }),
+                ),
+            },
+            { mergeableMapChildContainers: true },
+        ),
+    });
+
 const makeOptionalFieldSchema = () =>
     schema({
         root: schema.LoroMap(
@@ -262,6 +300,134 @@ describe("mergeable map child containers", () => {
         }
         expect(body.kind()).toBe("Text");
         expect(mirror.getState().root.body).toBe("hello");
+    });
+
+    it("merges concurrent first creation for LoroText fields", async () => {
+        const docA = new LoroDoc();
+        const docB = new LoroDoc();
+        const mirrorA = new Mirror({
+            doc: docA,
+            schema: makeTextContainerSchema(),
+        });
+        const mirrorB = new Mirror({
+            doc: docB,
+            schema: makeTextContainerSchema(),
+        });
+
+        mirrorA.setState({
+            root: { body: "A" },
+        });
+        mirrorB.setState({
+            root: { body: "B" },
+        });
+
+        syncDocs(docA, docB);
+        await waitForSync();
+
+        const bodyA = mirrorA.getState().root.body;
+        const bodyB = mirrorB.getState().root.body;
+        const bodyContainer = docA.getMap("root").get("body");
+
+        expect(isContainer(bodyContainer)).toBe(true);
+        if (!isContainer(bodyContainer)) {
+            throw new Error("Expected LoroText to be stored as a container");
+        }
+        expect(bodyContainer.kind()).toBe("Text");
+        expect(bodyA).toHaveLength(2);
+        expect(bodyA).toContain("A");
+        expect(bodyA).toContain("B");
+        expect(bodyB).toBe(bodyA);
+    });
+
+    it("merges concurrent first creation for LoroMovableList fields", async () => {
+        const docA = new LoroDoc();
+        const docB = new LoroDoc();
+        const mirrorA = new Mirror({
+            doc: docA,
+            schema: makeMovableListContainerSchema(),
+        });
+        const mirrorB = new Mirror({
+            doc: docB,
+            schema: makeMovableListContainerSchema(),
+        });
+
+        mirrorA.setState({
+            root: { items: [{ id: "a", text: "A" }] },
+        });
+        mirrorB.setState({
+            root: { items: [{ id: "b", text: "B" }] },
+        });
+
+        syncDocs(docA, docB);
+        await waitForSync();
+
+        const itemsA = mirrorA
+            .getState()
+            .root.items.map((item) => ({ id: item.id, text: item.text }))
+            .sort((left, right) => left.id.localeCompare(right.id));
+        const itemsB = mirrorB
+            .getState()
+            .root.items.map((item) => ({ id: item.id, text: item.text }))
+            .sort((left, right) => left.id.localeCompare(right.id));
+        const listContainer = docA.getMap("root").get("items");
+
+        expect(isContainer(listContainer)).toBe(true);
+        if (!isContainer(listContainer)) {
+            throw new Error(
+                "Expected LoroMovableList to be stored as a container",
+            );
+        }
+        expect(listContainer.kind()).toBe("MovableList");
+        expect(itemsA).toEqual([
+            { id: "a", text: "A" },
+            { id: "b", text: "B" },
+        ]);
+        expect(itemsB).toEqual(itemsA);
+    });
+
+    it("merges concurrent first creation for LoroTree fields", async () => {
+        const docA = new LoroDoc();
+        const docB = new LoroDoc();
+        const mirrorA = new Mirror({
+            doc: docA,
+            schema: makeTreeContainerSchema(),
+        });
+        const mirrorB = new Mirror({
+            doc: docB,
+            schema: makeTreeContainerSchema(),
+        });
+
+        mirrorA.setState({
+            root: {
+                tree: [{ id: "", data: { title: "A" }, children: [] }],
+            },
+        });
+        mirrorB.setState({
+            root: {
+                tree: [{ id: "", data: { title: "B" }, children: [] }],
+            },
+        });
+
+        syncDocs(docA, docB);
+        await waitForSync();
+
+        const titlesA = mirrorA
+            .getState()
+            .root.tree.map((node) => node.data.title)
+            .sort();
+        const titlesB = mirrorB
+            .getState()
+            .root.tree.map((node) => node.data.title)
+            .sort();
+        const treeContainer = docA.getMap("root").get("tree");
+
+        expect(isContainer(treeContainer)).toBe(true);
+        if (!isContainer(treeContainer)) {
+            throw new Error("Expected LoroTree to be stored as a container");
+        }
+        expect(treeContainer.kind()).toBe("Tree");
+        expect(titlesA).toEqual(["A", "B"]);
+        expect(titlesB).toEqual(["A", "B"]);
     });
 
     it("skips explicit undefined fields without writing nulls or diverging", () => {

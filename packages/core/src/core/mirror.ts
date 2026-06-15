@@ -579,7 +579,7 @@ export class Mirror<S extends SchemaType> {
                         );
                         // Record canonical root path for this root container id
                         this.rootPathById.set(container.id, [key]);
-                        this.registerContainer(container.id, fieldSchema);
+                        this.registerContainerHandle(container, fieldSchema);
                     }
                 }
             }
@@ -609,41 +609,41 @@ export class Mirror<S extends SchemaType> {
             const container = this.doc.getContainerById(containerID);
 
             if (!container) {
-                if (this.options.debug) {
-                    console.warn(
-                        `registerContainer: container not found for id ${containerID}`,
-                    );
-                }
-                return;
-            }
-
-            const containerId = container.id;
-
-            // If already registered, optionally upgrade schema
-            const existing = this.containerRegistry.get(containerId);
-            if (existing) {
-                if (!existing.schema && schemaType) {
-                    existing.schema = schemaType;
-                    // Schema was missing on initial registration (e.g. from
-                    // ensureRootContainersFromInitialState), so nested
-                    // containers were never scanned. Do it now.
-                    this.registerNestedContainers(container);
-                }
-                return;
-            }
-
-            this.registerContainerWithRegistry(containerId, schemaType);
-
-            // Register nested containers
-            this.registerNestedContainers(container);
-        } catch (error) {
-            if (this.options.debug) {
-                console.error(
-                    `Error registering container: ${containerID}`,
-                    error,
+                console.warn(
+                    `registerContainer: container not found for id ${containerID}`,
                 );
+                return;
             }
+
+            this.registerContainerHandle(container, schemaType);
+        } catch (error) {
+            console.warn(`Error registering container: ${containerID}`, error);
         }
+    }
+
+    private registerContainerHandle(
+        container: Container,
+        schemaType: ContainerSchemaType | undefined,
+    ) {
+        const containerId = container.id;
+
+        // If already registered, optionally upgrade schema
+        const existing = this.containerRegistry.get(containerId);
+        if (existing) {
+            if (!existing.schema && schemaType) {
+                existing.schema = schemaType;
+                // Schema was missing on initial registration (e.g. from
+                // ensureRootContainersFromInitialState), so nested
+                // containers were never scanned. Do it now.
+                this.registerNestedContainers(container);
+            }
+            return;
+        }
+
+        this.registerContainerWithRegistry(containerId, schemaType);
+
+        // Register nested containers
+        this.registerNestedContainers(container);
     }
 
     /**
@@ -693,7 +693,7 @@ export class Mirror<S extends SchemaType> {
                                 parentLocalInfer,
                             );
                         }
-                        this.registerContainer(value.id, nestedSchema);
+                        this.registerContainerHandle(value, nestedSchema);
                     }
                 }
             } else if (
@@ -736,7 +736,7 @@ export class Mirror<S extends SchemaType> {
                                 parentLocalInfer,
                             );
                         }
-                        this.registerContainer(value.id, nestedSchema);
+                        this.registerContainerHandle(value, nestedSchema);
                     }
                 }
             } else if (container.kind() === "Tree") {
@@ -749,7 +749,7 @@ export class Mirror<S extends SchemaType> {
                     const nodes = tree.getNodes();
                     for (const node of nodes) {
                         // Register the node.data map and its nested containers
-                        this.registerContainer(node.data.id, nodeSchema);
+                        this.registerContainerHandle(node.data, nodeSchema);
                     }
                 } else if (!parentSchema && parentLocalInfer) {
                     const nodes = tree.getNodes();
@@ -760,17 +760,15 @@ export class Mirror<S extends SchemaType> {
                                 parentLocalInfer,
                             );
                         }
-                        this.registerContainer(node.data.id, undefined);
+                        this.registerContainerHandle(node.data, undefined);
                     }
                 }
             }
         } catch (error) {
-            if (this.options.debug) {
-                console.error(
-                    `Error registering nested containers for ${container.id}:`,
-                    error,
-                );
-            }
+            console.warn(
+                `Error registering nested containers for ${container.id}:`,
+                error,
+            );
         }
     }
 
@@ -957,8 +955,8 @@ export class Mirror<S extends SchemaType> {
                                 );
                             }
 
-                            this.registerContainer(
-                                container.id,
+                            this.registerContainerHandle(
+                                container,
                                 containerSchema,
                             );
 
@@ -1006,7 +1004,7 @@ export class Mirror<S extends SchemaType> {
                                 parentLocalInfer,
                             );
                         }
-                        this.registerContainer(change.id, containerSchema);
+                        this.registerContainerHandle(change, containerSchema);
 
                         if (
                             parentSchema &&
@@ -1032,7 +1030,7 @@ export class Mirror<S extends SchemaType> {
                     if (item.action === "create") {
                         const node = tree.getNodeByID(item.target);
                         if (node) {
-                            this.registerContainer(node.data.id, nodeSchema);
+                            this.registerContainerHandle(node.data, nodeSchema);
                         }
                     }
                 }
@@ -1378,7 +1376,7 @@ export class Mirror<S extends SchemaType> {
                                 infer,
                             );
                         }
-                        this.registerContainer(newContainer.id, schema);
+                        this.registerContainerHandle(newContainer, schema);
                         this.initializeContainer(newContainer, schema, value);
                         // Stamp $cid into pending state when replacing with a map container
                         this.stampCid(value, newContainer.id);
@@ -1422,7 +1420,10 @@ export class Mirror<S extends SchemaType> {
                         // fix up any pending child creates that depend on this parent's ID.
                         change.onCreate(newNode.id);
                         if (nodeSchema) {
-                            this.registerContainer(newNode.data.id, nodeSchema);
+                            this.registerContainerHandle(
+                                newNode.data,
+                                nodeSchema,
+                            );
                             this.initializeContainer(
                                 newNode.data,
                                 nodeSchema,
@@ -1930,7 +1931,7 @@ export class Mirror<S extends SchemaType> {
             this.inferOptionsByContainerId.set(insertedContainer.id, infer);
         }
 
-        this.registerContainer(insertedContainer.id, schema);
+        this.registerContainerHandle(insertedContainer, schema);
 
         if (infer?.mergeableMapChildContainers) {
             this.updateTopLevelContainer(insertedContainer, value);
@@ -2195,7 +2196,7 @@ export class Mirror<S extends SchemaType> {
             this.inferOptionsByContainerId.set(insertedContainer.id, infer);
         }
 
-        this.registerContainer(insertedContainer.id, schema);
+        this.registerContainerHandle(insertedContainer, schema);
 
         this.initializeContainer(insertedContainer, schema, value);
         // Stamp $cid for list item maps directly on the provided value (pending state)
