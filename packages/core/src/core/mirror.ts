@@ -2917,23 +2917,64 @@ export class Mirror<S extends SchemaType> {
  * @param doc
  * @returns
  */
+// Sentinel prefix for $cid values during the `toJsonWithReplacer` pass.
+// `toJsonWithReplacer` re-resolves any *mergeable* container-id string it finds
+// in the replacer's return value back into a container (re-applying the
+// replacer), which corrupts nested `$cid` markers. Prefixing the id makes it an
+// invalid container id so it is left untouched; `restoreCidDescriptors` strips
+// the prefix afterwards.
+const CID_PLACEHOLDER_PREFIX = " mirror:cid ";
+
 export function toNormalizedJson(doc: LoroDoc) {
+    // Resolve containers ourselves rather than relying on `toJsonWithReplacer`'s
+    // own recursion: `getShallowValue` leaks mergeable child containers as raw
+    // binary markers, and a container handle placed back into the replacer's
+    // return value is serialized as a raw wasm pointer instead of being recursed
+    // into. Explicit recursion via `get`/`toJSON` resolves both regular and
+    // mergeable children uniformly and injects `$cid` on every Map.
     const withEnumerableCid = doc.toJsonWithReplacer((_k, v) => {
-        if (isContainer(v) && v.kind() === "Tree") {
-            return normalizeTreeJsonForMirror(
-                v.toJSON(),
-            ) as unknown as typeof v;
+        if (isContainer(v)) {
+            return normalizeContainerForJson(v) as unknown as typeof v;
         }
-
-        if (isContainer(v) && v.kind() === "Map") {
-            const obj = (v as LoroMap).getShallowValue();
-            return { ...obj, [CID_KEY]: v.id };
-        }
-
         return v;
     });
 
     return restoreCidDescriptors(withEnumerableCid);
+}
+
+function normalizeContainerForJson(c: Container): unknown {
+    const kind = c.kind();
+    if (kind === "Tree") {
+        return normalizeTreeJsonForMirror((c as LoroTree).toJSON());
+    }
+    if (kind === "Text") {
+        return (c as LoroText).toJSON();
+    }
+    if (kind === "Map") {
+        const m = c as LoroMap;
+        const obj: Record<string, unknown> = {};
+        for (const key of m.keys()) {
+            const child = m.get(key);
+            obj[key] = isContainer(child)
+                ? normalizeContainerForJson(child)
+                : child;
+        }
+        obj[CID_KEY] = CID_PLACEHOLDER_PREFIX + m.id;
+        return obj;
+    }
+    if (kind === "List" || kind === "MovableList") {
+        const l = c as LoroList | LoroMovableList;
+        const arr: unknown[] = [];
+        for (let i = 0; i < l.length; i++) {
+            const item = l.get(i);
+            arr.push(
+                isContainer(item) ? normalizeContainerForJson(item) : item,
+            );
+        }
+        return arr;
+    }
+    // Fallback for any other container kind (e.g. Counter): use its JSON form.
+    return (c as unknown as { toJSON(): unknown }).toJSON();
 }
 
 // After toJsonWithReplacer returns plain JSON objects with enumerable $cid,
@@ -2954,7 +2995,12 @@ function restoreCidDescriptors(value: unknown): unknown {
         if (Object.prototype.hasOwnProperty.call(obj, CID_KEY)) {
             const descriptor = Object.getOwnPropertyDescriptor(obj, CID_KEY);
             if (!descriptor || descriptor.enumerable) {
-                const cidValue = obj[CID_KEY];
+                const rawCid = obj[CID_KEY];
+                const cidValue =
+                    typeof rawCid === "string" &&
+                    rawCid.startsWith(CID_PLACEHOLDER_PREFIX)
+                        ? rawCid.slice(CID_PLACEHOLDER_PREFIX.length)
+                        : rawCid;
                 delete obj[CID_KEY];
                 Object.defineProperty(obj, CID_KEY, { value: cidValue });
             }
