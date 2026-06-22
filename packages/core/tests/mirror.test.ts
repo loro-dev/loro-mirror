@@ -1006,6 +1006,66 @@ describe("Mirror - State Consistency", () => {
         });
     });
 
+    it("builds the root doc snapshot once during construction", () => {
+        const todosSchema = schema({
+            todos: schema.LoroList(
+                schema.LoroMap({
+                    id: schema.String(),
+                    text: schema.String(),
+                }),
+            ),
+        });
+
+        const todos = doc.getList("todos");
+        const todo = todos.insertContainer(0, new LoroMap());
+        todo.set("id", "1");
+        todo.set("text", "already in doc");
+        doc.commit();
+
+        type SnapshotCapableMirror = {
+            buildRootStateSnapshot: (
+                prevState?: Record<string, unknown>,
+            ) => Record<string, unknown>;
+            registerNestedContainers: (container: unknown) => void;
+        };
+        const proto = Mirror.prototype as unknown as SnapshotCapableMirror;
+        const originalBuildRootStateSnapshot = proto.buildRootStateSnapshot;
+        const originalRegisterNestedContainers = proto.registerNestedContainers;
+        let snapshotCalls = 0;
+        let nestedScanCalls = 0;
+
+        proto.buildRootStateSnapshot = function (
+            this: SnapshotCapableMirror,
+            prevState?: Record<string, unknown>,
+        ) {
+            snapshotCalls += 1;
+            return originalBuildRootStateSnapshot.call(this, prevState);
+        };
+        proto.registerNestedContainers = function (
+            this: SnapshotCapableMirror,
+            container: unknown,
+        ) {
+            nestedScanCalls += 1;
+            return originalRegisterNestedContainers.call(this, container);
+        };
+
+        try {
+            const mirror = new Mirror({
+                doc,
+                schema: todosSchema,
+                initialState: { todos: [] },
+            });
+            expect(mirror.getState().todos).toHaveLength(1);
+            mirror.dispose();
+        } finally {
+            proto.buildRootStateSnapshot = originalBuildRootStateSnapshot;
+            proto.registerNestedContainers = originalRegisterNestedContainers;
+        }
+
+        expect(snapshotCalls).toBe(1);
+        expect(nestedScanCalls).toBe(0);
+    });
+
     it("should not write into LoroDoc with initState", async () => {
         const someState = {
             list: [{}],
