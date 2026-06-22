@@ -1025,6 +1025,7 @@ describe("Mirror - State Consistency", () => {
         type SnapshotCapableMirror = {
             buildRootStateSnapshot: (
                 prevState?: Record<string, unknown>,
+                options?: { registerContainers?: boolean },
             ) => Record<string, unknown>;
             registerNestedContainers: (container: unknown) => void;
         };
@@ -1032,14 +1033,23 @@ describe("Mirror - State Consistency", () => {
         const originalBuildRootStateSnapshot = proto.buildRootStateSnapshot;
         const originalRegisterNestedContainers = proto.registerNestedContainers;
         let snapshotCalls = 0;
+        let snapshotRegistrationCalls = 0;
         let nestedScanCalls = 0;
 
         proto.buildRootStateSnapshot = function (
             this: SnapshotCapableMirror,
             prevState?: Record<string, unknown>,
+            options?: { registerContainers?: boolean },
         ) {
             snapshotCalls += 1;
-            return originalBuildRootStateSnapshot.call(this, prevState);
+            if (options?.registerContainers) {
+                snapshotRegistrationCalls += 1;
+            }
+            return originalBuildRootStateSnapshot.call(
+                this,
+                prevState,
+                options,
+            );
         };
         proto.registerNestedContainers = function (
             this: SnapshotCapableMirror,
@@ -1056,6 +1066,7 @@ describe("Mirror - State Consistency", () => {
                 initialState: { todos: [] },
             });
             expect(mirror.getState().todos).toHaveLength(1);
+            expect(mirror.getContainerIds()).toContain(todo.id);
             mirror.dispose();
         } finally {
             proto.buildRootStateSnapshot = originalBuildRootStateSnapshot;
@@ -1063,6 +1074,7 @@ describe("Mirror - State Consistency", () => {
         }
 
         expect(snapshotCalls).toBe(1);
+        expect(snapshotRegistrationCalls).toBe(1);
         expect(nestedScanCalls).toBe(0);
     });
 
