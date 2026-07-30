@@ -78,6 +78,19 @@ interface MirrorStateObject {
     [k: string]: MirrorState;
 }
 
+type RootSnapshotOptions = {
+    registerContainers?: boolean;
+};
+
+type RegisterContainerOptions = {
+    scanNested?: boolean;
+};
+
+type ChildRegistrationContext = {
+    parentSchema: ContainerSchemaType | undefined;
+    parentLocalInfer: InferContainerOptions | undefined;
+};
+
 /**
  * Values allowed for root-level keys of `initialState`. LoroDoc only stores
  * container types at the root, so primitives (bare `number`/`boolean`) are
@@ -410,22 +423,16 @@ export class Mirror<S extends SchemaType> {
 
         // Initialize in-memory state without writing to LoroDoc:
         // 1) Start from schema defaults (if any)
-        // 2) Overlay current LoroDoc snapshot (normalized)
-        // 3) Fill any missing top-level keys hinted by initialState with a normalized empty shape
+        // 2) Fill any missing top-level keys hinted by initialState with a normalized empty shape
         //    (arrays -> [], strings -> '', objects -> {}), but do NOT override existing values
         //    from the doc/defaults. This keeps doc pristine while providing a predictable state shape.
+        // 3) After container registration, initializeContainers overlays the current LoroDoc snapshot.
         const baseState: Record<string, unknown> = {};
         const defaults = (
             this.schema ? getDefaultValue(this.schema) : undefined
         ) as Record<string, unknown> | undefined;
         if (defaults && typeof defaults === "object") {
             Object.assign(baseState, defaults);
-        }
-
-        // Overlay the current doc snapshot so real data takes precedence over defaults
-        const docSnapshot = this.buildRootStateSnapshot();
-        if (docSnapshot && typeof docSnapshot === "object") {
-            Object.assign(baseState, docSnapshot);
         }
 
         // Merge initialState with awareness of schema:
@@ -579,14 +586,18 @@ export class Mirror<S extends SchemaType> {
                         );
                         // Record canonical root path for this root container id
                         this.rootPathById.set(container.id, [key]);
-                        this.registerContainerHandle(container, fieldSchema);
+                        this.registerContainerHandle(container, fieldSchema, {
+                            scanNested: false,
+                        });
                     }
                 }
             }
         }
 
         // Build initial state snapshot from the current document
-        const currentDocState = this.buildRootStateSnapshot();
+        const currentDocState = this.buildRootStateSnapshot(undefined, {
+            registerContainers: true,
+        });
         const newState = produce<InferType<S>>((draft) => {
             Object.assign(
                 draft as unknown as Record<string, unknown>,
@@ -601,8 +612,10 @@ export class Mirror<S extends SchemaType> {
     private registerContainerHandle(
         container: Container,
         schemaType: ContainerSchemaType | undefined,
+        options: RegisterContainerOptions = {},
     ) {
         const containerId = container.id;
+        const shouldScanNested = options.scanNested !== false;
 
         // If already registered, optionally upgrade schema
         const existing = this.containerRegistry.get(containerId);
@@ -612,7 +625,9 @@ export class Mirror<S extends SchemaType> {
                 // Schema was missing on initial registration (e.g. from
                 // ensureRootContainersFromInitialState), so nested
                 // containers were never scanned. Do it now.
-                this.registerNestedContainers(container);
+                if (shouldScanNested) {
+                    this.registerNestedContainers(container);
+                }
             }
             return;
         }
@@ -620,7 +635,79 @@ export class Mirror<S extends SchemaType> {
         this.registerContainerWithRegistry(containerId, schemaType);
 
         // Register nested containers
-        this.registerNestedContainers(container);
+        if (shouldScanNested) {
+            this.registerNestedContainers(container);
+        }
+    }
+
+    private registerChildContainer(
+        parent: Container,
+        child: Container,
+        childKey: string | number,
+        context: ChildRegistrationContext,
+        options: RegisterContainerOptions = {},
+    ) {
+        const { parentSchema, parentLocalInfer } = context;
+        let nestedSchema: ContainerSchemaType | undefined;
+
+        if (parent.kind() === "Map") {
+            if (
+                parentSchema &&
+                isLoroMapSchema(parentSchema) &&
+                typeof childKey === "string"
+            ) {
+                const candidate = getMapFieldSchema(parentSchema, childKey);
+                if (candidate?.type === "any") {
+                    this.inferOptionsByContainerId.set(
+                        child.id,
+                        this.getInferOptionsForChild(parent.id, candidate),
+                    );
+                }
+                if (candidate && isContainerSchema(candidate)) {
+                    nestedSchema = candidate;
+                }
+            }
+        } else if (
+            parent.kind() === "List" ||
+            parent.kind() === "MovableList"
+        ) {
+            if (
+                parentSchema &&
+                (isLoroListSchema(parentSchema) ||
+                    isLoroMovableListSchema(parentSchema))
+            ) {
+                const itemSchema = parentSchema.itemSchema;
+                if (itemSchema?.type === "any") {
+                    this.inferOptionsByContainerId.set(
+                        child.id,
+                        this.getInferOptionsForChild(parent.id, itemSchema),
+                    );
+                }
+                if (isContainerSchema(itemSchema)) {
+                    nestedSchema = itemSchema;
+                }
+            }
+        }
+
+        if (
+            !parentSchema &&
+            !nestedSchema &&
+            parentLocalInfer &&
+            !this.inferOptionsByContainerId.has(child.id)
+        ) {
+            this.inferOptionsByContainerId.set(child.id, parentLocalInfer);
+        }
+
+        this.registerContainerHandle(child, nestedSchema, options);
+    }
+
+    private getChildRegistrationContext(
+        parent: Container,
+    ): ChildRegistrationContext {
+        return {
+            parentSchema: this.getContainerSchema(parent.id),
+            parentLocalInfer: this.inferOptionsByContainerId.get(parent.id),
+        };
     }
 
     /**
@@ -629,48 +716,19 @@ export class Mirror<S extends SchemaType> {
     private registerNestedContainers(container: Container) {
         if (!container.isAttached) return;
 
-        const parentSchema = this.getContainerSchema(container.id);
-        const parentLocalInfer = this.inferOptionsByContainerId.get(
-            container.id,
-        );
-
         try {
             if (container.kind() === "Map") {
                 const map = container as LoroMap;
+                const context = this.getChildRegistrationContext(container);
                 for (const key of map.keys()) {
                     const value = map.get(key);
                     if (isContainer(value)) {
-                        let nestedSchema: ContainerSchemaType | undefined;
-                        if (parentSchema && isLoroMapSchema(parentSchema)) {
-                            const candidate = getMapFieldSchema(
-                                parentSchema,
-                                key,
-                            );
-                            if (candidate?.type === "any") {
-                                this.inferOptionsByContainerId.set(
-                                    value.id,
-                                    this.getInferOptionsForChild(
-                                        container.id,
-                                        candidate,
-                                    ),
-                                );
-                            }
-                            if (candidate && isContainerSchema(candidate)) {
-                                nestedSchema = candidate;
-                            }
-                        }
-                        if (
-                            !parentSchema &&
-                            !nestedSchema &&
-                            parentLocalInfer &&
-                            !this.inferOptionsByContainerId.has(value.id)
-                        ) {
-                            this.inferOptionsByContainerId.set(
-                                value.id,
-                                parentLocalInfer,
-                            );
-                        }
-                        this.registerContainerHandle(value, nestedSchema);
+                        this.registerChildContainer(
+                            container,
+                            value,
+                            key,
+                            context,
+                        );
                     }
                 }
             } else if (
@@ -678,46 +736,23 @@ export class Mirror<S extends SchemaType> {
                 container.kind() === "MovableList"
             ) {
                 const list = container as LoroList | LoroMovableList;
+                const context = this.getChildRegistrationContext(container);
                 const len = list.length;
                 for (let i = 0; i < len; i++) {
                     const value = list.get(i);
                     if (isContainer(value)) {
-                        let nestedSchema: ContainerSchemaType | undefined;
-                        if (
-                            parentSchema &&
-                            (isLoroListSchema(parentSchema) ||
-                                isLoroMovableListSchema(parentSchema))
-                        ) {
-                            const itemSchema = parentSchema.itemSchema;
-                            if (itemSchema?.type === "any") {
-                                this.inferOptionsByContainerId.set(
-                                    value.id,
-                                    this.getInferOptionsForChild(
-                                        container.id,
-                                        itemSchema,
-                                    ),
-                                );
-                            }
-                            if (isContainerSchema(itemSchema)) {
-                                nestedSchema = itemSchema;
-                            }
-                        }
-                        if (
-                            !parentSchema &&
-                            !nestedSchema &&
-                            parentLocalInfer &&
-                            !this.inferOptionsByContainerId.has(value.id)
-                        ) {
-                            this.inferOptionsByContainerId.set(
-                                value.id,
-                                parentLocalInfer,
-                            );
-                        }
-                        this.registerContainerHandle(value, nestedSchema);
+                        this.registerChildContainer(
+                            container,
+                            value,
+                            i,
+                            context,
+                        );
                     }
                 }
             } else if (container.kind() === "Tree") {
                 const tree = container as LoroTree;
+                const { parentSchema, parentLocalInfer } =
+                    this.getChildRegistrationContext(container);
                 let nodeSchema: ContainerSchemaType | undefined;
                 if (parentSchema && isLoroTreeSchema(parentSchema)) {
                     nodeSchema = parentSchema.nodeSchema as ContainerSchemaType;
@@ -2664,17 +2699,34 @@ export class Mirror<S extends SchemaType> {
         }
     }
 
-    private containerToMirrorState(c: Container): MirrorState {
+    private containerToMirrorState(
+        c: Container,
+        options: RootSnapshotOptions = {},
+    ): MirrorState {
         const kind = c.kind();
         const schema = this.getContainerSchema(c.id);
         if (kind === "Map") {
             const m = c as LoroMap;
             const obj: MirrorStateObject = {};
+            const childRegistrationContext = options.registerContainers
+                ? this.getChildRegistrationContext(c)
+                : undefined;
             defineCidProperty(obj, c.id);
             for (const k of m.keys()) {
                 const v = m.get(k);
                 if (isContainer(v)) {
-                    obj[k] = this.containerToMirrorState(v);
+                    if (childRegistrationContext) {
+                        this.registerChildContainer(
+                            c,
+                            v,
+                            k,
+                            childRegistrationContext,
+                            {
+                                scanNested: false,
+                            },
+                        );
+                    }
+                    obj[k] = this.containerToMirrorState(v, options);
                 } else {
                     // Decode primitive values using field schema
                     const fieldSchema = getChildSchema(schema, k);
@@ -2686,12 +2738,26 @@ export class Mirror<S extends SchemaType> {
             const arr: MirrorState[] = [];
             const l = c as unknown as LoroList | LoroMovableList;
             const len = l.length;
+            const childRegistrationContext = options.registerContainers
+                ? this.getChildRegistrationContext(c)
+                : undefined;
             // Get item schema for decoding list items
             const itemSchema = getChildSchema(schema);
             for (let i = 0; i < len; i++) {
                 const v = l.get(i);
                 if (isContainer(v)) {
-                    arr.push(this.containerToMirrorState(v));
+                    if (childRegistrationContext) {
+                        this.registerChildContainer(
+                            c,
+                            v,
+                            i,
+                            childRegistrationContext,
+                            {
+                                scanNested: false,
+                            },
+                        );
+                    }
+                    arr.push(this.containerToMirrorState(v, options));
                 } else {
                     // Decode primitive items using item schema
                     arr.push(applyDecode(itemSchema, v) as MirrorState);
@@ -2703,6 +2769,9 @@ export class Mirror<S extends SchemaType> {
             return (c as LoroText).toJSON();
         } else if (kind === "Tree") {
             const t = c as LoroTree;
+            if (options.registerContainers) {
+                this.registerNestedContainers(c);
+            }
             // Normalize via toJSON first
             const normalized = normalizeTreeJsonForMirror(t.toJSON());
             // Optionally inject $cid per node.data using an id->cid map from live nodes
@@ -2778,6 +2847,7 @@ export class Mirror<S extends SchemaType> {
      */
     private buildRootStateSnapshot(
         prevState?: Record<string, unknown>,
+        options: RootSnapshotOptions = {},
     ): Record<string, unknown> {
         if (!this.schema || this.schema.type !== "schema") {
             // Fallback to previous normalization if no schema
@@ -2806,22 +2876,25 @@ export class Mirror<S extends SchemaType> {
             );
             // Always include maps to expose $cid for stable identity
             if (containerType === "Map") {
-                root[key] = this.containerToMirrorState(container);
+                root[key] = this.containerToMirrorState(container, options);
             } else if (
                 containerType === "List" ||
                 containerType === "MovableList"
             ) {
                 // Always include lists, even if empty, to match Mirror's state shape
-                root[key] = this.containerToMirrorState(container);
+                root[key] = this.containerToMirrorState(container, options);
             } else if (containerType === "Text") {
                 // Always include text, even if empty, to match Mirror's state shape
-                root[key] = this.containerToMirrorState(container);
+                root[key] = this.containerToMirrorState(container, options);
             } else if (containerType === "Tree") {
-                const arr = this.containerToMirrorState(container) as unknown[];
+                const arr = this.containerToMirrorState(
+                    container,
+                    options,
+                ) as unknown[];
                 if (!Array.isArray(arr) || arr.length === 0) continue;
                 root[key] = arr;
             } else {
-                root[key] = this.containerToMirrorState(container);
+                root[key] = this.containerToMirrorState(container, options);
             }
         }
         return root;

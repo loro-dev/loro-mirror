@@ -1006,6 +1006,40 @@ describe("Mirror - State Consistency", () => {
         });
     });
 
+    it("reads each root list item once during construction", () => {
+        const todosSchema = schema({
+            todos: schema.LoroList(
+                schema.LoroMap({
+                    id: schema.String(),
+                    text: schema.String(),
+                }),
+            ),
+        });
+
+        const todos = doc.getList("todos");
+        const todo = todos.insertContainer(0, new LoroMap());
+        todo.set("id", "1");
+        todo.set("text", "already in doc");
+        doc.commit();
+
+        const getSpy = vi.spyOn(LoroList.prototype, "get");
+        let mirror: Mirror<typeof todosSchema> | undefined;
+
+        try {
+            mirror = new Mirror({
+                doc,
+                schema: todosSchema,
+                initialState: { todos: [] },
+            });
+            expect(mirror.getState().todos).toHaveLength(1);
+            expect(mirror.getContainerIds()).toContain(todo.id);
+            expect(getSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            mirror?.dispose();
+            getSpy.mockRestore();
+        }
+    });
+
     it("should not write into LoroDoc with initState", async () => {
         const someState = {
             list: [{}],
