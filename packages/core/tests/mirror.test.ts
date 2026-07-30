@@ -1006,7 +1006,7 @@ describe("Mirror - State Consistency", () => {
         });
     });
 
-    it("builds the root doc snapshot once during construction", () => {
+    it("reads each root list item once during construction", () => {
         const todosSchema = schema({
             todos: schema.LoroList(
                 schema.LoroMap({
@@ -1022,60 +1022,22 @@ describe("Mirror - State Consistency", () => {
         todo.set("text", "already in doc");
         doc.commit();
 
-        type SnapshotCapableMirror = {
-            buildRootStateSnapshot: (
-                prevState?: Record<string, unknown>,
-                options?: { registerContainers?: boolean },
-            ) => Record<string, unknown>;
-            registerNestedContainers: (container: unknown) => void;
-        };
-        const proto = Mirror.prototype as unknown as SnapshotCapableMirror;
-        const originalBuildRootStateSnapshot = proto.buildRootStateSnapshot;
-        const originalRegisterNestedContainers = proto.registerNestedContainers;
-        let snapshotCalls = 0;
-        let snapshotRegistrationCalls = 0;
-        let nestedScanCalls = 0;
-
-        proto.buildRootStateSnapshot = function (
-            this: SnapshotCapableMirror,
-            prevState?: Record<string, unknown>,
-            options?: { registerContainers?: boolean },
-        ) {
-            snapshotCalls += 1;
-            if (options?.registerContainers) {
-                snapshotRegistrationCalls += 1;
-            }
-            return originalBuildRootStateSnapshot.call(
-                this,
-                prevState,
-                options,
-            );
-        };
-        proto.registerNestedContainers = function (
-            this: SnapshotCapableMirror,
-            container: unknown,
-        ) {
-            nestedScanCalls += 1;
-            return originalRegisterNestedContainers.call(this, container);
-        };
+        const getSpy = vi.spyOn(LoroList.prototype, "get");
+        let mirror: Mirror<typeof todosSchema> | undefined;
 
         try {
-            const mirror = new Mirror({
+            mirror = new Mirror({
                 doc,
                 schema: todosSchema,
                 initialState: { todos: [] },
             });
             expect(mirror.getState().todos).toHaveLength(1);
             expect(mirror.getContainerIds()).toContain(todo.id);
-            mirror.dispose();
+            expect(getSpy).toHaveBeenCalledTimes(1);
         } finally {
-            proto.buildRootStateSnapshot = originalBuildRootStateSnapshot;
-            proto.registerNestedContainers = originalRegisterNestedContainers;
+            mirror?.dispose();
+            getSpy.mockRestore();
         }
-
-        expect(snapshotCalls).toBe(1);
-        expect(snapshotRegistrationCalls).toBe(1);
-        expect(nestedScanCalls).toBe(0);
     });
 
     it("should not write into LoroDoc with initState", async () => {
