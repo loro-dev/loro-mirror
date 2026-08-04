@@ -1,7 +1,13 @@
 /**
  * Mirror core functionality for bidirectional sync between app state and Loro CRDT
  */
-import { produce, setAutoFreeze } from "immer";
+import { setAutoFreeze } from "immer";
+import { produce } from "./immer-instance.js";
+// Mirror mutates the pending state in place while applying changes (see `stampCid`),
+// so nothing it produces may be frozen. The private instance in `./immer-instance.js`
+// already disables freezing for our own `produce` calls; this global call additionally
+// covers values the host application builds with its own `produce` and hands to
+// `setState`, which Mirror would otherwise be unable to stamp.
 setAutoFreeze(false);
 import {
     Container,
@@ -67,6 +73,7 @@ import {
     applyEncode,
     decodeNestedJsonValues,
     safeStringify,
+    cidsEqual,
 } from "./utils.js";
 import { diffContainer, diffTree } from "./diff.js";
 import { CID_KEY } from "../constants.js";
@@ -2689,9 +2696,15 @@ export class Mirror<S extends SchemaType> {
         // when ephemeral patches are active.
         const base = this.baseState as unknown as Record<string, unknown>;
         const snapshot = this.buildRootStateSnapshot(base);
-        if (!deepEqual(base, snapshot)) {
+        // `$cid` is non-enumerable, so `deepEqual` cannot see it; compare the markers
+        // separately to catch a tampered or stale container id in the state.
+        const valuesDiverged = !deepEqual(base, snapshot);
+        const cidsDiverged = !cidsEqual(base, snapshot);
+        if (valuesDiverged || cidsDiverged) {
             console.error(
-                "State diverged",
+                valuesDiverged
+                    ? "State diverged"
+                    : `State diverged ($cid mismatch; values are equal)`,
                 safeStringify(base),
                 safeStringify(snapshot),
             );

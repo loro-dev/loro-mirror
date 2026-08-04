@@ -343,6 +343,35 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Recursively compare the `$cid` markers of two state trees.
+ *
+ * `deepEqual` only walks enumerable keys, so it cannot see `$cid` (which is stamped as a
+ * non-enumerable descriptor). Used by `Mirror.checkStateConsistency` so that a tampered
+ * or stale `$cid` is reported as a divergence instead of silently sitting in the state.
+ * Only the markers are compared here; value equality is `deepEqual`'s job.
+ */
+export function cidsEqual(a: unknown, b: unknown): boolean {
+    if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+            if (!cidsEqual(a[i], b[i])) return false;
+        }
+        return true;
+    }
+
+    if (!isObject(a) || !isObject(b)) return true;
+
+    if (a[CID_KEY] !== b[CID_KEY]) return false;
+
+    for (const key of Object.keys(a)) {
+        if (!Object.prototype.hasOwnProperty.call(b, key)) continue;
+        if (!cidsEqual(a[key], b[key])) return false;
+    }
+
+    return true;
+}
+
+/**
  * Get a value from a nested object using a path array
  */
 export function getPathValue(
