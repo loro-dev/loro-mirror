@@ -204,10 +204,15 @@ export function defineCidProperty(target: unknown, cid: ContainerID) {
  * configurable: true }` so the draft stays mutable — which would leave `$cid` writable on
  * every object Immer copied, letting callers reassign a published `$cid`.
  *
- * `prev` is the state `produce` was called with. Immer copies only the objects on the
- * mutation path and shares the rest by reference, so subtrees that are reference-equal to
- * `prev` cannot have been touched and are skipped. That keeps this walk proportional to
- * what Immer actually copied rather than to the size of the state.
+ * Two things keep this proportional to what Immer actually copied rather than to the size
+ * of the state:
+ *
+ * - `prev` is the state `produce` was called with, and Immer shares everything it did not
+ *   copy, so a subtree reference-equal to `prev` cannot have been touched.
+ * - An already-locked `$cid` means this object was not copied this round, so its children
+ *   are the same references they were when it was last hardened and are locked too. This
+ *   is what makes a reorder cheap: moved items are shared references that land at a new
+ *   index, so `prev` no longer lines up with them, but they are still locked.
  */
 export function hardenCidDescriptors(
     next: unknown,
@@ -234,16 +239,18 @@ export function hardenCidDescriptors(
     visited.add(next);
 
     const descriptor = Object.getOwnPropertyDescriptor(next, CID_KEY);
-    // A correctly locked `$cid` is non-configurable, so this is a no-op for state that
-    // Immer did not copy. Skipping non-configurable descriptors also keeps
-    // `Object.defineProperty` from throwing.
-    if (descriptor && descriptor.configurable && "value" in descriptor) {
-        Object.defineProperty(next, CID_KEY, {
-            value: descriptor.value,
-            writable: false,
-            enumerable: false,
-            configurable: false,
-        });
+    if (descriptor) {
+        // Already locked: this object was not copied this round, so its subtree is
+        // untouched and was hardened when the object itself was.
+        if (!descriptor.configurable) return;
+        if ("value" in descriptor) {
+            Object.defineProperty(next, CID_KEY, {
+                value: descriptor.value,
+                writable: false,
+                enumerable: false,
+                configurable: false,
+            });
+        }
     }
 
     const prevObj = isObject(prev) ? prev : undefined;
