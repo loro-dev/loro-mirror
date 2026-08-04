@@ -196,6 +196,52 @@ export function defineCidProperty(target: unknown, cid: ContainerID) {
 }
 
 /**
+ * Restore the read-only `$cid` contract on a freshly produced state.
+ *
+ * `defineCidProperty` stamps `$cid` as `{ writable: false, enumerable: false,
+ * configurable: false }`. Immer's `useStrictShallowCopy` preserves the descriptor, but it
+ * deliberately rewrites every non-writable data property to `{ writable: true,
+ * configurable: true }` so the draft stays mutable — which would leave `$cid` writable on
+ * every object Immer copied, letting callers reassign a published `$cid`.
+ *
+ * `prev` is the state `produce` was called with. Immer copies only the objects on the
+ * mutation path and shares the rest by reference, so subtrees that are reference-equal to
+ * `prev` cannot have been touched and are skipped. That keeps this walk proportional to
+ * what Immer actually copied rather than to the size of the state.
+ */
+export function hardenCidDescriptors(next: unknown, prev: unknown): void {
+    if (next === prev) return;
+
+    if (Array.isArray(next)) {
+        const prevArr = Array.isArray(prev) ? prev : undefined;
+        for (let i = 0; i < next.length; i++) {
+            hardenCidDescriptors(next[i], prevArr?.[i]);
+        }
+        return;
+    }
+
+    if (!isObject(next)) return;
+
+    const descriptor = Object.getOwnPropertyDescriptor(next, CID_KEY);
+    // A correctly locked `$cid` is non-configurable, so this is a no-op for state that
+    // Immer did not copy. Skipping non-configurable descriptors also keeps
+    // `Object.defineProperty` from throwing.
+    if (descriptor && descriptor.configurable && "value" in descriptor) {
+        Object.defineProperty(next, CID_KEY, {
+            value: descriptor.value,
+            writable: false,
+            enumerable: false,
+            configurable: false,
+        });
+    }
+
+    const prevObj = isObject(prev) ? prev : undefined;
+    for (const key of Object.keys(next)) {
+        hardenCidDescriptors(next[key], prevObj?.[key]);
+    }
+}
+
+/**
  * Check if a value is an object
  */
 export function isObject(value: unknown): value is Record<string, unknown> {

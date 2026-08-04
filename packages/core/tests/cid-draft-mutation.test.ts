@@ -22,6 +22,20 @@ const movableListSchema = () =>
         items: schema.LoroMovableList(itemSchema(), (item) => item.$cid),
     });
 
+/**
+ * `$cid` must stay exactly as `defineCidProperty` stamps it. Immer's strict shallow copy
+ * preserves the descriptor but rewrites non-writable data properties to
+ * `{ writable: true, configurable: true }`, so the flags have to be re-locked afterwards.
+ */
+function expectLockedCid(target: object, cid: unknown) {
+    expect(Object.getOwnPropertyDescriptor(target, CID_KEY)).toEqual({
+        value: cid,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+    });
+}
+
 /** Structural ops emitted on the outer list container since `from`. */
 function listOpsSince(doc: LoroDoc, from: ReturnType<LoroDoc["oplogVersion"]>) {
     return doc
@@ -101,7 +115,27 @@ describe("$cid survives Immer draft mutation", () => {
         });
     });
 
-    it("keeps $cid non-enumerable and out of JSON after a draft mutation", () => {
+    it("keeps the full read-only $cid descriptor after a draft mutation", () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({ doc, schema: movableListSchema() });
+
+        mirror.setState((draft) => {
+            draft.items.push({ text: "before" });
+        });
+        const cid = mirror.getState().items[0][CID_KEY];
+        expectLockedCid(mirror.getState().items[0], cid);
+
+        mirror.setState((draft) => {
+            draft.items[0].text = "after";
+        });
+
+        expectLockedCid(mirror.getState().items[0], cid);
+        expect(JSON.stringify(mirror.getState())).toBe(
+            JSON.stringify({ items: [{ text: "after" }] }),
+        );
+    });
+
+    it("rejects reassigning $cid on published state after a draft mutation", () => {
         const doc = new LoroDoc();
         const mirror = new Mirror({ doc, schema: movableListSchema() });
 
@@ -112,13 +146,42 @@ describe("$cid survives Immer draft mutation", () => {
             draft.items[0].text = "after";
         });
 
-        const item = mirror.getState().items[0];
-        expect(
-            Object.getOwnPropertyDescriptor(item, CID_KEY)?.enumerable,
-        ).toBe(false);
-        expect(JSON.stringify(mirror.getState())).toBe(
-            JSON.stringify({ items: [{ text: "after" }] }),
-        );
+        const cid = mirror.getState().items[0][CID_KEY];
+        expect(() => {
+            (mirror.getState().items[0] as { [CID_KEY]: string })[CID_KEY] =
+                "forged";
+        }).toThrow(TypeError);
+        expect(mirror.getState().items[0][CID_KEY]).toBe(cid);
+    });
+
+    it("keeps the full read-only $cid descriptor on nested maps", () => {
+        const doc = new LoroDoc();
+        const mirror = new Mirror({
+            doc,
+            schema: schema({
+                items: schema.LoroMovableList(
+                    schema.LoroMap({
+                        text: schema.String(),
+                        meta: schema.LoroMap({ v: schema.String() }),
+                    }),
+                    (item) => item.$cid,
+                ),
+            }),
+        });
+
+        mirror.setState((draft) => {
+            draft.items.push({ text: "t", meta: { v: "1" } });
+        });
+        const itemCid = mirror.getState().items[0][CID_KEY];
+        const metaCid = mirror.getState().items[0].meta[CID_KEY];
+
+        mirror.setState((draft) => {
+            draft.items[0].meta.v = "2";
+        });
+
+        // Both the mutated map and the ancestor Immer copied on the way down.
+        expectLockedCid(mirror.getState().items[0], itemCid);
+        expectLockedCid(mirror.getState().items[0].meta, metaCid);
     });
 
     it("preserves the nested LoroText container instead of recreating it", () => {
@@ -195,6 +258,12 @@ describe("$cid survives Immer draft mutation", () => {
         docB.import(docA.export({ mode: "update" }));
 
         expect(mirrorB.getState().items[0][CID_KEY]).toBe(cidOnB);
+        // The remote apply path runs through Immer too, so it must re-lock as well.
+        expectLockedCid(mirrorB.getState().items[0], cidOnB);
+        expectLockedCid(
+            mirrorB.getState().items[0].meta,
+            mirrorB.getState().items[0].meta[CID_KEY],
+        );
 
         // ...and a purely local field edit afterwards must not rewrite the outer list.
         const beforeEdit = docB.oplogVersion();

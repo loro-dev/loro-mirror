@@ -12,7 +12,12 @@ import {
     normalizeTreeJson,
     type NormalizedTreeNode,
 } from "./tree-utils.js";
-import { defineCidProperty, isTreeID, applyDecode } from "./utils.js";
+import {
+    defineCidProperty,
+    hardenCidDescriptors,
+    isTreeID,
+    applyDecode,
+} from "./utils.js";
 import { SchemaType } from "../schema/index.js";
 
 // Value held in Mirror state (no `any`)
@@ -79,6 +84,9 @@ export function applyEventBatchToState<T extends object>(
             );
         }
     })(currentState);
+    // Immer's strict shallow copy keeps `$cid` but drops its read-only flags; restore
+    // them before the state is published.
+    hardenCidDescriptors(next, currentState);
     return next;
 }
 

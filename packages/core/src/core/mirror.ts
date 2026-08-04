@@ -68,6 +68,7 @@ import {
     tryInferContainerType,
     getRootContainerByType,
     defineCidProperty,
+    hardenCidDescriptors,
     stripUndefined,
     applyDecode,
     applyEncode,
@@ -2605,6 +2606,10 @@ export class Mirror<S extends SchemaType> {
                       this.state as unknown as Record<string, unknown>,
                       updater as Record<string, unknown>,
                   ) as InferType<S>);
+
+        // Immer's strict shallow copy keeps `$cid` but drops its read-only flags; restore
+        // them before anything else observes the new state.
+        hardenCidDescriptors(newState, this.state);
 
         // Validate state if needed
         if (this.options.validateUpdates) {
