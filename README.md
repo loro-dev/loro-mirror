@@ -273,6 +273,32 @@ const todoSchema = schema({
 #### Reserved Field: `$cid`
 
 - `$cid` is a reserved, read-only field injected into mirrored state for all `LoroMap` schemas. It equals the underlying Loro container id, is never written back to Loro, and is ignored by diffs and updates. Use it as a stable identifier where helpful (e.g., list `idSelector`).
+- `$cid` is non-enumerable, so **object spread does not copy it**. Draft-style mutation preserves it for you, but an updater that rebuilds list items and returns a new state must carry `$cid` across explicitly — otherwise the rebuilt item looks like a different item to a `$cid`-based `idSelector`, and the list diff degrades into a delete plus an insert. That creates a new container, so a concurrent remote delete of the original no longer removes the item after a merge:
+
+```ts
+// ✗ rebuilt item loses `$cid` → outer list emits delete + insert
+mirror.setState((state) => ({
+    ...state,
+    items: state.items.map((item) => ({ ...item, text: "after" })),
+}));
+
+// ✓ draft mutation (preferred)
+mirror.setState((draft) => {
+    draft.items[0].text = "after";
+});
+
+// ✓ or carry `$cid` across explicitly
+mirror.setState((state) => ({
+    ...state,
+    items: state.items.map((item) => ({
+        ...item,
+        $cid: item.$cid,
+        text: "after",
+    })),
+}));
+```
+
+  Using a domain-stable id (e.g. `(item) => item.id`) as the `idSelector` avoids the issue entirely.
 
 ### React Usage
 

@@ -196,6 +196,76 @@ export function defineCidProperty(target: unknown, cid: ContainerID) {
 }
 
 /**
+ * Restore the read-only `$cid` contract on a freshly produced state.
+ *
+ * `defineCidProperty` stamps `$cid` as `{ writable: false, enumerable: false,
+ * configurable: false }`. Immer's `useStrictShallowCopy` preserves the descriptor, but it
+ * deliberately rewrites every non-writable data property to `{ writable: true,
+ * configurable: true }` so the draft stays mutable — which would leave `$cid` writable on
+ * every object Immer copied, letting callers reassign a published `$cid`.
+ *
+ * Two things keep this proportional to what Immer actually copied rather than to the size
+ * of the state:
+ *
+ * - `prev` is the state `produce` was called with, and Immer shares everything it did not
+ *   copy, so a subtree reference-equal to `prev` cannot have been touched.
+ * - An already-locked `$cid` means this object was not copied this round, so its children
+ *   are the same references they were when it was last hardened and are locked too. This
+ *   is what makes a reorder cheap: moved items are shared references that land at a new
+ *   index, so `prev` no longer lines up with them, but they are still locked.
+ */
+export function hardenCidDescriptors(
+    next: unknown,
+    prev: unknown,
+    visited?: Set<unknown>,
+): void {
+    if (next === prev) return;
+
+    if (Array.isArray(next)) {
+        // `schema.Ignore()` may hold arbitrary user objects, including cyclic ones.
+        // Hardening depends only on `next`, so visiting an object once is enough and a
+        // persistent set both terminates cycles and skips re-walking shared subgraphs.
+        if ((visited ??= new Set()).has(next)) return;
+        visited.add(next);
+        const prevArr = Array.isArray(prev) ? prev : undefined;
+        for (let i = 0; i < next.length; i++) {
+            hardenCidDescriptors(next[i], prevArr?.[i], visited);
+        }
+        return;
+    }
+
+    if (!isObject(next)) return;
+
+    const descriptor = Object.getOwnPropertyDescriptor(next, CID_KEY);
+    if (descriptor) {
+        // Already locked: this object was not copied this round, so its subtree is
+        // untouched and was hardened when the object itself was. Returning before
+        // touching `visited` keeps a reorder off the set entirely -- moved items are
+        // exactly this case, and they are the bulk of the walk.
+        if (!descriptor.configurable) return;
+        if ("value" in descriptor) {
+            Object.defineProperty(next, CID_KEY, {
+                value: descriptor.value,
+                writable: false,
+                enumerable: false,
+                configurable: false,
+            });
+        }
+    }
+
+    // Every object that recurses is registered first, so cycles still terminate. Objects
+    // that carry a `$cid` are additionally covered by the locked check above: a second
+    // visit finds the descriptor locked and returns.
+    if ((visited ??= new Set()).has(next)) return;
+    visited.add(next);
+
+    const prevObj = isObject(prev) ? prev : undefined;
+    for (const key of Object.keys(next)) {
+        hardenCidDescriptors(next[key], prevObj?.[key], visited);
+    }
+}
+
+/**
  * Check if a value is an object
  */
 export function isObject(value: unknown): value is Record<string, unknown> {
@@ -213,43 +283,93 @@ const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
  * Protects against prototype pollution by skipping unsafe keys.
  */
 export function stripUndefined<T>(value: T): T {
+    return stripUndefinedInner(value, 0, undefined);
+}
+
+/**
+ * Depth at which we start recording the recursion path to detect cycles.
+ *
+ * This runs over the whole state on every `setState`, and tracking every node costs more
+ * than the stripping itself. Mirror state is a tree whose depth follows the schema, so a
+ * real state never gets near this; only a cycle recurses without bound. Once the path is
+ * being recorded, any cycle revisits one of its own nodes within a single lap, so starting
+ * late still terminates.
+ */
+const CYCLE_GUARD_DEPTH = 64;
+
+/**
+ * Placeholder for a key that must not reach the rebuilt object: an unsafe key, or one whose
+ * value is `undefined` and is therefore treated as a non-existent field.
+ */
+const DROPPED = Symbol("dropped");
+
+function stripUndefinedInner<T>(
+    value: T,
+    depth: number,
+    path: Set<unknown> | undefined,
+): T {
     if (value === undefined) {
         return value;
     }
     if (Array.isArray(value)) {
+        // A cycle can only be introduced through `schema.Ignore()` values, which are never
+        // written to Loro. Leave such a subgraph exactly as it is rather than recursing
+        // into it forever.
+        if (depth >= CYCLE_GUARD_DEPTH) {
+            if ((path ??= new Set()).has(value)) return value;
+            path.add(value);
+        }
         let hasChanges = false;
         const result = value.map((item) => {
-            const stripped = stripUndefined(item);
+            const stripped = stripUndefinedInner(item, depth + 1, path);
             if (stripped !== item) hasChanges = true;
             return stripped;
         });
+        path?.delete(value);
         return hasChanges ? (result as T) : value;
     }
     if (isObject(value)) {
-        // Check if any enumerable property is undefined or needs stripping
-        let hasUndefined = false;
-        let hasNestedChanges = false;
-        const strippedValues: Map<string, unknown> = new Map();
+        if (depth >= CYCLE_GUARD_DEPTH) {
+            if ((path ??= new Set()).has(value)) return value;
+            path.add(value);
+        }
+        // Check if any enumerable property is undefined or needs stripping.
+        //
+        // Most objects need neither, so the rebuilt-value bookkeeping stays as cheap as it
+        // can be: a positional array rather than a `Map`, since this walks the whole state
+        // on every `setState`. The values are recorded as they are read instead of being
+        // re-read below, because a `schema.Ignore()` field may hold an arbitrary user
+        // object, and reading an accessor twice would both run its getter twice and store
+        // the second, un-stripped read.
+        const keys = Object.keys(value);
+        const strippedValues: unknown[] = new Array(keys.length);
+        let changed = false;
 
-        for (const key of Object.keys(value)) {
-            // Skip unsafe keys to prevent prototype pollution
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            // Skip unsafe keys to prevent prototype pollution. This alone does not force a
+            // rebuild: an object whose only oddity is an unsafe key is returned untouched,
+            // as it was before.
             if (UNSAFE_KEYS.has(key)) {
+                strippedValues[i] = DROPPED;
                 continue;
             }
             const val = value[key];
             if (val === undefined) {
-                hasUndefined = true;
-            } else {
-                const stripped = stripUndefined(val);
-                strippedValues.set(key, stripped);
-                if (stripped !== val) {
-                    hasNestedChanges = true;
-                }
+                strippedValues[i] = DROPPED;
+                changed = true;
+                continue;
+            }
+            const stripped = stripUndefinedInner(val, depth + 1, path);
+            strippedValues[i] = stripped;
+            if (stripped !== val) {
+                changed = true;
             }
         }
+        path?.delete(value);
 
         // If no changes needed, return original object
-        if (!hasUndefined && !hasNestedChanges) {
+        if (!changed) {
             return value;
         }
 
@@ -267,9 +387,14 @@ export function stripUndefined<T>(value: T): T {
                 Object.defineProperty(result, key, descriptor);
             }
         }
-        // Copy the stripped values using Object.defineProperty to be safe
-        for (const [key, val] of strippedValues) {
-            Object.defineProperty(result, key, {
+        // Copy the stripped values using Object.defineProperty to be safe. Walking `keys`
+        // keeps the original `Object.keys` order.
+        for (let i = 0; i < keys.length; i++) {
+            const val = strippedValues[i];
+            if (val === DROPPED) {
+                continue;
+            }
+            Object.defineProperty(result, keys[i], {
                 value: val,
                 writable: true,
                 enumerable: true,
@@ -340,6 +465,65 @@ export function deepEqual(a: unknown, b: unknown): boolean {
     }
 
     return false;
+}
+
+/**
+ * Recursively compare the `$cid` markers of two state trees.
+ *
+ * `deepEqual` only walks enumerable keys, so it cannot see `$cid` (which is stamped as a
+ * non-enumerable descriptor). Used by `Mirror.checkStateConsistency` so that a tampered
+ * or stale `$cid` is reported as a divergence instead of silently sitting in the state.
+ * Only the markers are compared here; value equality is `deepEqual`'s job.
+ */
+export function cidsEqual(
+    a: unknown,
+    b: unknown,
+    seen?: Map<unknown, Set<unknown>>,
+): boolean {
+    // Identical references share every `$cid` below them. This also short-circuits
+    // `schema.Ignore()` values, which `buildRootStateSnapshot` carries over by reference
+    // and which may be arbitrary user objects, including cyclic ones.
+    if (a === b) return true;
+
+    if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        const marks = markSeen(a, b, (seen ??= new Map()));
+        if (marks === "seen") return true;
+        for (let i = 0; i < a.length; i++) {
+            if (!cidsEqual(a[i], b[i], seen)) return false;
+        }
+        return true;
+    }
+
+    if (!isObject(a) || !isObject(b)) return true;
+
+    if (a[CID_KEY] !== b[CID_KEY]) return false;
+
+    // Two distinct but mutually cyclic graphs would otherwise recurse forever; treat a
+    // pair already under comparison as equal, the usual deep-comparison convention.
+    if (markSeen(a, b, (seen ??= new Map())) === "seen") return true;
+
+    for (const key of Object.keys(a)) {
+        if (!Object.prototype.hasOwnProperty.call(b, key)) continue;
+        if (!cidsEqual(a[key], b[key], seen)) return false;
+    }
+
+    return true;
+}
+
+function markSeen(
+    a: unknown,
+    b: unknown,
+    seen: Map<unknown, Set<unknown>>,
+): "seen" | "new" {
+    let partners = seen.get(a);
+    if (!partners) {
+        partners = new Set();
+        seen.set(a, partners);
+    }
+    if (partners.has(b)) return "seen";
+    partners.add(b);
+    return "new";
 }
 
 /**
