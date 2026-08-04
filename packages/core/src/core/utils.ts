@@ -235,13 +235,13 @@ export function hardenCidDescriptors(
     }
 
     if (!isObject(next)) return;
-    if ((visited ??= new Set()).has(next)) return;
-    visited.add(next);
 
     const descriptor = Object.getOwnPropertyDescriptor(next, CID_KEY);
     if (descriptor) {
         // Already locked: this object was not copied this round, so its subtree is
-        // untouched and was hardened when the object itself was.
+        // untouched and was hardened when the object itself was. Returning before
+        // touching `visited` keeps a reorder off the set entirely -- moved items are
+        // exactly this case, and they are the bulk of the walk.
         if (!descriptor.configurable) return;
         if ("value" in descriptor) {
             Object.defineProperty(next, CID_KEY, {
@@ -252,6 +252,12 @@ export function hardenCidDescriptors(
             });
         }
     }
+
+    // Every object that recurses is registered first, so cycles still terminate. Objects
+    // that carry a `$cid` are additionally covered by the locked check above: a second
+    // visit finds the descriptor locked and returns.
+    if ((visited ??= new Set()).has(next)) return;
+    visited.add(next);
 
     const prevObj = isObject(prev) ? prev : undefined;
     for (const key of Object.keys(next)) {
