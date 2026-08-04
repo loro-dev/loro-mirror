@@ -297,6 +297,12 @@ export function stripUndefined<T>(value: T): T {
  */
 const CYCLE_GUARD_DEPTH = 64;
 
+/**
+ * Placeholder for a key that must not reach the rebuilt object: an unsafe key, or one whose
+ * value is `undefined` and is therefore treated as a non-existent field.
+ */
+const DROPPED = Symbol("dropped");
+
 function stripUndefinedInner<T>(
     value: T,
     depth: number,
@@ -327,31 +333,43 @@ function stripUndefinedInner<T>(
             if ((path ??= new Set()).has(value)) return value;
             path.add(value);
         }
-        // Check if any enumerable property is undefined or needs stripping
-        let hasUndefined = false;
-        let hasNestedChanges = false;
-        const strippedValues: Map<string, unknown> = new Map();
+        // Check if any enumerable property is undefined or needs stripping.
+        //
+        // Most objects need neither, so the rebuilt-value bookkeeping stays as cheap as it
+        // can be: a positional array rather than a `Map`, since this walks the whole state
+        // on every `setState`. The values are recorded as they are read instead of being
+        // re-read below, because a `schema.Ignore()` field may hold an arbitrary user
+        // object, and reading an accessor twice would both run its getter twice and store
+        // the second, un-stripped read.
+        const keys = Object.keys(value);
+        const strippedValues: unknown[] = new Array(keys.length);
+        let changed = false;
 
-        for (const key of Object.keys(value)) {
-            // Skip unsafe keys to prevent prototype pollution
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            // Skip unsafe keys to prevent prototype pollution. This alone does not force a
+            // rebuild: an object whose only oddity is an unsafe key is returned untouched,
+            // as it was before.
             if (UNSAFE_KEYS.has(key)) {
+                strippedValues[i] = DROPPED;
                 continue;
             }
             const val = value[key];
             if (val === undefined) {
-                hasUndefined = true;
-            } else {
-                const stripped = stripUndefinedInner(val, depth + 1, path);
-                strippedValues.set(key, stripped);
-                if (stripped !== val) {
-                    hasNestedChanges = true;
-                }
+                strippedValues[i] = DROPPED;
+                changed = true;
+                continue;
+            }
+            const stripped = stripUndefinedInner(val, depth + 1, path);
+            strippedValues[i] = stripped;
+            if (stripped !== val) {
+                changed = true;
             }
         }
         path?.delete(value);
 
         // If no changes needed, return original object
-        if (!hasUndefined && !hasNestedChanges) {
+        if (!changed) {
             return value;
         }
 
@@ -369,9 +387,14 @@ function stripUndefinedInner<T>(
                 Object.defineProperty(result, key, descriptor);
             }
         }
-        // Copy the stripped values using Object.defineProperty to be safe
-        for (const [key, val] of strippedValues) {
-            Object.defineProperty(result, key, {
+        // Copy the stripped values using Object.defineProperty to be safe. Walking `keys`
+        // keeps the original `Object.keys` order.
+        for (let i = 0; i < keys.length; i++) {
+            const val = strippedValues[i];
+            if (val === DROPPED) {
+                continue;
+            }
+            Object.defineProperty(result, keys[i], {
                 value: val,
                 writable: true,
                 enumerable: true,
