@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.2.0...loro-mirror-v2.2.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **core:** avoid double mirror startup traversal ([#86](https://github.com/loro-dev/loro-mirror/issues/86)) ([ab27615](https://github.com/loro-dev/loro-mirror/commit/ab2761507c60aa21376cc1311abb1e28d40c986c))
+* **core:** preserve $cid across Immer draft mutations ([#88](https://github.com/loro-dev/loro-mirror/issues/88)) ([2b9e335](https://github.com/loro-dev/loro-mirror/commit/2b9e335907d295025e300d199813591777a0cc60))
+
 ## [2.2.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.1.1...loro-mirror-v2.2.0) (2026-06-15)
 
 
