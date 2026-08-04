@@ -269,7 +269,26 @@ const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
  * Returns the original object if no undefined values are found.
  * Protects against prototype pollution by skipping unsafe keys.
  */
-export function stripUndefined<T>(value: T, path?: Set<unknown>): T {
+export function stripUndefined<T>(value: T): T {
+    return stripUndefinedInner(value, 0, undefined);
+}
+
+/**
+ * Depth at which we start recording the recursion path to detect cycles.
+ *
+ * This runs over the whole state on every `setState`, and tracking every node costs more
+ * than the stripping itself. Mirror state is a tree whose depth follows the schema, so a
+ * real state never gets near this; only a cycle recurses without bound. Once the path is
+ * being recorded, any cycle revisits one of its own nodes within a single lap, so starting
+ * late still terminates.
+ */
+const CYCLE_GUARD_DEPTH = 64;
+
+function stripUndefinedInner<T>(
+    value: T,
+    depth: number,
+    path: Set<unknown> | undefined,
+): T {
     if (value === undefined) {
         return value;
     }
@@ -277,20 +296,24 @@ export function stripUndefined<T>(value: T, path?: Set<unknown>): T {
         // A cycle can only be introduced through `schema.Ignore()` values, which are never
         // written to Loro. Leave such a subgraph exactly as it is rather than recursing
         // into it forever.
-        if ((path ??= new Set()).has(value)) return value;
-        path.add(value);
+        if (depth >= CYCLE_GUARD_DEPTH) {
+            if ((path ??= new Set()).has(value)) return value;
+            path.add(value);
+        }
         let hasChanges = false;
         const result = value.map((item) => {
-            const stripped = stripUndefined(item, path);
+            const stripped = stripUndefinedInner(item, depth + 1, path);
             if (stripped !== item) hasChanges = true;
             return stripped;
         });
-        path.delete(value);
+        path?.delete(value);
         return hasChanges ? (result as T) : value;
     }
     if (isObject(value)) {
-        if ((path ??= new Set()).has(value)) return value;
-        path.add(value);
+        if (depth >= CYCLE_GUARD_DEPTH) {
+            if ((path ??= new Set()).has(value)) return value;
+            path.add(value);
+        }
         // Check if any enumerable property is undefined or needs stripping
         let hasUndefined = false;
         let hasNestedChanges = false;
@@ -305,14 +328,14 @@ export function stripUndefined<T>(value: T, path?: Set<unknown>): T {
             if (val === undefined) {
                 hasUndefined = true;
             } else {
-                const stripped = stripUndefined(val, path);
+                const stripped = stripUndefinedInner(val, depth + 1, path);
                 strippedValues.set(key, stripped);
                 if (stripped !== val) {
                     hasNestedChanges = true;
                 }
             }
         }
-        path.delete(value);
+        path?.delete(value);
 
         // If no changes needed, return original object
         if (!hasUndefined && !hasNestedChanges) {
