@@ -4,7 +4,71 @@ import {
     getPathValue,
     setPathValue,
     isObject,
+    cidsEqual,
+    hardenCidDescriptors,
+    stripUndefined,
+    defineCidProperty,
 } from "../src/core/utils.js";
+import type { ContainerID } from "loro-crdt";
+import { CID_KEY } from "../src/constants.js";
+
+/**
+ * `schema.Ignore()` fields hold arbitrary user objects, which may be cyclic. Every helper
+ * that walks the state tree has to terminate on them instead of overflowing the stack.
+ */
+const makeCyclic = () => {
+    const node: Record<string, unknown> = { name: "n" };
+    node.self = node;
+    return node;
+};
+
+describe("cyclic values in state (schema.Ignore payloads)", () => {
+    it("stripUndefined leaves a cyclic subgraph alone", () => {
+        const cyclic = makeCyclic();
+        const state = { keep: 1, drop: undefined, ignored: cyclic };
+        const result = stripUndefined(state) as Record<string, unknown>;
+        expect(Object.keys(result)).toEqual(["keep", "ignored"]);
+        expect(result.ignored).toBe(cyclic);
+    });
+
+    it("cidsEqual terminates on cyclic values", () => {
+        const shared = makeCyclic();
+        expect(cidsEqual({ ignored: shared }, { ignored: shared })).toBe(true);
+        // Two structurally identical but distinct cyclic graphs.
+        expect(cidsEqual({ ignored: makeCyclic() }, { ignored: makeCyclic() })).toBe(
+            true,
+        );
+    });
+
+    it("cidsEqual still reports a $cid mismatch below a cyclic value", () => {
+        const a: Record<string, unknown> = { m: {}, ignored: makeCyclic() };
+        const b: Record<string, unknown> = { m: {}, ignored: makeCyclic() };
+        defineCidProperty(a.m, "cid:0@1:Map" as ContainerID);
+        defineCidProperty(b.m, "cid:9@1:Map" as ContainerID);
+        expect(cidsEqual(a, b)).toBe(false);
+    });
+
+    it("hardenCidDescriptors terminates on cyclic values and still re-locks", () => {
+        const cyclic = makeCyclic();
+        const item: Record<string, unknown> = { text: "t" };
+        // Mimic Immer's strict shallow copy: preserved but no longer read-only.
+        Object.defineProperty(item, CID_KEY, {
+            value: "cid:0@1:Map",
+            writable: true,
+            enumerable: false,
+            configurable: true,
+        });
+
+        hardenCidDescriptors({ item, ignored: cyclic }, undefined);
+
+        expect(Object.getOwnPropertyDescriptor(item, CID_KEY)).toEqual({
+            value: "cid:0@1:Map",
+            writable: false,
+            enumerable: false,
+            configurable: false,
+        });
+    });
+});
 
 describe("Utility Functions", () => {
     describe("isObject", () => {

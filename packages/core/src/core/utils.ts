@@ -209,18 +209,29 @@ export function defineCidProperty(target: unknown, cid: ContainerID) {
  * `prev` cannot have been touched and are skipped. That keeps this walk proportional to
  * what Immer actually copied rather than to the size of the state.
  */
-export function hardenCidDescriptors(next: unknown, prev: unknown): void {
+export function hardenCidDescriptors(
+    next: unknown,
+    prev: unknown,
+    visited?: Set<unknown>,
+): void {
     if (next === prev) return;
 
     if (Array.isArray(next)) {
+        // `schema.Ignore()` may hold arbitrary user objects, including cyclic ones.
+        // Hardening depends only on `next`, so visiting an object once is enough and a
+        // persistent set both terminates cycles and skips re-walking shared subgraphs.
+        if ((visited ??= new Set()).has(next)) return;
+        visited.add(next);
         const prevArr = Array.isArray(prev) ? prev : undefined;
         for (let i = 0; i < next.length; i++) {
-            hardenCidDescriptors(next[i], prevArr?.[i]);
+            hardenCidDescriptors(next[i], prevArr?.[i], visited);
         }
         return;
     }
 
     if (!isObject(next)) return;
+    if ((visited ??= new Set()).has(next)) return;
+    visited.add(next);
 
     const descriptor = Object.getOwnPropertyDescriptor(next, CID_KEY);
     // A correctly locked `$cid` is non-configurable, so this is a no-op for state that
@@ -237,7 +248,7 @@ export function hardenCidDescriptors(next: unknown, prev: unknown): void {
 
     const prevObj = isObject(prev) ? prev : undefined;
     for (const key of Object.keys(next)) {
-        hardenCidDescriptors(next[key], prevObj?.[key]);
+        hardenCidDescriptors(next[key], prevObj?.[key], visited);
     }
 }
 
@@ -258,20 +269,28 @@ const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
  * Returns the original object if no undefined values are found.
  * Protects against prototype pollution by skipping unsafe keys.
  */
-export function stripUndefined<T>(value: T): T {
+export function stripUndefined<T>(value: T, path?: Set<unknown>): T {
     if (value === undefined) {
         return value;
     }
     if (Array.isArray(value)) {
+        // A cycle can only be introduced through `schema.Ignore()` values, which are never
+        // written to Loro. Leave such a subgraph exactly as it is rather than recursing
+        // into it forever.
+        if ((path ??= new Set()).has(value)) return value;
+        path.add(value);
         let hasChanges = false;
         const result = value.map((item) => {
-            const stripped = stripUndefined(item);
+            const stripped = stripUndefined(item, path);
             if (stripped !== item) hasChanges = true;
             return stripped;
         });
+        path.delete(value);
         return hasChanges ? (result as T) : value;
     }
     if (isObject(value)) {
+        if ((path ??= new Set()).has(value)) return value;
+        path.add(value);
         // Check if any enumerable property is undefined or needs stripping
         let hasUndefined = false;
         let hasNestedChanges = false;
@@ -286,13 +305,14 @@ export function stripUndefined<T>(value: T): T {
             if (val === undefined) {
                 hasUndefined = true;
             } else {
-                const stripped = stripUndefined(val);
+                const stripped = stripUndefined(val, path);
                 strippedValues.set(key, stripped);
                 if (stripped !== val) {
                     hasNestedChanges = true;
                 }
             }
         }
+        path.delete(value);
 
         // If no changes needed, return original object
         if (!hasUndefined && !hasNestedChanges) {
@@ -396,11 +416,22 @@ export function deepEqual(a: unknown, b: unknown): boolean {
  * or stale `$cid` is reported as a divergence instead of silently sitting in the state.
  * Only the markers are compared here; value equality is `deepEqual`'s job.
  */
-export function cidsEqual(a: unknown, b: unknown): boolean {
+export function cidsEqual(
+    a: unknown,
+    b: unknown,
+    seen?: Map<unknown, Set<unknown>>,
+): boolean {
+    // Identical references share every `$cid` below them. This also short-circuits
+    // `schema.Ignore()` values, which `buildRootStateSnapshot` carries over by reference
+    // and which may be arbitrary user objects, including cyclic ones.
+    if (a === b) return true;
+
     if (Array.isArray(a) && Array.isArray(b)) {
         if (a.length !== b.length) return false;
+        const marks = markSeen(a, b, (seen ??= new Map()));
+        if (marks === "seen") return true;
         for (let i = 0; i < a.length; i++) {
-            if (!cidsEqual(a[i], b[i])) return false;
+            if (!cidsEqual(a[i], b[i], seen)) return false;
         }
         return true;
     }
@@ -409,12 +440,31 @@ export function cidsEqual(a: unknown, b: unknown): boolean {
 
     if (a[CID_KEY] !== b[CID_KEY]) return false;
 
+    // Two distinct but mutually cyclic graphs would otherwise recurse forever; treat a
+    // pair already under comparison as equal, the usual deep-comparison convention.
+    if (markSeen(a, b, (seen ??= new Map())) === "seen") return true;
+
     for (const key of Object.keys(a)) {
         if (!Object.prototype.hasOwnProperty.call(b, key)) continue;
-        if (!cidsEqual(a[key], b[key])) return false;
+        if (!cidsEqual(a[key], b[key], seen)) return false;
     }
 
     return true;
+}
+
+function markSeen(
+    a: unknown,
+    b: unknown,
+    seen: Map<unknown, Set<unknown>>,
+): "seen" | "new" {
+    let partners = seen.get(a);
+    if (!partners) {
+        partners = new Set();
+        seen.set(a, partners);
+    }
+    if (partners.has(b)) return "seen";
+    partners.add(b);
+    return "new";
 }
 
 /**

@@ -302,6 +302,38 @@ describe("$cid survives Immer draft mutation", () => {
         expect(docB.toJSON()).toEqual(docA.toJSON());
     });
 
+    it("survives a cyclic schema.Ignore value, with and without the consistency check", () => {
+        const cyclicSchema = () => {
+            const ignored: Record<string, unknown> = {};
+            ignored.self = ignored;
+            return schema({
+                settings: schema.LoroMap({ value: schema.String() }),
+                // Root-level Ignore is not part of `ContainerSchemaType`; same cast the
+                // existing Ignore regression tests use.
+                ignored: schema.Ignore({ defaultValue: ignored }) as never,
+            });
+        };
+
+        for (const checkStateConsistency of [false, true]) {
+            const doc = new LoroDoc();
+            const mirror = new Mirror({
+                doc,
+                schema: cyclicSchema(),
+                checkStateConsistency,
+            });
+
+            expect(() => {
+                mirror.setState((draft) => {
+                    draft.settings.value = "x";
+                });
+            }).not.toThrow();
+            expect(doc.toJSON()).toEqual({ settings: { value: "x" } });
+            // The ignored payload is untouched and still cyclic.
+            const ignored = mirror.getState().ignored as Record<string, unknown>;
+            expect(ignored.self).toBe(ignored);
+        }
+    });
+
     it("README quickstart toggle preserves container identity", () => {
         const doc = new LoroDoc();
         const mirror = new Mirror({
