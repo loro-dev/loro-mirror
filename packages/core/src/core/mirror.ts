@@ -57,6 +57,7 @@ import {
     getChildContainerSchema,
     getChildSchema,
     getMapFieldSchema,
+    isUnknownMapKey,
 } from "../schema/resolver.js";
 import {
     deepEqual,
@@ -824,17 +825,34 @@ export class Mirror<S extends SchemaType> {
     private normalizeLoroEventBatch(event: LoroEventBatch): LoroEventBatch {
         return {
             ...event,
-            events: event.events.map((e) => {
-                const canon = this.rootPathById.get(e.target);
-                if (
-                    canon &&
-                    (!Array.isArray(e.path) || e.path[0] !== canon[0])
-                ) {
-                    return { ...e, path: canon } as typeof e;
-                }
-                return e;
-            }),
+            events: event.events
+                .filter((e) => this.isDeclaredRootEvent(e))
+                .map((e) => {
+                    const canon = this.rootPathById.get(e.target);
+                    if (
+                        canon &&
+                        (!Array.isArray(e.path) || e.path[0] !== canon[0])
+                    ) {
+                        return { ...e, path: canon } as typeof e;
+                    }
+                    return e;
+                }),
         } as LoroEventBatch;
+    }
+
+    /**
+     * Forward compatibility: events rooted at a doc key the schema does not
+     * declare (typically written by a newer schema version) must not reach
+     * Mirror state at all — the unknown subtree is owned by peers whose
+     * schema declares it.
+     */
+    private isDeclaredRootEvent(e: LoroEventBatch["events"][number]): boolean {
+        if (!this.schema || this.schema.type !== "schema") return true;
+        const canon = this.rootPathById.get(e.target);
+        const rootKey =
+            canon?.[0] ?? (Array.isArray(e.path) ? e.path[0] : undefined);
+        if (rootKey === undefined) return true;
+        return !isUnknownMapKey(this.schema, String(rootKey));
     }
 
     private applyNormalizedLoroEventToState(
@@ -863,6 +881,12 @@ export class Mirror<S extends SchemaType> {
                 },
                 getSchemaForKey: (containerId, mapKey) => {
                     return getChildSchema(
+                        this.getContainerSchema(containerId),
+                        mapKey,
+                    );
+                },
+                shouldIncludeMapKey: (containerId, mapKey) => {
+                    return !isUnknownMapKey(
                         this.getContainerSchema(containerId),
                         mapKey,
                     );
@@ -1166,16 +1190,30 @@ export class Mirror<S extends SchemaType> {
      * Update root-level fields
      */
     private applyRootChanges(changes: Change[], pendingState?: InferType<S>) {
+        const rootSchema =
+            this.schema && this.schema.type === "schema"
+                ? (this.schema as RootSchemaType<
+                      Record<string, ContainerSchemaType>
+                  >)
+                : undefined;
         for (const change of changes) {
             if (!hasKeyProp(change)) continue;
             const { key, value } = change;
             const keyStr = key.toString();
 
-            const fieldSchema = (
-                this.schema as RootSchemaType<
-                    Record<string, ContainerSchemaType>
-                >
-            )?.definition?.[keyStr];
+            // Forward compatibility: never create, overwrite, or delete doc
+            // root keys the schema does not declare. They belong to peers
+            // with a newer schema and must be preserved untouched.
+            if (rootSchema && isUnknownMapKey(rootSchema, keyStr)) {
+                if (this.options.debug) {
+                    console.warn(
+                        `Skipping write to unknown root key: ${keyStr}`,
+                    );
+                }
+                continue;
+            }
+
+            const fieldSchema = rootSchema?.definition?.[keyStr];
             const type =
                 fieldSchema?.type ||
                 inferContainerTypeFromValue(value, this.options?.inferOptions);
@@ -2372,8 +2410,11 @@ export class Mirror<S extends SchemaType> {
             currentKeys.delete(key);
         }
 
-        // Delete keys that are no longer present
+        // Delete keys that are no longer present. Keys the schema does not
+        // declare are preserved: they belong to peers with a newer schema
+        // (forward compatibility).
         for (const key of currentKeys) {
+            if (isUnknownMapKey(schema, key)) continue;
             map.delete(key);
         }
     }
@@ -2731,6 +2772,10 @@ export class Mirror<S extends SchemaType> {
                 : undefined;
             defineCidProperty(obj, c.id);
             for (const k of m.keys()) {
+                // Forward compatibility: keys not declared by a fixed map
+                // schema stay out of state, so they are never validated,
+                // diffed, or written back by this peer.
+                if (isUnknownMapKey(schema, k)) continue;
                 const v = m.get(k);
                 if (isContainer(v)) {
                     if (childRegistrationContext) {
@@ -2796,6 +2841,12 @@ export class Mirror<S extends SchemaType> {
             const schema = this.getContainerSchema(t.id);
             const withCid = schema && isLoroTreeSchema(schema);
             if (withCid) {
+                // Keep node.data keys unknown to a fixed map nodeSchema out of
+                // state (forward compatibility with newer schema versions).
+                pruneUnknownTreeNodeDataKeys(
+                    normalized,
+                    schema.nodeSchema as SchemaType | undefined,
+                );
                 const idToCid = new Map<string, string>();
                 // Best-effort: collect from runtime nodes if API available
                 const tMaybe = t as unknown as { getNodes?: () => unknown[] };
@@ -3014,7 +3065,7 @@ export class Mirror<S extends SchemaType> {
 // replacer), which corrupts nested `$cid` markers. Prefixing the id makes it an
 // invalid container id so it is left untouched; `restoreCidDescriptors` strips
 // the prefix afterwards.
-const CID_PLACEHOLDER_PREFIX = " mirror:cid ";
+const CID_PLACEHOLDER_PREFIX = "\x00mirror:cid\x00";
 
 export function toNormalizedJson(doc: LoroDoc) {
     // Resolve containers ourselves rather than relying on `toJsonWithReplacer`'s
@@ -3131,6 +3182,30 @@ function normalizeTreeJsonForMirror(input: unknown) {
         isTreeData: isObject,
         createEmptyData: () => ({}),
     });
+}
+
+/**
+ * Drop node.data keys that a fixed map nodeSchema does not declare, so
+ * unknown fields written by newer schema versions stay out of Mirror state
+ * (and are therefore never deleted or overwritten on write-back).
+ */
+function pruneUnknownTreeNodeDataKeys(
+    nodes: unknown,
+    nodeSchema: SchemaType | undefined,
+) {
+    if (!Array.isArray(nodes)) return;
+    for (const node of nodes) {
+        if (!isObject(node)) continue;
+        const data = node.data;
+        if (isObject(data)) {
+            for (const key of Object.keys(data)) {
+                if (isUnknownMapKey(nodeSchema, key)) {
+                    delete data[key];
+                }
+            }
+        }
+        pruneUnknownTreeNodeDataKeys(node.children, nodeSchema);
+    }
 }
 
 // Deep merge initialState into a base state with awareness of the provided root schema.

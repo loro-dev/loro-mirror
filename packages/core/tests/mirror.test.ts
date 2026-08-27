@@ -163,13 +163,17 @@ describe("Mirror - State Consistency", () => {
         todoMap.set("2", { id: "2", text: "Write tests", completed: true });
         doc.commit(); // Commit changes to the doc
 
-        // Define schema
+        // Define schema. The map holds arbitrary keys, so it must use
+        // LoroMapRecord — a fixed LoroMap schema treats undeclared keys as
+        // unknown and intentionally leaves them out of Mirror state.
         const todoSchema = schema({
-            todos: schema.LoroMap({
-                id: schema.String(),
-                text: schema.String(),
-                completed: schema.Boolean(),
-            }),
+            todos: schema.LoroMapRecord(
+                schema.LoroMap({
+                    id: schema.String(),
+                    text: schema.String(),
+                    completed: schema.Boolean(),
+                }),
+            ),
         });
 
         // Create mirror

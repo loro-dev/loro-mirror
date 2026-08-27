@@ -22,7 +22,7 @@ import {
     SchemaType,
     type InferContainerOptions,
 } from "../schema/index.js";
-import { getMapFieldSchema } from "../schema/resolver.js";
+import { getMapFieldSchema, isUnknownMapKey } from "../schema/resolver.js";
 import { ChangeKinds, type Change } from "./mirror.js";
 import { CID_KEY } from "../constants.js";
 
@@ -1250,6 +1250,12 @@ export function diffMap<S extends ObjectLike>(
         if (key === CID_KEY) {
             continue;
         }
+        // Skip keys a fixed map schema does not declare: they are owned by
+        // peers with a newer schema version and must never be deleted here
+        // (forward compatibility).
+        if (isUnknownMapKey(schema, key)) {
+            continue;
+        }
         // Skip ignored fields defined in schema
         const childSchemaForDelete = getMapFieldSchema(schema, key);
         if (childSchemaForDelete && childSchemaForDelete.type === "ignore") {
@@ -1269,6 +1275,12 @@ export function diffMap<S extends ObjectLike>(
     for (const key in newStateObj) {
         // Skip synthetic CID field for maps
         if (key === CID_KEY) {
+            continue;
+        }
+        // Skip keys a fixed map schema does not declare: they are owned by
+        // peers with a newer schema version and must never be written here
+        // (forward compatibility).
+        if (isUnknownMapKey(schema, key)) {
             continue;
         }
         const oldItem = oldStateObj[key];

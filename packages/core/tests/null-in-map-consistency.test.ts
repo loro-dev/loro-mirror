@@ -7,6 +7,7 @@ describe("setState consistency with null fields in LoroMap", () => {
         const withSchema = schema({
             m: schema.LoroMap({
                 nested: schema.LoroMap({}),
+                other: schema.Number({ required: false }),
             }),
         });
 
@@ -32,7 +33,7 @@ describe("setState consistency with null fields in LoroMap", () => {
         expect(() => {
             mirror.setState((s) => {
                 // write a new primitive field alongside nested
-                (s as any).m["other"] = 1;
+                s.m.other = 1;
             });
         }).not.toThrow();
 

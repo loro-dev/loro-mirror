@@ -63,6 +63,15 @@ export function applyEventBatchToState<T extends object>(
                   containerId: ContainerID,
                   mapKey?: string,
               ) => SchemaType | undefined;
+              /**
+               * Return false to skip a map key entirely (e.g. keys not declared
+               * by a fixed map schema, which must stay out of Mirror state).
+               * Defaults to including every key.
+               */
+              shouldIncludeMapKey?: (
+                  containerId: ContainerID,
+                  mapKey: string,
+              ) => boolean;
           },
 ): T {
     const opts =
@@ -81,6 +90,7 @@ export function applyEventBatchToState<T extends object>(
                 opts.nodeDataWithCid,
                 opts.getNodeDataCid,
                 opts.getSchemaForKey,
+                opts.shouldIncludeMapKey,
             );
         }
     })(currentState);
@@ -108,6 +118,7 @@ function applySingleEventToDraft(
         containerId: ContainerID,
         mapKey?: string,
     ) => SchemaType | undefined,
+    shouldIncludeMapKey?: (containerId: ContainerID, mapKey: string) => boolean,
 ) {
     if (isIgnoredByAncestor(e.target, ignoreSet, getContainerById)) {
         return;
@@ -165,6 +176,7 @@ function applySingleEventToDraft(
                     ignoreSet,
                     containerToMirrorState,
                     getSchemaForKey,
+                    shouldIncludeMapKey,
                 );
             }
             break;
@@ -404,9 +416,16 @@ function applyMapDiff(
         containerId: ContainerID,
         mapKey?: string,
     ) => SchemaType | undefined,
+    shouldIncludeMapKey?: (containerId: ContainerID, mapKey: string) => boolean,
 ) {
     if (!isJSONObject(targetObj)) return;
     for (const [k, v] of Object.entries(updated)) {
+        // Keys not declared by a fixed map schema stay out of Mirror state;
+        // their doc content is managed by peers that declare them.
+        if (shouldIncludeMapKey && !shouldIncludeMapKey(containerId, k)) {
+            continue;
+        }
+
         // In Loro map diffs, `undefined` signals deletion. `null` is a valid value
         // and must be preserved.
         if (v === undefined) {
