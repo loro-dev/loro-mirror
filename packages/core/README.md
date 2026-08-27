@@ -70,11 +70,12 @@ Trees are advanced usage; see Advanced: Trees at the end.
 
 ### Mirror
 
-- Constructor: `new Mirror({ doc, schema?, initialState?, validateUpdates?=true, debug?=false, checkStateConsistency?=false, inferOptions? })`
+- Constructor: `new Mirror({ doc, schema?, initialState?, validateUpdates?=true, ignoreUnknownProperties?=false, debug?=false, checkStateConsistency?=false, inferOptions? })`
     - doc: LoroDoc to sync with
     - schema: Root schema; enables validation and typed defaults
     - initialState: Shallow-merged over schema defaults and current doc JSON
     - validateUpdates: Validate on `setState`
+    - ignoreUnknownProperties: Tolerate doc properties the schema does not declare (e.g. written by newer schema versions): undeclared root keys are mirrored into state and `validateUpdates` no longer fails on `Unknown property`. State stays the source of truth — unknown keys removed from state are deleted from the doc as usual.
     - debug: Verbose logging
     - checkStateConsistency: Extra runtime check that the doc-backed base state still matches `toNormalizedJson(doc)` after non-ephemeral `setState` updates
     - inferOptions: `{ defaultLoroText?: boolean; defaultMovableList?: boolean; mergeableMapChildContainers?: boolean }` for container inference and Map child-container creation
