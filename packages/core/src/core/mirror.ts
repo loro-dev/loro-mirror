@@ -3014,7 +3014,7 @@ export class Mirror<S extends SchemaType> {
 // replacer), which corrupts nested `$cid` markers. Prefixing the id makes it an
 // invalid container id so it is left untouched; `restoreCidDescriptors` strips
 // the prefix afterwards.
-const CID_PLACEHOLDER_PREFIX = " mirror:cid ";
+const CID_PLACEHOLDER_PREFIX = "\x00mirror:cid\x00";
 
 export function toNormalizedJson(doc: LoroDoc) {
     // Resolve containers ourselves rather than relying on `toJsonWithReplacer`'s
