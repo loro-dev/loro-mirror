@@ -169,6 +169,27 @@ export interface MirrorOptions<S extends SchemaType> {
     validateUpdates?: boolean;
 
     /**
+     * Tolerate doc properties the schema does not declare — typically written
+     * by peers running a newer schema version (forward compatibility).
+     *
+     * When enabled:
+     * - Root keys missing from `schema.definition` are mirrored into state
+     *   from every read path (initial snapshot and incremental events), just
+     *   like the incremental event path already does by default. Unknown
+     *   child keys of declared maps were always mirrored; that is unchanged.
+     * - `validateUpdates` no longer rejects state with `Unknown property`
+     *   errors for undeclared properties.
+     *
+     * State remains the source of truth for write-backs: an unknown key is
+     * written back to the doc as long as it stays in state, and is deleted
+     * from the doc if an update removes it from state — the same semantics
+     * as any other key. No special preservation is applied.
+     *
+     * @default false
+     */
+    ignoreUnknownProperties?: boolean;
+
+    /**
      * Debug mode - logs operations
      * @default false
      */
@@ -420,6 +441,7 @@ export class Mirror<S extends SchemaType> {
             schema: options.schema,
             initialState: options.initialState || {},
             validateUpdates: options.validateUpdates !== false,
+            ignoreUnknownProperties: options.ignoreUnknownProperties || false,
             debug: options.debug || false,
             checkStateConsistency: options.checkStateConsistency || false,
             inferOptions: options.inferOptions || {},
@@ -2614,7 +2636,11 @@ export class Mirror<S extends SchemaType> {
         // Validate state if needed
         if (this.options.validateUpdates) {
             const validation =
-                this.schema && validateSchema(this.schema, newState);
+                this.schema &&
+                validateSchema(this.schema, newState, {
+                    ignoreUnknownProperties:
+                        this.options.ignoreUnknownProperties,
+                });
             if (validation && !validation.valid) {
                 const errorMessage = `State validation failed: ${validation.errors?.join(
                     ", ",
@@ -2915,6 +2941,28 @@ export class Mirror<S extends SchemaType> {
                 root[key] = this.containerToMirrorState(container, options);
             }
         }
+
+        // With ignoreUnknownProperties, also mirror doc root keys the schema
+        // does not declare (e.g. written by peers on a newer schema version),
+        // so state stays consistent with the incremental event path — which
+        // always applies them — instead of deleting them on the next write.
+        if (this.options.ignoreUnknownProperties) {
+            const fullDocState = toNormalizedJson(this.doc) as Record<
+                string,
+                unknown
+            >;
+            for (const key of Object.keys(fullDocState)) {
+                if (
+                    Object.prototype.hasOwnProperty.call(
+                        rootSchema.definition,
+                        key,
+                    )
+                ) {
+                    continue;
+                }
+                root[key] = fullDocState[key];
+            }
+        }
         return root;
     }
 
@@ -3014,7 +3062,7 @@ export class Mirror<S extends SchemaType> {
 // replacer), which corrupts nested `$cid` markers. Prefixing the id makes it an
 // invalid container id so it is left untouched; `restoreCidDescriptors` strips
 // the prefix afterwards.
-const CID_PLACEHOLDER_PREFIX = " mirror:cid ";
+const CID_PLACEHOLDER_PREFIX = "\x00mirror:cid\x00";
 
 export function toNormalizedJson(doc: LoroDoc) {
     // Resolve containers ourselves rather than relying on `toJsonWithReplacer`'s

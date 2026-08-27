@@ -125,10 +125,16 @@ export function isContainerSchema(
 
 /**
  * Validate a value against a schema
+ *
+ * When `options.ignoreUnknownProperties` is true, the root schema check does
+ * not reject properties missing from the schema definition — typically
+ * written by peers on a newer schema version. (Nested map schemas never
+ * reject undeclared properties.)
  */
 export function validateSchema<S extends SchemaType>(
     schema: S,
     value: unknown,
+    options?: { ignoreUnknownProperties?: boolean },
 ): { valid: boolean; errors?: string[] } {
     const errors: string[] = [];
     const actualType = (schema as BaseSchemaType).type;
@@ -144,7 +150,12 @@ export function validateSchema<S extends SchemaType>(
         return { valid: true };
     }
 
-    if (isSchemaValidated(schema, value)) {
+    // The result depends on `options`, so bypass the schema-only validation
+    // cache when tolerating unknown properties: a value cached as valid here
+    // must not pass a later strict validation of the same object (and vice
+    // versa).
+    const useCache = !options?.ignoreUnknownProperties;
+    if (useCache && isSchemaValidated(schema, value)) {
         return { valid: true };
     }
 
@@ -325,6 +336,7 @@ export function validateSchema<S extends SchemaType>(
                                 key,
                             )
                         ) {
+                            if (options?.ignoreUnknownProperties) continue;
                             errors.push(`Unknown property: ${key}`);
                         }
                     }
@@ -360,7 +372,7 @@ export function validateSchema<S extends SchemaType>(
     }
 
     if (errors.length === 0) {
-        markSchemaValidated(schema, value);
+        if (useCache) markSchemaValidated(schema, value);
         return { valid: true };
     }
 

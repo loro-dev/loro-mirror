@@ -435,6 +435,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
     - **`schema`**: root schema – optional but recommended for strong typing and validation.
     - **`initialState`**: partial state – merged with schema defaults and current doc JSON.
     - **`validateUpdates`**: boolean (default `true`) – validate new state against schema.
+    - **`ignoreUnknownProperties`**: boolean (default `false`) – tolerate doc properties the schema does not declare (e.g. written by peers on a newer schema version): undeclared root keys are mirrored into state and `validateUpdates` no longer fails with `Unknown property`. State remains the source of truth — an unknown key removed from state is deleted from the doc as usual.
     - **`debug`**: boolean (default `false`) – log diffs and applied changes.
     - **`checkStateConsistency`**: boolean (default `false`) – after non-ephemeral `setState` calls, assert the doc-backed base state equals the normalized `LoroDoc` snapshot.
     - **`inferOptions`**: `{ defaultLoroText?: boolean; defaultMovableList?: boolean; mergeableMapChildContainers?: boolean }` – influence container-type inference and Map child-container creation.

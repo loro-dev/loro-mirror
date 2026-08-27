@@ -342,7 +342,7 @@ function stripUndefinedInner<T>(
         // object, and reading an accessor twice would both run its getter twice and store
         // the second, un-stripped read.
         const keys = Object.keys(value);
-        const strippedValues: unknown[] = new Array(keys.length);
+        const strippedValues: unknown[] = Array.from({ length: keys.length });
         let changed = false;
 
         for (let i = 0; i < keys.length; i++) {
