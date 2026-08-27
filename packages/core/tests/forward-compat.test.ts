@@ -301,16 +301,27 @@ describe("forward compatibility with unknown root keys", () => {
     });
 
     it("ignores unknown keys in tree node data and preserves them on write", () => {
+        // Covers both direct unknown node.data keys and unknown keys nested
+        // inside a declared LoroMap field of node.data.
         const newTreeSchema = schema({
             tree: schema.LoroTree(
                 schema.LoroMap({
-                    name: schema.String(),
+                    title: schema.String(),
                     extra: schema.String(),
+                    metadata: schema.LoroMap({
+                        known: schema.String(),
+                        extra: schema.String(),
+                    }),
                 }),
             ),
         });
         const oldTreeSchema = schema({
-            tree: schema.LoroTree(schema.LoroMap({ name: schema.String() })),
+            tree: schema.LoroTree(
+                schema.LoroMap({
+                    title: schema.String(),
+                    metadata: schema.LoroMap({ known: schema.String() }),
+                }),
+            ),
         });
 
         const docNew = new LoroDoc();
@@ -319,30 +330,45 @@ describe("forward compatibility with unknown root keys", () => {
             tree: [
                 {
                     id: "",
-                    data: { name: "root", extra: "new-only" },
+                    data: {
+                        title: "t",
+                        extra: "new-only",
+                        metadata: { known: "k", extra: "nested-x" },
+                    },
                     children: [],
                 },
             ],
         });
+        const metadataId = (
+            docNew.getTree("tree").getNodes()[0].data.get("metadata") as LoroMap
+        ).id;
 
         const docOld = new LoroDoc();
         docOld.import(docNew.export({ mode: "snapshot" }));
         const mirrorOld = new Mirror({ doc: docOld, schema: oldTreeSchema });
 
-        // Unknown node.data keys are not mirrored into state.
+        // Unknown node.data keys are not mirrored into state — neither at the
+        // top level nor inside declared nested maps.
         const treeState = mirrorOld.getState().tree as Array<{
             data: Record<string, unknown>;
         }>;
-        expect(treeState[0].data).toEqual({ name: "root" });
+        expect(treeState[0].data).toEqual({
+            title: "t",
+            metadata: { known: "k" },
+        });
 
-        // Renaming the node preserves the unknown data field in the doc.
+        // Renaming the node preserves the unknown data fields in the doc,
+        // including the nested container and its identity.
         mirrorOld.setState((s) => {
-            (s.tree as Array<{ data: { name: string } }>)[0].data.name =
+            (s.tree as Array<{ data: { title: string } }>)[0].data.title =
                 "renamed";
         });
         const node = docOld.getTree("tree").getNodes()[0];
-        expect(node.data.get("name")).toBe("renamed");
+        expect(node.data.get("title")).toBe("renamed");
         expect(node.data.get("extra")).toBe("new-only");
+        const metadata = node.data.get("metadata") as LoroMap;
+        expect(metadata.id).toBe(metadataId);
+        expect(metadata.toJSON()).toEqual({ known: "k", extra: "nested-x" });
         mirrorNew.dispose();
     });
 });

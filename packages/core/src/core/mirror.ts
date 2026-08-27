@@ -2841,12 +2841,10 @@ export class Mirror<S extends SchemaType> {
             const schema = this.getContainerSchema(t.id);
             const withCid = schema && isLoroTreeSchema(schema);
             if (withCid) {
-                // Keep node.data keys unknown to a fixed map nodeSchema out of
-                // state (forward compatibility with newer schema versions).
-                pruneUnknownTreeNodeDataKeys(
-                    normalized,
-                    schema.nodeSchema as SchemaType | undefined,
-                );
+                // Keep keys unknown to fixed-shape schemas out of state —
+                // at the node.data level and inside any declared nested
+                // containers (forward compatibility with newer schemas).
+                pruneUnknownKeysFromJson(normalized, schema);
                 const idToCid = new Map<string, string>();
                 // Best-effort: collect from runtime nodes if API available
                 const tMaybe = t as unknown as { getNodes?: () => unknown[] };
@@ -3185,26 +3183,54 @@ function normalizeTreeJsonForMirror(input: unknown) {
 }
 
 /**
- * Drop node.data keys that a fixed map nodeSchema does not declare, so
- * unknown fields written by newer schema versions stay out of Mirror state
- * (and are therefore never deleted or overwritten on write-back).
+ * Drop keys that fixed-shape map schemas do not declare from a JSON snapshot,
+ * recursing through declared container fields (maps, lists, trees) so unknown
+ * fields written by newer schema versions stay out of Mirror state (and are
+ * therefore never deleted or overwritten on write-back).
  */
-function pruneUnknownTreeNodeDataKeys(
-    nodes: unknown,
-    nodeSchema: SchemaType | undefined,
-) {
-    if (!Array.isArray(nodes)) return;
-    for (const node of nodes) {
-        if (!isObject(node)) continue;
-        const data = node.data;
-        if (isObject(data)) {
-            for (const key of Object.keys(data)) {
-                if (isUnknownMapKey(nodeSchema, key)) {
-                    delete data[key];
+function pruneUnknownKeysFromJson(
+    json: unknown,
+    schema: SchemaType | undefined,
+): void {
+    if (json === null || json === undefined || !schema) return;
+
+    switch (schema.type) {
+        case "schema":
+        case "loro-map": {
+            if (!isObject(json)) return;
+            for (const key of Object.keys(json)) {
+                if (isUnknownMapKey(schema, key)) {
+                    delete json[key];
+                    continue;
                 }
+                pruneUnknownKeysFromJson(
+                    json[key],
+                    getChildSchema(schema, key),
+                );
             }
+            return;
         }
-        pruneUnknownTreeNodeDataKeys(node.children, nodeSchema);
+        case "loro-list":
+        case "loro-movable-list": {
+            if (!Array.isArray(json)) return;
+            const itemSchema = getChildSchema(schema);
+            for (const item of json) {
+                pruneUnknownKeysFromJson(item, itemSchema);
+            }
+            return;
+        }
+        case "loro-tree": {
+            if (!Array.isArray(json)) return;
+            const nodeSchema = getChildSchema(schema);
+            for (const node of json) {
+                if (!isObject(node)) continue;
+                pruneUnknownKeysFromJson(node.data, nodeSchema);
+                pruneUnknownKeysFromJson(node.children, schema);
+            }
+            return;
+        }
+        default:
+            return;
     }
 }
 
