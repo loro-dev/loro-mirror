@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.2.1...loro-mirror-v2.3.0) (2026-08-27)
+
+
+### Features
+
+* **core:** add ignoreUnknownProperties option for forward compatibility ([#90](https://github.com/loro-dev/loro-mirror/issues/90)) ([a215de8](https://github.com/loro-dev/loro-mirror/commit/a215de82f7b50584d44a25add4bfcccb0c43dc4c))
+
 ## [2.2.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.2.0...loro-mirror-v2.2.1) (2026-08-04)
 
 
