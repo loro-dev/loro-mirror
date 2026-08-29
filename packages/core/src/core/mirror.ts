@@ -2947,11 +2947,10 @@ export class Mirror<S extends SchemaType> {
         // so state stays consistent with the incremental event path — which
         // always applies them — instead of deleting them on the next write.
         if (this.options.ignoreUnknownProperties) {
-            const fullDocState = toNormalizedJson(this.doc) as Record<
-                string,
-                unknown
-            >;
-            for (const key of Object.keys(fullDocState)) {
+            // LoroDoc roots are always containers, so this returns only
+            // root key -> container id without descending into their values.
+            const shallowDocState = this.doc.getShallowValue();
+            for (const [key, containerId] of Object.entries(shallowDocState)) {
                 if (
                     Object.prototype.hasOwnProperty.call(
                         rootSchema.definition,
@@ -2960,7 +2959,17 @@ export class Mirror<S extends SchemaType> {
                 ) {
                     continue;
                 }
-                root[key] = fullDocState[key];
+
+                const container = this.doc.getContainerById(containerId);
+                if (!container) {
+                    // Match toJsonWithReplacer's error for an unresolved
+                    // container id so this optimization does not hide a
+                    // corrupt or inconsistent document state.
+                    throw new Error(`ContainerID not found: ${containerId}`);
+                }
+                root[key] = restoreCidDescriptors(
+                    normalizeContainerForJson(container),
+                );
             }
         }
         return root;

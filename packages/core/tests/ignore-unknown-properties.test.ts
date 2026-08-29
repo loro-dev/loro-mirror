@@ -14,8 +14,8 @@
  * With the option disabled (default), behavior is exactly the pre-existing
  * one.
  */
-import { describe, it, expect } from "vitest";
-import { LoroDoc, LoroMap } from "loro-crdt";
+import { describe, it, expect, vi } from "vitest";
+import { LoroDoc, LoroList, LoroMap, LoroText } from "loro-crdt";
 import { Mirror, schema } from "../src/index.js";
 
 // "New" schema version: adds a `forkOperation` root LoroMap and a nested
@@ -248,6 +248,123 @@ describe("ignoreUnknownProperties", () => {
         expect((preserved as LoroMap).toJSON()).toEqual({
             note: "nested-unknown",
         });
+    });
+
+    it("normalizes mixed unknown root container kinds and nested containers", () => {
+        const doc = new LoroDoc();
+        doc.getMap("meta").set("name", "known");
+        doc.getText("unknownText").insert(0, "unknown text value");
+        const unknownList = doc.getList("unknownList");
+        unknownList.push("primitive item");
+        const nestedMap = unknownList.insertContainer(1, new LoroMap());
+        nestedMap.set("note", "nested unknown container");
+        doc.commit();
+
+        const mirror = new Mirror({
+            doc,
+            schema: oldSchema,
+            ignoreUnknownProperties: true,
+            checkStateConsistency: true,
+        });
+
+        const state = mirror.getState() as Record<string, unknown>;
+        expect(state.meta).toEqual({ name: "known" });
+        expect(state.unknownText).toBe("unknown text value");
+        expect(state.unknownList).toEqual([
+            "primitive item",
+            { note: "nested unknown container" },
+        ]);
+        expect(
+            Object.getOwnPropertyDescriptor(
+                (state.unknownList as Record<string, unknown>[])[1],
+                "$cid",
+            )?.enumerable,
+        ).toBe(false);
+
+        mirror.dispose();
+    });
+
+    it("opens an empty document without inventing unknown roots", () => {
+        const mirror = new Mirror({
+            doc: new LoroDoc(),
+            schema: oldSchema,
+            ignoreUnknownProperties: true,
+        });
+
+        expect(mirror.getState()).toEqual({
+            title: "",
+            meta: {},
+        });
+
+        mirror.dispose();
+    });
+
+    it("does not traverse known deep roots a second time during initialization", () => {
+        const historySchema = schema({
+            history: schema.LoroList(
+                schema.LoroMap({
+                    body: schema.LoroText(),
+                    metadata: schema.LoroMap({ index: schema.Number() }),
+                }),
+            ),
+        });
+        const doc = new LoroDoc();
+        const history = doc.getList("history");
+        const entryCount = 64;
+        for (let index = 0; index < entryCount; index += 1) {
+            const entry = history.insertContainer(
+                history.length,
+                new LoroMap(),
+            );
+            entry
+                .setContainer("body", new LoroText())
+                .insert(0, `body-${index}`);
+            entry.setContainer("metadata", new LoroMap()).set("index", index);
+        }
+        doc.commit();
+
+        const listGetSpy = vi.spyOn(LoroList.prototype, "get");
+        const mapGetSpy = vi.spyOn(LoroMap.prototype, "get");
+        const textToJSONSpy = vi.spyOn(LoroText.prototype, "toJSON");
+        let mirror: Mirror<typeof historySchema> | undefined;
+
+        try {
+            mirror = new Mirror({
+                doc,
+                schema: historySchema,
+                ignoreUnknownProperties: true,
+            });
+
+            expect(mirror.getState().history).toHaveLength(entryCount);
+            expect(listGetSpy).toHaveBeenCalledTimes(entryCount);
+            expect(mapGetSpy).toHaveBeenCalledTimes(entryCount * 3);
+            expect(textToJSONSpy).toHaveBeenCalledTimes(entryCount);
+        } finally {
+            mirror?.dispose();
+            listGetSpy.mockRestore();
+            mapGetSpy.mockRestore();
+            textToJSONSpy.mockRestore();
+        }
+    });
+
+    it("preserves the missing-container error from full normalization", () => {
+        const doc = new LoroDoc();
+        const brokenId = "cid:999@999:Map";
+        const shallowSpy = vi
+            .spyOn(doc, "getShallowValue")
+            .mockReturnValue({ broken: brokenId });
+        const openMirror = () =>
+            new Mirror({
+                doc,
+                schema: oldSchema,
+                ignoreUnknownProperties: true,
+            });
+
+        try {
+            expect(openMirror).toThrow(`ContainerID not found: ${brokenId}`);
+        } finally {
+            shallowSpy.mockRestore();
+        }
     });
 
     it("keeps the default behavior unchanged when the option is not set", () => {

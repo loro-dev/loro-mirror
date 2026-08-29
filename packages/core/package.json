@@ -25,7 +25,8 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
-        "bench:ephemeral": "pnpm build && node --expose-gc ./scripts/ephemeral-bench.mjs"
+        "bench:ephemeral": "pnpm build && node --expose-gc ./scripts/ephemeral-bench.mjs",
+        "bench:ignore-unknown-properties": "pnpm build && node --expose-gc ./scripts/ignore-unknown-properties-bench.mjs"
     },
     "keywords": [
         "loro",
