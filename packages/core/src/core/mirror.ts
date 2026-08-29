@@ -2962,14 +2962,12 @@ export class Mirror<S extends SchemaType> {
 
                 const container = this.doc.getContainerById(containerId);
                 if (!container) {
-                    // Match toJsonWithReplacer's error for an unresolved
-                    // container id so this optimization does not hide a
-                    // corrupt or inconsistent document state.
+                    // Match toNormalizedJson's error for an unresolved container
+                    // id so this optimization does not hide a corrupt or
+                    // inconsistent document state.
                     throw new Error(`ContainerID not found: ${containerId}`);
                 }
-                root[key] = restoreCidDescriptors(
-                    normalizeContainerForJson(container),
-                );
+                root[key] = normalizeContainerForJson(container);
             }
         }
         return root;
@@ -3065,29 +3063,19 @@ export class Mirror<S extends SchemaType> {
  * @param doc
  * @returns
  */
-// Sentinel prefix for $cid values during the `toJsonWithReplacer` pass.
-// `toJsonWithReplacer` re-resolves any *mergeable* container-id string it finds
-// in the replacer's return value back into a container (re-applying the
-// replacer), which corrupts nested `$cid` markers. Prefixing the id makes it an
-// invalid container id so it is left untouched; `restoreCidDescriptors` strips
-// the prefix afterwards.
-const CID_PLACEHOLDER_PREFIX = "\x00mirror:cid\x00";
-
-export function toNormalizedJson(doc: LoroDoc) {
-    // Resolve containers ourselves rather than relying on `toJsonWithReplacer`'s
-    // own recursion: `getShallowValue` leaks mergeable child containers as raw
-    // binary markers, and a container handle placed back into the replacer's
-    // return value is serialized as a raw wasm pointer instead of being recursed
-    // into. Explicit recursion via `get`/`toJSON` resolves both regular and
-    // mergeable children uniformly and injects `$cid` on every Map.
-    const withEnumerableCid = doc.toJsonWithReplacer((_k, v) => {
-        if (isContainer(v)) {
-            return normalizeContainerForJson(v) as unknown as typeof v;
+export function toNormalizedJson(doc: LoroDoc): unknown {
+    // Document shallow values contain only root ContainerIDs. Resolve those IDs,
+    // then normalize through container APIs without sending returned JS values
+    // back to wasm, so `cid:`-prefixed strings stay strings.
+    const root: Record<string, unknown> = {};
+    for (const [key, id] of Object.entries(doc.getShallowValue())) {
+        const container = doc.getContainerById(id);
+        if (!container) {
+            throw new Error(`ContainerID not found: ${id}`);
         }
-        return v;
-    });
-
-    return restoreCidDescriptors(withEnumerableCid);
+        root[key] = normalizeContainerForJson(container);
+    }
+    return root;
 }
 
 function normalizeContainerForJson(c: Container): unknown {
@@ -3102,12 +3090,13 @@ function normalizeContainerForJson(c: Container): unknown {
         const m = c as LoroMap;
         const obj: Record<string, unknown> = {};
         for (const key of m.keys()) {
+            if (key === CID_KEY) continue;
             const child = m.get(key);
             obj[key] = isContainer(child)
                 ? normalizeContainerForJson(child)
                 : child;
         }
-        obj[CID_KEY] = CID_PLACEHOLDER_PREFIX + m.id;
+        defineCidProperty(obj, m.id);
         return obj;
     }
     if (kind === "List" || kind === "MovableList") {
@@ -3123,40 +3112,6 @@ function normalizeContainerForJson(c: Container): unknown {
     }
     // Fallback for any other container kind (e.g. Counter): use its JSON form.
     return (c as unknown as { toJSON(): unknown }).toJSON();
-}
-
-// After toJsonWithReplacer returns plain JSON objects with enumerable $cid,
-// walk the structure and restore the non-enumerable descriptor so mirrored state matches schema mode.
-function restoreCidDescriptors(value: unknown): unknown {
-    if (Array.isArray(value)) {
-        for (let i = 0; i < value.length; i++) {
-            value[i] = restoreCidDescriptors(value[i]);
-        }
-        return value;
-    }
-
-    if (isObject(value)) {
-        const obj = value;
-        for (const key of Object.keys(obj)) {
-            obj[key] = restoreCidDescriptors(obj[key]);
-        }
-        if (Object.prototype.hasOwnProperty.call(obj, CID_KEY)) {
-            const descriptor = Object.getOwnPropertyDescriptor(obj, CID_KEY);
-            if (!descriptor || descriptor.enumerable) {
-                const rawCid = obj[CID_KEY];
-                const cidValue =
-                    typeof rawCid === "string" &&
-                    rawCid.startsWith(CID_PLACEHOLDER_PREFIX)
-                        ? rawCid.slice(CID_PLACEHOLDER_PREFIX.length)
-                        : rawCid;
-                delete obj[CID_KEY];
-                Object.defineProperty(obj, CID_KEY, { value: cidValue });
-            }
-        }
-        return obj;
-    }
-
-    return value;
 }
 
 // Normalize a shallow object shape from provided initialState by converting
