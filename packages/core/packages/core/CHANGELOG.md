@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.3.0...loro-mirror-v2.3.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **core:** preserve cid-prefixed user strings ([#94](https://github.com/loro-dev/loro-mirror/issues/94)) ([729dac5](https://github.com/loro-dev/loro-mirror/commit/729dac5a52e3821724750b18583065fc6e61ef39))
+
+
+### Performance Improvements
+
+* **core:** avoid full traversal for unknown roots ([#92](https://github.com/loro-dev/loro-mirror/issues/92)) ([1a2ac39](https://github.com/loro-dev/loro-mirror/commit/1a2ac39d31db5252cfe0c567d1953b5bf8a66d26))
+
 ## [2.3.0](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.2.1...loro-mirror-v2.3.0) (2026-08-27)
 
 
