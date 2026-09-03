@@ -51,6 +51,7 @@ import {
     LoroMapSchema,
     RootSchemaType,
     SchemaType,
+    schemaContainsIgnoreField,
     validateSchema,
 } from "../schema/index.js";
 import {
@@ -423,6 +424,11 @@ export class Mirror<S extends SchemaType> {
     private subscriptions: (() => void)[] = [];
     // Canonical root path (e.g., ["profile"]) per root container id
     private rootPathById: Map<ContainerID, string[]> = new Map();
+    /** Root keys declared `schema.Ignore()` — memory-only; doc events for
+     * them are dropped (see {@link filterIgnoredEvents}). */
+    private ignoredRootKeys: Set<string> = new Set();
+    /** Whether any nested (below-root) schema field is `schema.Ignore()`. */
+    private hasNestedIgnoreFields = false;
 
     // Ephemeral patch manager (handles EphemeralStore, local tracking, path resolution, finalization)
     private ephemeralManager?: EphemeralPatchManager;
@@ -434,6 +440,20 @@ export class Mirror<S extends SchemaType> {
     constructor(options: MirrorOptions<S>) {
         this.doc = options.doc;
         this.schema = options.schema;
+
+        // Cache Ignore fields up front: they are memory-only, so doc events
+        // targeting them must be dropped before registration/application.
+        if (this.schema && this.schema.type === "schema") {
+            for (const [key, fieldSchema] of Object.entries(
+                this.schema.definition,
+            )) {
+                if (fieldSchema.type === "ignore") {
+                    this.ignoredRootKeys.add(key);
+                } else if (schemaContainsIgnoreField(fieldSchema)) {
+                    this.hasNestedIgnoreFields = true;
+                }
+            }
+        }
 
         // Set default options
         this.options = {
@@ -616,9 +636,14 @@ export class Mirror<S extends SchemaType> {
                         );
                         // Record canonical root path for this root container id
                         this.rootPathById.set(container.id, [key]);
-                        this.registerContainerHandle(container, fieldSchema, {
-                            scanNested: false,
-                        });
+                        this.registerContainerHandle(
+                            container,
+                            // narrowed by the type check above
+                            fieldSchema as ContainerSchemaType,
+                            {
+                                scanNested: false,
+                            },
+                        );
                     }
                 }
             }
@@ -821,11 +846,15 @@ export class Mirror<S extends SchemaType> {
      */
     private handleLoroEvent = (event: LoroEventBatch) => {
         if (this.syncing) return;
+        // Drop events targeting Ignore fields before anything else: they must
+        // not be registered, normalized, applied, or notified.
+        const filtered = this.filterIgnoredEvents(event);
+        if (filtered.events.length === 0) return;
         this.syncing = true;
         try {
             // Pre-register any containers referenced in this batch
-            this.registerContainersFromLoroEvent(event);
-            const normalized = this.normalizeLoroEventBatch(event);
+            this.registerContainersFromLoroEvent(filtered);
+            const normalized = this.normalizeLoroEventBatch(filtered);
             // Incrementally update baseState using event deltas
             this.baseState = this.applyNormalizedLoroEventToState(
                 this.baseState,
@@ -838,10 +867,102 @@ export class Mirror<S extends SchemaType> {
             // Notify subscribers of the update
             this.notifySubscribers(UpdateSource.LORO);
         } finally {
-            this.registerContainersFromLoroEvent(event);
+            this.registerContainersFromLoroEvent(filtered);
             this.syncing = false;
         }
     };
+
+    /**
+     * Drop events that target `schema.Ignore()` fields — an ignored root key
+     * (`event.path[0]`, or the event target's root container), or a nested
+     * Ignore map field when the event path resolves to one.
+     *
+     * Ignored fields are memory-only: applying their deltas would materialize
+     * state the schema asked to skip (e.g. rebuild a streaming list item by
+     * item with wrong indices) and grow the container registry with
+     * containers Mirror never reads.
+     *
+     * Returns the batch unchanged when the schema declares no Ignore fields
+     * (fast path) or when nothing was filtered.
+     */
+    private filterIgnoredEvents(event: LoroEventBatch): LoroEventBatch {
+        if (this.ignoredRootKeys.size === 0 && !this.hasNestedIgnoreFields) {
+            return event;
+        }
+        // Inverted doc.getShallowValue(), built only when an event's path is
+        // unusable and the target's root container must be resolved instead.
+        let rootKeyByCid: Map<ContainerID, string> | undefined;
+        const getRootKeyByCid = () => {
+            if (!rootKeyByCid) {
+                rootKeyByCid = new Map();
+                for (const [key, cid] of Object.entries(
+                    this.doc.getShallowValue(),
+                )) {
+                    rootKeyByCid.set(cid as ContainerID, key);
+                }
+            }
+            return rootKeyByCid;
+        };
+        const events = event.events.filter(
+            (e) => !this.isIgnoredEvent(e, getRootKeyByCid),
+        );
+        if (events.length === event.events.length) return event;
+        return { ...event, events } as LoroEventBatch;
+    }
+
+    private isIgnoredEvent(
+        e: LoroEventBatch["events"][number],
+        getRootKeyByCid: () => Map<ContainerID, string>,
+    ): boolean {
+        const path = e.path;
+        if (
+            Array.isArray(path) &&
+            path.length > 0 &&
+            typeof path[0] === "string"
+        ) {
+            if (this.ignoredRootKeys.has(path[0])) return true;
+            return (
+                this.hasNestedIgnoreFields && this.pathResolvesToIgnore(path)
+            );
+        }
+        // Fallback for events without a usable root-anchored path: resolve
+        // the target's root container and match it against ignored roots.
+        const rootCid = this.rootContainerIdOf(e.target);
+        if (!rootCid) return false;
+        const rootKey = getRootKeyByCid().get(rootCid);
+        return rootKey !== undefined && this.ignoredRootKeys.has(rootKey);
+    }
+
+    /**
+     * Walk the schema along an event path; true when any position — most
+     * usefully the last — resolves to an `ignore` field. Positions that leave
+     * the schema (unknown keys, list indices under `any`, tree node ids)
+     * resolve to `undefined` and are not ignored.
+     */
+    private pathResolvesToIgnore(path: (string | number)[]): boolean {
+        if (!this.schema || this.schema.type !== "schema") return false;
+        let current: SchemaType | undefined = (
+            this.schema.definition as Record<string, SchemaType>
+        )[String(path[0])];
+        for (let i = 1; i < path.length && current; i++) {
+            if ((current as { type: string }).type === "ignore") return true;
+            current = getChildSchema(current, path[i]);
+        }
+        return !!current && (current as { type: string }).type === "ignore";
+    }
+
+    /** Root container id of the container `target` belongs to. */
+    private rootContainerIdOf(target: ContainerID): ContainerID | undefined {
+        let cur = this.doc.getContainerById(target);
+        if (!cur) return undefined;
+        let root = cur;
+        let parent = root.parent() ?? undefined;
+        while (parent) {
+            root = parent;
+            parent = root.parent() ?? undefined;
+        }
+        return root.id;
+    }
 
     private normalizeLoroEventBatch(event: LoroEventBatch): LoroEventBatch {
         return {
@@ -1917,12 +2038,15 @@ export class Mirror<S extends SchemaType> {
                 this.ephemeralManager?.finalize(this.doc);
             });
             if (localEvent) {
-                this.registerContainersFromLoroEvent(localEvent);
-                const normalized = this.normalizeLoroEventBatch(localEvent);
-                this.baseState = this.applyNormalizedLoroEventToState(
-                    this.baseState,
-                    normalized,
-                );
+                const filtered = this.filterIgnoredEvents(localEvent);
+                if (filtered.events.length > 0) {
+                    this.registerContainersFromLoroEvent(filtered);
+                    const normalized = this.normalizeLoroEventBatch(filtered);
+                    this.baseState = this.applyNormalizedLoroEventToState(
+                        this.baseState,
+                        normalized,
+                    );
+                }
             }
             this.state = this.composeState(this.baseState);
             this.notifySubscribers(UpdateSource.MIRROR);
@@ -2475,8 +2599,18 @@ export class Mirror<S extends SchemaType> {
             return false;
         }
 
-        this.registerContainersFromLoroEvent(localEvent);
-        const normalized = this.normalizeLoroEventBatch(localEvent);
+        const filtered = this.filterIgnoredEvents(localEvent);
+        if (filtered.events.length === 0) {
+            // Nothing applicable (shouldn't happen — the diff never emits
+            // changes for Ignore fields). Fall back to a full snapshot so
+            // state stays consistent either way.
+            this.baseState = this.rebuildBaseState();
+            this.state = this.composeState(this.baseState);
+            return true;
+        }
+
+        this.registerContainersFromLoroEvent(filtered);
+        const normalized = this.normalizeLoroEventBatch(filtered);
         this.baseState = this.applyNormalizedLoroEventToState(
             this.baseState,
             normalized,

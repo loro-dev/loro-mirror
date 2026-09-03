@@ -426,4 +426,19 @@ describe("infer type", () => {
 
         expectTypeOf<CreatedAtField>().toEqualTypeOf<Date>();
     });
+
+    test("root Ignore field needs no cast and infers unknown", () => {
+        // A root-level schema.Ignore() must be accepted by `schema()` without
+        // casting (RootSchemaDefinition allows IgnoreSchemaType at the root).
+        const rootSchema = schema({
+            history: schema.Ignore(),
+            session: schema.LoroMap({ name: schema.String() }),
+        });
+
+        type Root = NonNullable<InferType<typeof rootSchema>>;
+        expectTypeOf<Root["history"]>().toEqualTypeOf<unknown>();
+        expectTypeOf<Root["session"]>().toEqualTypeOf<
+            { name: string } & { $cid: string }
+        >();
+    });
 });

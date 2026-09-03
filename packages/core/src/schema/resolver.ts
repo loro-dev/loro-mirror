@@ -2,11 +2,12 @@ import {
     ContainerSchemaType,
     LoroMapSchema,
     LoroMapSchemaWithCatchall,
+    RootFieldSchemaType,
     RootSchemaType,
     SchemaType,
 } from "./types.js";
 
-type RootSchemaRecord = RootSchemaType<Record<string, ContainerSchemaType>>;
+type RootSchemaRecord = RootSchemaType<Record<string, RootFieldSchemaType>>;
 type MapSchemaRecord = LoroMapSchema<Record<string, SchemaType>>;
 type MapSchemaWithCatchallRecord = LoroMapSchemaWithCatchall<
     Record<string, SchemaType>,
