@@ -299,7 +299,7 @@ describe("ignoreUnknownProperties", () => {
         mirror.dispose();
     });
 
-    it("does not traverse known deep roots a second time during initialization", () => {
+    it("reads known deep roots with a single deep-value call during initialization", () => {
         const historySchema = schema({
             history: schema.LoroList(
                 schema.LoroMap({
@@ -326,6 +326,7 @@ describe("ignoreUnknownProperties", () => {
         const listGetSpy = vi.spyOn(LoroList.prototype, "get");
         const mapGetSpy = vi.spyOn(LoroMap.prototype, "get");
         const textToJSONSpy = vi.spyOn(LoroText.prototype, "toJSON");
+        const deepValueSpy = vi.spyOn(LoroDoc.prototype, "getDeepValueWithID");
         let mirror: Mirror<typeof historySchema> | undefined;
 
         try {
@@ -336,14 +337,18 @@ describe("ignoreUnknownProperties", () => {
             });
 
             expect(mirror.getState().history).toHaveLength(entryCount);
-            expect(listGetSpy).toHaveBeenCalledTimes(entryCount);
-            expect(mapGetSpy).toHaveBeenCalledTimes(entryCount * 3);
-            expect(textToJSONSpy).toHaveBeenCalledTimes(entryCount);
+            // Initialization snapshots the whole doc with one deep-value call;
+            // the per-container getters are never used for known roots.
+            expect(deepValueSpy).toHaveBeenCalledTimes(1);
+            expect(listGetSpy).not.toHaveBeenCalled();
+            expect(mapGetSpy).not.toHaveBeenCalled();
+            expect(textToJSONSpy).not.toHaveBeenCalled();
         } finally {
             mirror?.dispose();
             listGetSpy.mockRestore();
             mapGetSpy.mockRestore();
             textToJSONSpy.mockRestore();
+            deepValueSpy.mockRestore();
         }
     });
 
