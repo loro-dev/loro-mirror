@@ -270,6 +270,48 @@ const todoSchema = schema({
 
 - Fields defined with `schema.Ignore()` won't sync with Loro, commonly used for derived/cached fields. Runtime validation always passes for these fields.
 
+#### Lazy Lists
+
+- `schema.LoroList(item, idSelector?, { lazy: { index, maxHydrated?, tailKeep? } })` keeps large lists out of memory: Mirror state holds a `LazyList` handle instead of an array, and item data is loaded on demand.
+- `index` names the item fields that are always loaded (identity/sort/preview fields); `maxHydrated` (default 200) bounds how many full items stay in memory (LRU eviction), and `tailKeep` (default 20) never evicts the trailing items.
+- When every schema-declared root is a lazy list, initialization skips the full-document deep read entirely (shallow reads only).
+
+```ts
+const chatSchema = schema({
+    messages: schema.LoroList(
+        schema.LoroMap({
+            id: schema.String({ required: true }),
+            text: schema.LoroText(),
+            done: schema.Boolean({ defaultValue: false }),
+        }),
+        (m) => m.id,
+        { lazy: { index: ["id", "done"] } },
+    }),
+});
+
+const mirror = new Mirror({ doc, schema: chatSchema });
+const list = mirror.getState().messages; // LazyList, items not loaded
+
+list.length; // known without hydration
+list.index(0); // { id, done } — index fields, always available
+await list.hydrate(0, 50); // load a window
+list.get(0); // full item or undefined when not hydrated
+const unsub = list.subscribeRange(0, 50, () => {/* re-render */});
+list.release(0, 50); // explicit drop (active subscriptions are exempt)
+
+// Writes go through the writer API; setState touching a lazy path throws.
+mirror.list<ItemInput>("messages").push({ id: "m1", text: "hi", done: false });
+mirror.list<ItemInput>("messages").updateById("m1", (d) => { d.done = true; });
+mirror.list<ItemInput>("messages").deleteById("m1");
+```
+
+Notes:
+
+- The `LazyList` instance is stable across updates; `version` increments on structural and index-field changes.
+- Hydration is keyed by item container id, so positional views stay correct across concurrent remote edits.
+- Ephemeral patches never touch lazy lists (paths crossing a lazy list pass through untouched), and `checkStateConsistency` verifies lazy paths by instance identity only.
+- React: `useLazyRange(list, from, to)` from `loro-mirror-react` hydrates a window, re-renders on in-range changes, and releases on unmount.
+
 #### Reserved Field: `$cid`
 
 - `$cid` is a reserved, read-only field injected into mirrored state for all `LoroMap` schemas. It equals the underlying Loro container id, is never written back to Loro, and is ignored by diffs and updates. Use it as a stable identifier where helpful (e.g., list `idSelector`).
@@ -298,7 +340,7 @@ mirror.setState((state) => ({
 }));
 ```
 
-  Using a domain-stable id (e.g. `(item) => item.id`) as the `idSelector` avoids the issue entirely.
+Using a domain-stable id (e.g. `(item) => item.id`) as the `idSelector` avoids the issue entirely.
 
 ### React Usage
 
@@ -451,6 +493,7 @@ const mySchema = schema({ outline: schema.LoroTree(node) });
 - `dispose()`: Unsubscribe internal listeners and clear subscribers.
 - `checkStateConsistency()`: Manually trigger the consistency assertion described above.
 - `getContainerIds()`: Returns the set of registered Loro container IDs (advanced debugging aid).
+- `list<T>(path)`: Returns a `LazyListWriter<T>` (`push` / `insert` / `deleteById` / `updateById` / `updateAt`) for a lazy list declared with `{ lazy: ... }` in the schema. Throws if the path does not resolve to a lazy list. See [Lazy Lists](#lazy-lists).
 
 #### Notes
 

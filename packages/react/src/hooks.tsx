@@ -10,13 +10,8 @@ import React, {
     useRef,
     useState,
 } from "react";
-import {
-    InferType,
-    InferInputType,
-    SchemaType,
-    Mirror,
-} from "loro-mirror";
-import type { RootInitialValue } from "loro-mirror";
+import { InferType, InferInputType, SchemaType, Mirror } from "loro-mirror";
+import type { LazyList, RootInitialValue } from "loro-mirror";
 import type { LoroDoc, EphemeralStore } from "loro-crdt";
 // (No external state helper needed; Mirror handles Immer internally)
 
@@ -200,6 +195,78 @@ export function useLoroValue<S extends SchemaType, R>(
     }, [store, selector]);
 
     return value;
+}
+
+/**
+ * Result of {@link useLazyRange}.
+ */
+export interface UseLazyRangeResult<T, I> {
+    /**
+     * Hydrated items in the range; `undefined` for items still loading.
+     */
+    items: (T | undefined)[];
+    /**
+     * The LazyList version, bumped on structural and in-range changes.
+     */
+    version: number;
+    /**
+     * The underlying LazyList, for index lookups and writes.
+     */
+    list: LazyList<T, I> | null | undefined;
+}
+
+/**
+ * Hook to view a `[from, to)` window of a lazy list.
+ *
+ * Hydrates the range on mount (and whenever `list`/`from`/`to` change),
+ * re-renders on in-range changes via `subscribeRange`, and releases the
+ * range on unmount.
+ *
+ * @example
+ * ```tsx
+ * function MessageList({ store }) {
+ *   const { items, version, list } = useLazyRange(store.getState().messages, 0, 50);
+ *
+ *   return (
+ *     <ul>
+ *       {items.map((msg, i) => (
+ *         <li key={list?.ids()[i]}>
+ *           {msg ? msg.text : list?.index(i)?.preview}
+ *         </li>
+ *       ))}
+ *     </ul>
+ *   );
+ * }
+ * ```
+ */
+export function useLazyRange<T, I>(
+    list: LazyList<T, I> | null | undefined,
+    from: number,
+    to: number,
+): UseLazyRangeResult<T, I> {
+    const [, setTick] = useState(0);
+
+    useEffect(() => {
+        if (!list) return;
+        let cancelled = false;
+        void list.hydrate(from, to).then(() => {
+            if (!cancelled) setTick((t) => t + 1);
+        });
+        const unsubscribe = list.subscribeRange(from, to, () => {
+            setTick((t) => t + 1);
+        });
+        return () => {
+            cancelled = true;
+            unsubscribe();
+            list.release(from, to);
+        };
+    }, [list, from, to]);
+
+    return {
+        items: list ? list.slice(from, to) : [],
+        version: list ? list.version : 0,
+        list,
+    };
 }
 
 /**

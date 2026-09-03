@@ -13,6 +13,7 @@ import {
     LoroTreeSchema,
     RootSchemaType,
     SchemaType,
+    LazyListOptions,
 } from "./types.js";
 import {
     isObject,
@@ -20,6 +21,7 @@ import {
     applyEncode,
     applyDecode,
 } from "../core/utils.js";
+import { LAZY_LIST_BRAND } from "../constants.js";
 
 const schemaValidationCache = new WeakMap<object, WeakSet<object>>();
 
@@ -65,6 +67,85 @@ export function isListLikeSchema<T extends SchemaType>(
     schema?: SchemaType,
 ): schema is LoroListSchema<T> | LoroMovableListSchema<T> {
     return isLoroListSchema(schema) || isLoroMovableListSchema(schema);
+}
+
+/**
+ * Type guard for lazy loro-list schemas (`schema.LoroList(..., { lazy })`).
+ */
+export function isLazyListSchema<T extends SchemaType>(
+    schema?: SchemaType,
+): schema is LoroListSchema<T> & { options: { lazy: LazyListOptions } } {
+    return (
+        isLoroListSchema(schema) &&
+        (schema.options as { lazy?: unknown }).lazy !== undefined
+    );
+}
+
+/**
+ * Recursively check whether a schema tree contains any lazy list.
+ * Recursive (self-referencing) schemas are guarded by a visited set.
+ */
+export function schemaContainsLazyList(
+    schema: SchemaType | undefined,
+    seen?: Set<SchemaType>,
+): boolean {
+    if (!schema) return false;
+    if (
+        schema.type === "loro-list" &&
+        (schema.options as { lazy?: unknown }).lazy !== undefined
+    ) {
+        return true;
+    }
+    if ((seen ??= new Set()).has(schema)) return false;
+    seen.add(schema);
+    switch (schema.type) {
+        case "schema":
+        case "loro-map": {
+            const withChildren = schema as {
+                definition?: Record<string, SchemaType>;
+                catchallType?: SchemaType;
+            };
+            if (withChildren.definition) {
+                for (const key of Object.keys(withChildren.definition)) {
+                    if (
+                        schemaContainsLazyList(
+                            withChildren.definition[key],
+                            seen,
+                        )
+                    ) {
+                        return true;
+                    }
+                }
+            }
+            return withChildren.catchallType
+                ? schemaContainsLazyList(withChildren.catchallType, seen)
+                : false;
+        }
+        case "loro-list":
+        case "loro-movable-list":
+            return schemaContainsLazyList(
+                (schema as { itemSchema?: SchemaType }).itemSchema,
+                seen,
+            );
+        case "loro-tree":
+            return schemaContainsLazyList(
+                (schema as { nodeSchema?: SchemaType }).nodeSchema,
+                seen,
+            );
+        default:
+            return false;
+    }
+}
+
+/**
+ * Runtime check for `LazyList` state values (brand-based, no core import).
+ */
+function isLazyListValue(value: unknown): boolean {
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        (value as Record<PropertyKey, unknown>)[LAZY_LIST_BRAND] === true
+    );
 }
 
 export function isLoroMovableListSchema<T extends SchemaType>(
@@ -180,12 +261,7 @@ export function validateSchema<S extends SchemaType>(
         case "string":
         case "number":
         case "boolean":
-            validateTransformablePrimitive(
-                schema,
-                value,
-                actualType,
-                errors,
-            );
+            validateTransformablePrimitive(schema, value, actualType, errors);
             break;
 
         case "ignore":
@@ -232,6 +308,11 @@ export function validateSchema<S extends SchemaType>(
             break;
         case "loro-movable-list":
         case "loro-list":
+            // Lazy lists hold a LazyList read view in state instead of an
+            // array; writes go through mirror.list(path), never setState.
+            if (isLazyListSchema(schema) && isLazyListValue(value)) {
+                break;
+            }
             if (!Array.isArray(value)) {
                 errors.push("Value must be an array");
             } else if (
@@ -347,9 +428,7 @@ export function validateSchema<S extends SchemaType>(
             break;
 
         default:
-            errors.push(
-                `Unknown schema type: ${actualType}`
-            );
+            errors.push(`Unknown schema type: ${actualType}`);
     }
 
     // Run custom validation if provided

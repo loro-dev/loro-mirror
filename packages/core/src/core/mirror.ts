@@ -42,6 +42,7 @@ import {
     InferInputType,
     InferType,
     isContainerSchema,
+    isLazyListSchema,
     isListLikeSchema,
     isLoroListSchema,
     isLoroMapSchema,
@@ -51,6 +52,7 @@ import {
     LoroMapSchema,
     RootSchemaType,
     SchemaType,
+    schemaContainsLazyList,
     validateSchema,
 } from "../schema/index.js";
 import {
@@ -76,9 +78,16 @@ import {
     decodeNestedJsonValues,
     safeStringify,
     cidsEqual,
+    tryUpdateToContainer,
 } from "./utils.js";
 import { diffContainer, diffTree } from "./diff.js";
 import { CID_KEY } from "../constants.js";
+import {
+    isLazyList,
+    LazyListImpl,
+    LazyListWriteError,
+    type LazyListHost,
+} from "./lazy-list.js";
 
 // Plain JSON-like value used for state snapshots
 type MirrorStatePrimitive = string | number | boolean | null | undefined | {};
@@ -484,6 +493,40 @@ export type SubscriberCallback<T> = (
 ) => void;
 
 /**
+ * Write handle for a lazy list, returned by {@link Mirror.list}. Writes never
+ * go through `setState` for lazy paths; they reuse the same diff/apply
+ * machinery and therefore produce exactly the Loro ops an equivalent
+ * `setState` array edit would have produced with a non-lazy schema.
+ */
+export interface LazyListWriter<T> {
+    push(item: T): void;
+    insert(index: number, item: T): void;
+    deleteById(id: string): void;
+    updateById(id: string, updater: (draft: T) => void): void;
+    updateAt(index: number, updater: (draft: T) => void): void;
+}
+
+/**
+ * Parse a dot/bracket state path ("a.b[0].c") into segments.
+ */
+function parseStatePath(path: string): (string | number)[] {
+    const out: (string | number)[] = [];
+    const re = /([^.[\]]+)|\[(\d+)\]/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(path)) !== null) {
+        if (m[2] !== undefined) out.push(Number(m[2]));
+        else out.push(m[1]);
+    }
+    return out;
+}
+
+function containerItemSchemaGuard(
+    schema: SchemaType | undefined,
+): schema is ContainerSchemaType {
+    return !!schema && isContainerSchema(schema);
+}
+
+/**
  * Mirror class that provides bidirectional sync between application state and Loro
  */
 export class Mirror<S extends SchemaType> {
@@ -498,6 +541,10 @@ export class Mirror<S extends SchemaType> {
     private containerRegistry: ContainerRegistry = new Map();
     private inferOptionsByContainerId: Map<ContainerID, InferContainerOptions> =
         new Map();
+    /** Live LazyList instances by backing list container id. */
+    private lazyLists = new Map<ContainerID, LazyListImpl<unknown, unknown>>();
+    /** Whether the schema contains any lazy list (fast path when false). */
+    private schemaHasLazyList = false;
     private subscriptions: (() => void)[] = [];
     // Canonical root path (e.g., ["profile"]) per root container id
     private rootPathById: Map<ContainerID, string[]> = new Map();
@@ -506,12 +553,33 @@ export class Mirror<S extends SchemaType> {
     private ephemeralManager?: EphemeralPatchManager;
     private suppressLocalEphemeralEvents = 0;
 
+    /** Host callbacks handed to every LazyList this Mirror creates. */
+    private lazyHost: LazyListHost = {
+        getContainerById: (id) => this.doc.getContainerById(id),
+        readItemIds: (listId) => {
+            const c = this.doc.getContainerById(listId);
+            if (c && (c.kind() === "List" || c.kind() === "MovableList")) {
+                return (c as LoroList | LoroMovableList).getShallowValue();
+            }
+            return [];
+        },
+        readItemIndex: (listId, itemCid) =>
+            this.readLazyItemIndex(listId, itemCid),
+        readItemState: (listId, itemCid) =>
+            this.readLazyItemState(listId, itemCid),
+        decodeIndexValue: (listId, field, raw) =>
+            this.decodeLazyIndexValue(listId, field, raw),
+    };
+
     /**
      * Creates a new Mirror instance
      */
     constructor(options: MirrorOptions<S>) {
         this.doc = options.doc;
         this.schema = options.schema;
+        this.schemaHasLazyList = schemaContainsLazyList(
+            options.schema as SchemaType | undefined,
+        );
 
         // Set default options
         this.options = {
@@ -904,10 +972,13 @@ export class Mirror<S extends SchemaType> {
             // Pre-register any containers referenced in this batch
             this.registerContainersFromLoroEvent(event);
             const normalized = this.normalizeLoroEventBatch(event);
+            // Intercept lazy-list events (mutates LazyList instances) before
+            // the immutable state walk; it cannot represent them.
+            const applicable = this.handleLazyListEvents(normalized);
             // Incrementally update baseState using event deltas
             this.baseState = this.applyNormalizedLoroEventToState(
                 this.baseState,
-                normalized,
+                applicable,
             );
             // Compose state with ephemeral overlay
             this.state = this.composeState(this.baseState);
@@ -1080,6 +1151,9 @@ export class Mirror<S extends SchemaType> {
                             this.registerContainerHandle(
                                 container,
                                 containerSchema,
+                                // Items of a lazy list are registered shallow;
+                                // their nested containers register on hydrate.
+                                { scanNested: !isLazyListSchema(schema) },
                             );
 
                             if (
@@ -1126,7 +1200,11 @@ export class Mirror<S extends SchemaType> {
                                 parentLocalInfer,
                             );
                         }
-                        this.registerContainerHandle(change, containerSchema);
+                        this.registerContainerHandle(change, containerSchema, {
+                            // A lazy list child registers itself; its items
+                            // are registered by the LazyList, not scanned.
+                            scanNested: !isLazyListSchema(containerSchema),
+                        });
 
                         if (
                             parentSchema &&
@@ -1997,9 +2075,10 @@ export class Mirror<S extends SchemaType> {
             if (localEvent) {
                 this.registerContainersFromLoroEvent(localEvent);
                 const normalized = this.normalizeLoroEventBatch(localEvent);
+                const applicable = this.handleLazyListEvents(normalized);
                 this.baseState = this.applyNormalizedLoroEventToState(
                     this.baseState,
-                    normalized,
+                    applicable,
                 );
             }
             this.state = this.composeState(this.baseState);
@@ -2016,6 +2095,7 @@ export class Mirror<S extends SchemaType> {
         // Clean up ephemeral resources
         this.ephemeralManager?.dispose();
 
+        this.lazyLists.clear();
         this.subscribers.clear();
         this.subscriptions.forEach((x) => {
             x();
@@ -2536,7 +2616,7 @@ export class Mirror<S extends SchemaType> {
 
     private applyLocalLoroChanges(
         changes: Change[],
-        pendingState: InferType<S>,
+        pendingState?: InferType<S>,
         options?: SetStateOptions,
     ): boolean {
         let localEvent: LoroEventBatch | undefined;
@@ -2555,13 +2635,14 @@ export class Mirror<S extends SchemaType> {
 
         this.registerContainersFromLoroEvent(localEvent);
         const normalized = this.normalizeLoroEventBatch(localEvent);
+        const applicable = this.handleLazyListEvents(normalized);
         this.baseState = this.applyNormalizedLoroEventToState(
             this.baseState,
-            normalized,
+            applicable,
         );
         this.state = this.applyNormalizedLoroEventToState(
             this.state,
-            normalized,
+            applicable,
         );
         return true;
     }
@@ -2711,6 +2792,10 @@ export class Mirror<S extends SchemaType> {
         // them before anything else observes the new state.
         hardenCidDescriptors(newState, this.state);
 
+        // Lazy list slots are opaque read views; an update that replaces one
+        // must go through mirror.list(path) instead.
+        this.assertLazyListsUntouched(this.state, newState);
+
         // Validate state if needed
         if (this.options.validateUpdates) {
             const validation =
@@ -2857,6 +2942,10 @@ export class Mirror<S extends SchemaType> {
             }
             return obj;
         } else if (kind === "List" || kind === "MovableList") {
+            // Lazy lists are not walked: state holds a LazyList read view.
+            if (isLazyListSchema(schema)) {
+                return this.getOrCreateLazyList(c.id) as unknown as MirrorState;
+            }
             const arr: MirrorState[] = [];
             const l = c as unknown as LoroList | LoroMovableList;
             const len = l.length;
@@ -2974,6 +3063,28 @@ export class Mirror<S extends SchemaType> {
         if (!this.schema || this.schema.type !== "schema") {
             // Fallback to previous normalization if no schema
             return toNormalizedJson(this.doc) as Record<string, unknown>;
+        }
+
+        // Fast path: when every schema-declared root is a lazy list, init
+        // never needs item data — use shallow reads only (root shallow value
+        // + one shallow read per list, plus per-item reads for index fields)
+        // instead of a full-document deep read.
+        const rootSchemaForFastPath = this.schema as RootSchemaType<
+            Record<string, ContainerSchemaType>
+        >;
+        let allRootsLazy = false;
+        for (const key in rootSchemaForFastPath.definition) {
+            const fieldSchema = rootSchemaForFastPath.definition[key];
+            if ((fieldSchema as { type: string }).type === "ignore") continue;
+            if (isLazyListSchema(fieldSchema)) {
+                allRootsLazy = true;
+                continue;
+            }
+            allRootsLazy = false;
+            break;
+        }
+        if (allRootsLazy) {
+            return this.buildRootStateSnapshotLegacy(prevState, options);
         }
 
         // Bulk path: one wasm call for the whole document plus a single JS
@@ -3332,6 +3443,15 @@ export class Mirror<S extends SchemaType> {
         const schema = ctx.semantics.useRegistrySchema
             ? this.getContainerSchema(cid)
             : undefined;
+        // Lazy lists are detected BEFORE the walk descends into them: the
+        // deep-value payload is skipped and the LazyList is built from the
+        // shallow id list plus index fields extracted from the payload.
+        if (isLazyListSchema(schema)) {
+            return this.getOrCreateLazyList(
+                cid,
+                rawValue,
+            ) as unknown as MirrorState;
+        }
         const parentLocalInfer = ctx.registerContainers
             ? this.inferOptionsByContainerId.get(cid)
             : undefined;
@@ -3640,6 +3760,700 @@ export class Mirror<S extends SchemaType> {
     /* Get all container IDs registered with the mirror */
     getContainerIds(): ContainerID[] {
         return Array.from(this.containerRegistry.keys());
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Lazy lists                                                          */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Get (or lazily create) the `LazyList` backing a lazy loro-list
+     * container. Existing instances are re-synced against the doc and
+     * returned as-is so state slots keep a stable identity.
+     *
+     * `deepValuePayload` is the list's slice of a `doc.getDeepValueWithID()`
+     * tree when the caller already holds it (bulk init): index fields are
+     * extracted from it instead of doing one shallow read per item.
+     */
+    private getOrCreateLazyList(
+        listId: ContainerID,
+        deepValuePayload?: unknown,
+    ): LazyListImpl<unknown, unknown> {
+        const existing = this.lazyLists.get(listId);
+        if (existing) {
+            existing._refreshFromDoc();
+            return existing;
+        }
+        const schema = this.getContainerSchema(listId);
+        if (!isLazyListSchema(schema)) {
+            throw new Error(
+                `Lazy list schema not found for container ${listId}`,
+            );
+        }
+
+        // One wasm call: position-aligned identities (cid strings for
+        // container items, raw primitives otherwise). The shallow read also
+        // disambiguates bare objects in the payload: loro-crdt 1.13.3 drops
+        // the { value, cid } wrapper of empty containers.
+        const rawIds = this.lazyHost.readItemIds(listId);
+        const ids = rawIds.map((v) =>
+            isContainer(v) ? v.id : (v as ContainerID),
+        );
+        const payload = Array.isArray(deepValuePayload)
+            ? deepValuePayload
+            : undefined;
+
+        const itemSchema = schema.itemSchema;
+        const containerItemSchema = isContainerSchema(itemSchema)
+            ? itemSchema
+            : undefined;
+        const fields = schema.options.lazy.index;
+        const indexCache = new Map<ContainerID, Record<string, unknown>>();
+        for (let i = 0; i < ids.length; i++) {
+            const cid = ids[i];
+            if (typeof cid !== "string" || !cid.startsWith("cid:")) continue;
+            // Register the item container with its schema (no nested scan —
+            // nested containers are registered when the item hydrates).
+            this.registerContainerInBulkWalk(cid, containerItemSchema);
+            if (payload) {
+                const node = readDeepValueContainerNode(payload[i]);
+                const value = node ? node.value : payload[i];
+                indexCache.set(
+                    cid,
+                    this.extractLazyIndexFromPayload(itemSchema, fields, value),
+                );
+            } else {
+                indexCache.set(cid, this.readLazyItemIndex(listId, cid));
+            }
+        }
+
+        const list = new LazyListImpl(
+            this.lazyHost,
+            listId,
+            schema,
+            ids,
+            indexCache,
+        );
+        this.lazyLists.set(listId, list);
+        return list;
+    }
+
+    /**
+     * Extract the `lazy.index` fields of one item from its deep-value
+     * payload. Container-valued fields (e.g. LoroText) appear as
+     * `{ value, cid }` nodes; the decoded primitive is used.
+     */
+    private extractLazyIndexFromPayload(
+        itemSchema: SchemaType,
+        fields: string[],
+        itemValue: unknown,
+    ): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        if (!isObject(itemValue)) return out;
+        for (const field of fields) {
+            if (!Object.prototype.hasOwnProperty.call(itemValue, field)) {
+                continue;
+            }
+            let v = itemValue[field];
+            const node = readDeepValueContainerNode(v);
+            if (node) v = node.value;
+            out[field] = applyDecode(getChildSchema(itemSchema, field), v);
+        }
+        return out;
+    }
+
+    /**
+     * Read the `lazy.index` fields of one item via `map.getShallowValue()`
+     * (one wasm call per item — measured in scripts/lazy-list-bench.mjs;
+     * acceptable for hundreds of items, and only used on the legacy
+     * no-`getDeepValueWithID` path and for items inserted later).
+     */
+    private readLazyItemIndex(
+        listId: ContainerID,
+        itemCid: ContainerID,
+    ): Record<string, unknown> {
+        const listSchema = this.getContainerSchema(listId);
+        const fields = isLazyListSchema(listSchema)
+            ? listSchema.options.lazy.index
+            : [];
+        const itemSchema = isLoroListSchema(listSchema)
+            ? listSchema.itemSchema
+            : undefined;
+        const container = this.doc.getContainerById(itemCid);
+        if (!container || container.kind() !== "Map" || fields.length === 0) {
+            return {};
+        }
+        const shallow = (container as LoroMap).getShallowValue() as Record<
+            string,
+            unknown
+        >;
+        const out: Record<string, unknown> = {};
+        for (const field of fields) {
+            const raw = shallow[field];
+            if (raw === undefined) continue;
+            out[field] = this.decodeLazyIndexRaw(itemSchema, field, raw);
+        }
+        return out;
+    }
+
+    /**
+     * Decode one index field from a raw shallow value; container references
+     * (cid strings) are resolved to their JSON value (LoroText → string).
+     */
+    private decodeLazyIndexRaw(
+        itemSchema: SchemaType | undefined,
+        field: string,
+        raw: unknown,
+    ): unknown {
+        let v = raw;
+        if (typeof raw === "string" && raw.startsWith("cid:")) {
+            const c = this.doc.getContainerById(raw as ContainerID);
+            if (!c) return undefined;
+            v =
+                c.kind() === "Text"
+                    ? (c as LoroText).toJSON()
+                    : (c as { toJSON(): unknown }).toJSON();
+        }
+        return applyDecode(
+            itemSchema ? getChildSchema(itemSchema, field) : undefined,
+            v,
+        );
+    }
+
+    /**
+     * Decode one index field from a map-diff value (containers arrive as
+     * live handles there, not cid strings).
+     */
+    private decodeLazyIndexValue(
+        listId: ContainerID,
+        field: string,
+        raw: unknown,
+    ): unknown {
+        const listSchema = this.getContainerSchema(listId);
+        const itemSchema = isLoroListSchema(listSchema)
+            ? listSchema.itemSchema
+            : undefined;
+        let v = raw;
+        if (isContainer(raw)) {
+            v =
+                raw.kind() === "Text"
+                    ? (raw as LoroText).toJSON()
+                    : raw.toJSON();
+        }
+        return applyDecode(
+            itemSchema ? getChildSchema(itemSchema, field) : undefined,
+            v,
+        );
+    }
+
+    /**
+     * Fully read one lazy item into mirror state: registers the item and its
+     * nested containers in the container registry, stamps `$cid`, and applies
+     * schema decodes — identical to what non-lazy state would hold.
+     */
+    private readLazyItemState(
+        listId: ContainerID,
+        itemCid: ContainerID,
+    ): unknown {
+        const listSchema = this.getContainerSchema(listId);
+        const itemSchema = isLoroListSchema(listSchema)
+            ? listSchema.itemSchema
+            : undefined;
+        const container = this.doc.getContainerById(itemCid);
+        if (!container) {
+            throw new Error(`ContainerID not found: ${itemCid}`);
+        }
+        if (containerItemSchemaGuard(itemSchema)) {
+            this.registerContainerHandle(container, itemSchema, {
+                scanNested: false,
+            });
+        }
+        // loro-crdt 1.13.3 has no per-container deep-read-with-ids API, so
+        // hydration walks handles. Prefer one when a future version adds it.
+        const deep = (
+            container as Container & { getDeepValueWithID?: () => unknown }
+        ).getDeepValueWithID;
+        if (typeof deep === "function") {
+            const payload = deep.call(container);
+            const node = readDeepValueContainerNode(payload);
+            const kind = container.kind();
+            const ctx: BulkWalkContext = {
+                semantics: MIRROR_WALK_SEMANTICS,
+                registerContainers: true,
+                shallowValues: new Map(),
+            };
+            return this.bulkContainerStateByKind(
+                itemCid,
+                kind,
+                node ? node.value : payload,
+                ctx,
+            );
+        }
+        return this.containerToMirrorState(container, {
+            registerContainers: true,
+        });
+    }
+
+    /**
+     * Intercept events affecting lazy lists BEFORE they reach the immutable
+     * state walk (which cannot represent them: the state slot is an opaque
+     * LazyList, not an array). Mutates the affected LazyList instances and
+     * returns the batch of events left for `applyNormalizedLoroEventToState`.
+     *
+     * Classification is container-ancestry based (robust to index shifts
+     * within a batch); schema-path analysis only decides whether an event
+     * that belongs to no live LazyList crosses an unmaterialized nested lazy
+     * list (inside a non-hydrated item) and must be dropped.
+     */
+    private handleLazyListEvents(
+        event: LoroEventBatch,
+        excludeLists?: Set<ContainerID>,
+    ): LoroEventBatch {
+        if (!this.schemaHasLazyList) return event;
+        const kept: LoroEventBatch["events"] = [];
+        let handledAny = false;
+        for (const e of event.events) {
+            const cls = this.classifyLazyEvent(e, excludeLists);
+            if (cls.kind === "none") {
+                kept.push(e);
+                continue;
+            }
+            handledAny = true;
+            if (cls.kind === "structural") {
+                if (e.diff.type === "list") {
+                    cls.list._applyListDelta(e.diff.diff);
+                }
+                continue;
+            }
+            if (cls.kind === "inside") {
+                this.applyEventToLazyItem(
+                    cls.list,
+                    cls.itemCid,
+                    e,
+                    event,
+                    excludeLists,
+                );
+                continue;
+            }
+            // "drop": event inside an unmaterialized nested lazy list.
+        }
+        if (!handledAny) return event;
+        return { ...event, events: kept } as LoroEventBatch;
+    }
+
+    private classifyLazyEvent(
+        e: LoroEventBatch["events"][number],
+        excludeLists?: Set<ContainerID>,
+    ):
+        | { kind: "none" }
+        | { kind: "drop" }
+        | { kind: "structural"; list: LazyListImpl<unknown, unknown> }
+        | {
+              kind: "inside";
+              list: LazyListImpl<unknown, unknown>;
+              itemCid: ContainerID;
+          } {
+        const direct = this.lazyLists.get(e.target);
+        if (direct && !excludeLists?.has(e.target)) {
+            return { kind: "structural", list: direct };
+        }
+        // Walk container ancestry: the nearest materialized lazy list above
+        // the target owns this event; the container just below it is the item.
+        let cur = this.doc.getContainerById(e.target);
+        let child: Container | undefined;
+        while (cur) {
+            if (!excludeLists?.has(cur.id)) {
+                const list = this.lazyLists.get(cur.id);
+                if (list) {
+                    if (child) {
+                        return { kind: "inside", list, itemCid: child.id };
+                    }
+                    return { kind: "structural", list };
+                }
+            }
+            child = cur;
+            cur = cur.parent() ?? undefined;
+        }
+        // No live LazyList owns the event. If its path crosses an
+        // unmaterialized nested lazy list (inside a non-hydrated item), the
+        // state walk could not represent it either — drop it.
+        if (this.eventPathCrossesLazySchema(e.path)) {
+            return { kind: "drop" };
+        }
+        return { kind: "none" };
+    }
+
+    /**
+     * Apply an event that targets a container inside a lazy list item.
+     * Hydrated items reuse the normal event-application path (structural
+     * sharing + `$cid` behavior identical to non-lazy lists) via a small
+     * `{ item }` wrapper; non-hydrated items only maintain the index cache.
+     */
+    private applyEventToLazyItem(
+        list: LazyListImpl<unknown, unknown>,
+        itemCid: ContainerID,
+        e: LoroEventBatch["events"][number],
+        batch: LoroEventBatch,
+        excludeLists?: Set<ContainerID>,
+    ): void {
+        if (list._isHydratedCid(itemCid)) {
+            const current = list._getHydratedCid(itemCid);
+            const rest = this.pathWithinContainer(e.target, itemCid);
+            const subBatch = {
+                ...batch,
+                events: [{ ...e, path: ["item", ...rest] }],
+            } as LoroEventBatch;
+            // Recurse so events on lazy lists nested inside this item are
+            // intercepted too; exclude this list to terminate the recursion.
+            const excluded = new Set(excludeLists);
+            excluded.add(list.listId);
+            const applicable = this.handleLazyListEvents(subBatch, excluded);
+            const wrapped = this.applyNormalizedLoroEventToState(
+                { item: current } as unknown as InferType<S>,
+                applicable,
+            ) as unknown as { item: unknown };
+            list._setHydratedFromEvent(itemCid, wrapped.item);
+            return;
+        }
+        // Non-hydrated item: keep the index cache fresh, never hydrate.
+        if (e.diff.type === "map" && e.target === itemCid) {
+            list._updateIndexFromMapDiff(itemCid, e.diff.updated);
+        } else if (e.diff.type === "text") {
+            const rest = this.pathWithinContainer(e.target, itemCid);
+            const field = rest.length === 1 ? rest[0] : undefined;
+            if (typeof field === "string" && list._hasIndexField(field)) {
+                const text = this.doc.getContainerById(e.target);
+                if (text && text.kind() === "Text") {
+                    list._updateIndexFieldFromContainer(
+                        itemCid,
+                        field,
+                        (text as LoroText).toJSON(),
+                    );
+                }
+            }
+        }
+    }
+
+    /** Path of `targetCid` relative to its ancestor `ancestorCid`. */
+    private pathWithinContainer(
+        targetCid: ContainerID,
+        ancestorCid: ContainerID,
+    ): (string | number)[] {
+        const full = this.doc.getPathToContainer(targetCid) ?? [];
+        const base = this.doc.getPathToContainer(ancestorCid) ?? [];
+        return full.slice(base.length);
+    }
+
+    /**
+     * Pure-JS check (schema walk along the event path): does this event's
+     * target sit inside a lazy list? Used only to drop events that belong to
+     * unmaterialized nested lazy lists.
+     */
+    private eventPathCrossesLazySchema(path: (string | number)[]): boolean {
+        const root = this.schema;
+        if (!root || root.type !== "schema" || path.length === 0) return false;
+        let current: SchemaType | undefined = (
+            root as RootSchemaType<Record<string, ContainerSchemaType>>
+        ).definition[String(path[0])];
+        if (!current) return false;
+        for (let i = 1; i < path.length; i++) {
+            if (isLazyListSchema(current)) return true;
+            current = getChildSchema(current, path[i]);
+            if (!current) return false;
+        }
+        return isLazyListSchema(current);
+    }
+
+    /**
+     * Guard for `setState`: an update that replaces or modifies a lazy list
+     * slot throws `LazyListWriteError`. Detection is reference-based — the
+     * LazyList instance in state is opaque to the diff, and Immer never
+     * drafts class instances, so any update that leaves the slot untouched
+     * keeps the identical reference. Checked before validation and diffing.
+     */
+    private assertLazyListsUntouched(
+        oldState: unknown,
+        newState: unknown,
+    ): void {
+        if (!this.schemaHasLazyList || oldState === newState) return;
+        if (!this.schema || this.schema.type !== "schema") return;
+        const rootSchema = this.schema as RootSchemaType<
+            Record<string, ContainerSchemaType>
+        >;
+        this.assertLazyInMapDefinition(
+            rootSchema.definition,
+            oldState,
+            newState,
+            "",
+        );
+    }
+
+    private assertLazyInMapDefinition(
+        definition: Record<string, SchemaType>,
+        oldObj: unknown,
+        newObj: unknown,
+        path: string,
+    ): void {
+        if (oldObj === newObj) return;
+        if (!isObject(oldObj) || !isObject(newObj)) return;
+        for (const key of Object.keys(definition)) {
+            const fieldSchema = definition[key];
+            const oldVal = oldObj[key];
+            const newVal = newObj[key];
+            if (oldVal === newVal) continue;
+            const fieldPath = path ? `${path}.${key}` : key;
+            if (isLazyListSchema(fieldSchema)) {
+                // Only throw when there was a LazyList to lose: if the slot
+                // never held one (schema drift), let the normal flow proceed.
+                if (isLazyList(oldVal)) {
+                    throw new LazyListWriteError(fieldPath);
+                }
+                continue;
+            }
+            if (isLoroMapSchema(fieldSchema)) {
+                this.assertLazyInMapDefinition(
+                    fieldSchema.definition as Record<string, SchemaType>,
+                    oldVal,
+                    newVal,
+                    fieldPath,
+                );
+            }
+            // Lazy lists nested under (non-lazy) list items or tree nodes are
+            // not guarded: positional paths shift under legitimate edits, so
+            // a reference check could false-positive. Documented best-effort.
+        }
+    }
+
+    /**
+     * Write API for lazy lists. `path` is a dot/bracket path from the root
+     * (e.g. `"history"`, `"doc.pages"`). Root-level paths are resolved
+     * robustly; nested paths (list inside a map inside a list) are
+     * best-effort.
+     *
+     * Writes reuse the existing diff/apply machinery: inserts emit the same
+     * `insert-container` change `diffList` would emit for an equivalent array
+     * edit, updates diff old vs new item state with `diffContainer`, and all
+     * changes go through the same `applyChangesToLoro` path as `setState` —
+     * so the produced Loro ops (container types, idSelector identity, `$cid`
+     * conventions) are identical. Writes commit to the doc.
+     */
+    list<T>(path: string): LazyListWriter<T> {
+        const ref = this.resolveLazyList(path);
+        return {
+            push: (item: T) => {
+                this.lazyListInsert(ref, ref.lazy.length, item);
+            },
+            insert: (index: number, item: T) => {
+                this.lazyListInsert(ref, index, item);
+            },
+            deleteById: (id: string) => {
+                const index = ref.lazy.indexOf(id);
+                if (index < 0) {
+                    throw new Error(
+                        `mirror.list("${path}"): no item with id "${id}"`,
+                    );
+                }
+                this.lazyListDelete(ref, index);
+            },
+            updateById: (id: string, updater: (draft: T) => void) => {
+                const index = ref.lazy.indexOf(id);
+                if (index < 0) {
+                    throw new Error(
+                        `mirror.list("${path}"): no item with id "${id}"`,
+                    );
+                }
+                this.lazyListUpdate(ref, index, updater);
+            },
+            updateAt: (index: number, updater: (draft: T) => void) => {
+                this.lazyListUpdate(ref, index, updater);
+            },
+        };
+    }
+
+    private resolveLazyList(path: string): {
+        listId: ContainerID;
+        lazy: LazyListImpl<unknown, unknown>;
+        schema: LoroListSchema<SchemaType>;
+    } {
+        const segments = parseStatePath(path);
+        if (segments.length === 0) {
+            throw new Error(`mirror.list: invalid empty path`);
+        }
+        const first = String(segments[0]);
+        const rootSchema =
+            this.schema && this.schema.type === "schema"
+                ? (
+                      this.schema as RootSchemaType<
+                          Record<string, ContainerSchemaType>
+                      >
+                  ).definition[first]
+                : undefined;
+        let container: Container | undefined;
+        let containerSchema: SchemaType | undefined = rootSchema;
+        if (rootSchema) {
+            const t = schemaToContainerType(rootSchema);
+            container = t
+                ? getRootContainerByType(this.doc, first, t)
+                : undefined;
+        } else {
+            const shallow = this.doc.getShallowValue();
+            const cid = shallow[first];
+            container = cid
+                ? this.doc.getContainerById(cid as ContainerID)
+                : undefined;
+            containerSchema = this.getContainerSchema(
+                container?.id ?? ("" as ContainerID),
+            );
+        }
+        for (let i = 1; i < segments.length && container; i++) {
+            const seg = segments[i];
+            const kind = container.kind();
+            let next: unknown;
+            if (kind === "Map") {
+                next = (container as LoroMap).get(String(seg));
+            } else if (kind === "List" || kind === "MovableList") {
+                next = (container as LoroList | LoroMovableList).get(
+                    Number(seg),
+                );
+            } else {
+                container = undefined;
+                break;
+            }
+            containerSchema = getChildSchema(
+                containerSchema,
+                kind === "Map" ? String(seg) : Number(seg),
+            );
+            container = isContainer(next) ? next : undefined;
+        }
+        if (!container || container.kind() !== "List") {
+            throw new Error(
+                `mirror.list("${path}"): path does not resolve to a LoroList container`,
+            );
+        }
+        const schema =
+            this.getContainerSchema(container.id) ??
+            (containerSchema && isContainerSchema(containerSchema)
+                ? containerSchema
+                : undefined);
+        if (!isLazyListSchema(schema)) {
+            throw new Error(
+                `mirror.list("${path}"): the list at this path is not declared lazy in the schema`,
+            );
+        }
+        let lazy = this.lazyLists.get(container.id);
+        if (!lazy) {
+            lazy = this.getOrCreateLazyList(container.id);
+        }
+        return { listId: container.id, lazy, schema };
+    }
+
+    private lazyListInsert<T>(
+        ref: {
+            listId: ContainerID;
+            lazy: LazyListImpl<unknown, unknown>;
+            schema: LoroListSchema<SchemaType>;
+        },
+        index: number,
+        item: T,
+    ): void {
+        const itemSchema = ref.schema.itemSchema;
+        if (this.options.validateUpdates) {
+            const validation = validateSchema(itemSchema, item);
+            if (validation && !validation.valid) {
+                throw new Error(
+                    `State validation failed: ${validation.errors?.join(", ")}`,
+                );
+            }
+        }
+        const clamped = Math.max(0, Math.min(index, ref.lazy.length));
+        // Exactly the change diffList emits for a pure insertion at `index`.
+        const change = tryUpdateToContainer(
+            {
+                container: ref.listId,
+                key: clamped,
+                value: item,
+                kind: "insert",
+            },
+            true,
+            itemSchema,
+            this.getInferOptionsForContainer(ref.listId),
+        );
+        this.applyLocalLoroChanges([change], undefined, undefined);
+        // Keep the freshly written item hydrated (its $cid was stamped during
+        // apply), so reads through the write API see it immediately.
+        const cid = isObject(item)
+            ? (item as Record<string, unknown>)[CID_KEY]
+            : undefined;
+        if (typeof cid === "string") {
+            ref.lazy._setHydratedFromWrite(cid as ContainerID, item);
+        }
+        this.notifySubscribers(UpdateSource.MIRROR);
+    }
+
+    private lazyListDelete(
+        ref: { listId: ContainerID; lazy: LazyListImpl<unknown, unknown> },
+        index: number,
+    ): void {
+        const change: Change = {
+            container: ref.listId,
+            key: index,
+            value: undefined,
+            kind: "delete",
+        };
+        this.applyLocalLoroChanges([change], undefined, undefined);
+        this.notifySubscribers(UpdateSource.MIRROR);
+    }
+
+    private lazyListUpdate<T>(
+        ref: {
+            listId: ContainerID;
+            lazy: LazyListImpl<unknown, unknown>;
+            schema: LoroListSchema<SchemaType>;
+        },
+        index: number,
+        updater: (draft: T) => void,
+    ): void {
+        if (index < 0 || index >= ref.lazy.length) {
+            throw new Error(
+                `mirror.list: index ${index} out of range (length ${ref.lazy.length})`,
+            );
+        }
+        const cid = ref.lazy.ids()[index];
+        if (typeof cid !== "string" || !cid.startsWith("cid:")) {
+            throw new Error(
+                `mirror.list: updateAt/updateById require container items`,
+            );
+        }
+        // The updater needs the full item: hydrate it first.
+        if (!ref.lazy.isHydrated(index)) {
+            ref.lazy._hydrateIndex(index);
+        }
+        const oldItem = ref.lazy.get(index) as T;
+        const newItem = produce<T>(oldItem, (draft) => {
+            (updater as (d: unknown) => void)(draft);
+        });
+        if (newItem === oldItem) return;
+        if (this.options.validateUpdates) {
+            const validation = validateSchema(ref.schema.itemSchema, newItem);
+            if (validation && !validation.valid) {
+                throw new Error(
+                    `State validation failed: ${validation.errors?.join(", ")}`,
+                );
+            }
+        }
+        // Exactly what setState does for an item edit under a non-lazy list:
+        // diff the old/new item state against the item container and apply.
+        const changes = diffContainer(
+            this.doc,
+            oldItem,
+            newItem,
+            cid as ContainerID,
+            ref.schema.itemSchema,
+            this.getInferOptionsForContainer(cid as ContainerID),
+        );
+        if (changes.length === 0) return;
+        this.applyLocalLoroChanges(changes, undefined, undefined);
+        this.notifySubscribers(UpdateSource.MIRROR);
     }
 }
 

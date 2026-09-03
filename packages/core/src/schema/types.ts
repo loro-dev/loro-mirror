@@ -2,7 +2,82 @@
  * Types for the schema definition system
  */
 
-import { ContainerType } from "loro-crdt";
+import { ContainerID, ContainerType } from "loro-crdt";
+/**
+ * Options for a lazy `schema.LoroList`.
+ *
+ * A lazy list is not read into Mirror state at initialization. `getState()`
+ * exposes a {@link LazyList} at that key instead of an array; item data is
+ * loaded on demand via `LazyList.hydrate(from, to)`. Writes go through
+ * `mirror.list(path)` — `setState` updates that touch a lazy path throw
+ * `LazyListWriteError`.
+ */
+export interface LazyListOptions {
+    /**
+     * Item fields that are always loaded (even at init) and kept up to date
+     * by events, readable via `LazyList.index(i)`. Typically identity and
+     * sort/preview fields, e.g. `["id", "createdAt"]`.
+     */
+    index: string[];
+    /**
+     * Maximum number of hydrated items kept in memory. Least-recently-used
+     * items are evicted beyond this bound, except items inside ranges with an
+     * active `subscribeRange` and the last `tailKeep` items of the list.
+     * @default 200
+     */
+    maxHydrated?: number;
+    /**
+     * Number of trailing list items that are never evicted by the LRU.
+     * @default 20
+     */
+    tailKeep?: number;
+}
+
+/**
+ * Read view over a lazy `schema.LoroList`. Instances live in Mirror state at
+ * the lazy key and are stable across updates: `version` is the change signal.
+ *
+ * Notes:
+ * - Hydrated data is keyed by item *container id*, never by position, so
+ *   positional views (`get`/`slice`/`isHydrated`) stay correct across
+ *   concurrent structural edits.
+ * - `get(i)` returns `undefined` for non-hydrated items — it never throws.
+ * - `ids()` is backed by a cached copy of `list.getShallowValue()` kept fresh
+ *   by events; it costs no wasm call per invocation.
+ * - Ephemeral overlays never touch lazy lists (the instance passes through
+ *   `composeState` untouched), and `checkStateConsistency` skips lazy paths
+ *   beyond verifying instance identity.
+ */
+export interface LazyList<T, I = Partial<T>> {
+    /** Current number of items. */
+    readonly length: number;
+    /** Increments on any structural change or index-field change. */
+    readonly version: number;
+    /** Item container ids in list order (`"cid:..."` strings). */
+    ids(): readonly ContainerID[];
+    /** Position of an item by its container id OR its idSelector id; -1 when absent. */
+    indexOf(id: string): number;
+    /** The fields named in `lazy.index`; always loaded. */
+    index(i: number): I | undefined;
+    /** Full item when hydrated; `undefined` otherwise (never throws). */
+    get(i: number): T | undefined;
+    slice(from: number, to: number): (T | undefined)[];
+    isHydrated(i: number): boolean;
+    /** Batch-read the range into memory (fewest wasm crossings available). */
+    hydrate(from: number, to: number): Promise<void>;
+    /**
+     * Drop hydration for the range. Explicit: entries are dropped even if the
+     * LRU (including `tailKeep`) would keep them, but items inside an active
+     * `subscribeRange` window are still exempt.
+     */
+    release(from: number, to: number): void;
+    /**
+     * Fires when an item in `[from, to)` changes, is hydrated/released, or a
+     * structural change moves indices within the range. Returns unsubscribe.
+     */
+    subscribeRange(from: number, to: number, listener: () => void): () => void;
+}
+
 export type InferContainerOptions = {
     /**
      * When true, string values are inferred as `LoroText` containers instead of primitive strings.
@@ -67,6 +142,12 @@ export interface SchemaOptions {
      * @see https://loro.dev/blog/mergeable-containers
      */
     mergeableMapChildContainers?: boolean;
+    /**
+     * Only meaningful on `schema.LoroList`: makes the list lazy — see
+     * {@link LazyListOptions}. Present here so the option flows through the
+     * generic `SchemaOptions` bag.
+     */
+    lazy?: LazyListOptions;
     [key: string]: unknown;
 }
 
@@ -267,6 +348,15 @@ type IsSchemaRequired<S extends SchemaType> = S extends {
           : true;
 
 /**
+ * Whether a schema carries the lazy list option.
+ */
+export type HasLazyListOption<S extends SchemaType> = S extends {
+    options: { lazy: LazyListOptions };
+}
+    ? true
+    : false;
+
+/**
  * Infer the JavaScript type from a schema type.
  */
 export type InferType<S extends SchemaType> = S extends {
@@ -308,7 +398,14 @@ export type InferType<S extends SchemaType> = S extends {
                                 })
                               | undefined
                         : S extends LoroListSchema<infer I>
-                          ? Array<InferType<I>> | undefined
+                          ? HasLazyListOption<S> extends true
+                              ?
+                                    | LazyList<
+                                          InferType<I>,
+                                          Partial<InferType<I>>
+                                      >
+                                    | undefined
+                              : Array<InferType<I>> | undefined
                           : S extends LoroMovableListSchema<infer I>
                             ? Array<InferType<I>> | undefined
                             : S extends LoroTreeSchema<infer M>
@@ -333,7 +430,9 @@ export type InferType<S extends SchemaType> = S extends {
                     : S extends LoroMapSchema<infer M>
                       ? { [K in keyof M]: InferType<M[K]> } & { $cid: string }
                       : S extends LoroListSchema<infer I>
-                        ? Array<InferType<I>>
+                        ? HasLazyListOption<S> extends true
+                            ? LazyList<InferType<I>, Partial<InferType<I>>>
+                            : Array<InferType<I>>
                         : S extends LoroMovableListSchema<infer I>
                           ? Array<InferType<I>>
                           : S extends LoroTreeSchema<infer M>
@@ -392,7 +491,14 @@ export type InferInputType<S extends SchemaType> = S extends {
                                 })
                               | undefined
                         : S extends LoroListSchema<infer I>
-                          ? Array<InferInputType<I>> | undefined
+                          ? HasLazyListOption<S> extends true
+                              ?
+                                    | LazyList<
+                                          InferType<I>,
+                                          Partial<InferType<I>>
+                                      >
+                                    | undefined
+                              : Array<InferInputType<I>> | undefined
                           : S extends LoroMovableListSchema<infer I>
                             ? Array<InferInputType<I>> | undefined
                             : S extends LoroTreeSchema<infer M>
@@ -424,7 +530,9 @@ export type InferInputType<S extends SchemaType> = S extends {
                             $cid?: string;
                         }
                       : S extends LoroListSchema<infer I>
-                        ? Array<InferInputType<I>>
+                        ? HasLazyListOption<S> extends true
+                            ? LazyList<InferType<I>, Partial<InferType<I>>>
+                            : Array<InferInputType<I>>
                         : S extends LoroMovableListSchema<infer I>
                           ? Array<InferInputType<I>>
                           : S extends LoroTreeSchema<infer M>
