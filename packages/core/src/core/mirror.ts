@@ -109,6 +109,8 @@ type BulkWalkSemantics = {
 type BulkWalkContext = {
     semantics: BulkWalkSemantics;
     registerContainers: boolean;
+    /** True only when this walk consumes the explicit toContainerTree node contract. */
+    structuredState: boolean;
     /** Parent shallow values, cached per container id for one walk. */
     shallowValues: Map<ContainerID, unknown>;
 };
@@ -2981,8 +2983,14 @@ export class Mirror<S extends SchemaType> {
         // walk, instead of ~10 wasm crossings per container.
         const docWithDeepValue = this.doc as LoroDoc & {
             getDeepValueWithID?: () => unknown;
+            toContainerTree?: (options?: {
+                roots?: readonly string[];
+            }) => unknown;
         };
-        if (typeof docWithDeepValue.getDeepValueWithID !== "function") {
+        if (
+            typeof docWithDeepValue.toContainerTree !== "function" &&
+            typeof docWithDeepValue.getDeepValueWithID !== "function"
+        ) {
             return this.buildRootStateSnapshotLegacy(prevState, options);
         }
 
@@ -3123,12 +3131,38 @@ export class Mirror<S extends SchemaType> {
         }
 
         // Read AFTER pass 1 so roots that were never accessed are included.
-        const deepValue = (
-            this.doc as LoroDoc & { getDeepValueWithID: () => unknown }
-        ).getDeepValueWithID();
+        const doc = this.doc as LoroDoc & {
+            toContainerTree?: (options?: {
+                roots?: readonly string[];
+            }) => unknown;
+            getDeepValueWithID: () => unknown;
+        };
+        const structuredState = typeof doc.toContainerTree === "function";
+        let roots: string[] | undefined;
+        if (structuredState) {
+            roots = [...rootContainers.keys()];
+            // Preserve unknown roots only under the existing opt-in policy.
+            // Explicit Ignore roots are never materialized by the bulk reader.
+            if (this.options.ignoreUnknownProperties) {
+                for (const key of Object.keys(this.doc.getShallowValue())) {
+                    if (
+                        !Object.prototype.hasOwnProperty.call(
+                            rootSchema.definition,
+                            key,
+                        )
+                    ) {
+                        roots.push(key);
+                    }
+                }
+            }
+        }
+        const deepValue = doc.toContainerTree
+            ? doc.toContainerTree({ roots })
+            : doc.getDeepValueWithID();
         const deepRoots = isObject(deepValue) ? deepValue : {};
 
         const ctx: BulkWalkContext = {
+            structuredState,
             semantics: MIRROR_WALK_SEMANTICS,
             registerContainers,
             shallowValues: new Map(),
@@ -3194,6 +3228,7 @@ export class Mirror<S extends SchemaType> {
             // Unknown roots are not registered and have no schema: walk them
             // with normalizeContainerForJson semantics instead.
             const unknownCtx: BulkWalkContext = {
+                structuredState,
                 semantics: UNKNOWN_ROOT_WALK_SEMANTICS,
                 registerContainers: false,
                 shallowValues: ctx.shallowValues,
@@ -3365,6 +3400,34 @@ export class Mirror<S extends SchemaType> {
         parentLocalInfer: InferContainerOptions | undefined,
         ctx: BulkWalkContext,
     ): unknown {
+        if (ctx.structuredState) {
+            if (!isObject(childNode))
+                throw new Error("Invalid toContainerTree node");
+            if (childNode.type === "Value") {
+                return applyDecode(
+                    getChildSchema(parentSchema, key),
+                    childNode.value,
+                );
+            }
+            const node = childNode as {
+                cid: ContainerID;
+                type: ContainerType;
+                value: unknown;
+            };
+            if (typeof node.cid !== "string")
+                throw new Error("Missing toContainerTree container ID");
+            return this.bulkContainerChild(
+                parentCid,
+                parentKind,
+                key,
+                node.cid,
+                node.value,
+                parentSchema,
+                parentLocalInfer,
+                ctx,
+                node.type,
+            );
+        }
         if (isObject(childNode) || Array.isArray(childNode)) {
             // Both container wrappers and embedded user objects can have
             // { cid, value } fields. Check the parent's actual slot before
@@ -3422,6 +3485,7 @@ export class Mirror<S extends SchemaType> {
         parentSchema: ContainerSchemaType | undefined,
         parentLocalInfer: InferContainerOptions | undefined,
         ctx: BulkWalkContext,
+        knownKind?: ContainerType,
     ): unknown {
         if (ctx.registerContainers) {
             this.registerChildContainerInBulkWalk(
@@ -3433,7 +3497,7 @@ export class Mirror<S extends SchemaType> {
                 parentLocalInfer,
             );
         }
-        const kind = containerIdToContainerType(childCid);
+        const kind = knownKind ?? containerIdToContainerType(childCid);
         if (!kind) {
             return this.bulkLegacyContainerFallback(childCid, ctx);
         }

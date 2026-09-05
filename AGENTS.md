@@ -49,3 +49,12 @@
 - Runtime helpers from the schema module: `validateSchema`, `getDefaultValue`, `createValueFromSchema`, and type guards such as `isContainerSchema`, `isLoroMapSchema`, `isLoroListSchema`, `isLoroMovableListSchema`, `isLoroTextSchema`, `isLoroTreeSchema`, `isRootSchemaType`, `isListLikeSchema`.
 - Types re-exported at the root: `MirrorOptions`, `SetStateOptions`, `UpdateMetadata`, `InferType`, `InferInputType`, `InferContainerOptions`, `SchemaType`, `ContainerSchemaType`, `RootSchemaType`, `LoroMapSchema`, `LoroListSchema`, `LoroMovableListSchema`, `LoroTextSchemaType`, `LoroTreeSchema`, `SchemaOptions`, `ChangeKinds`, `MapChangeKinds`, `ListChangeKinds`, `MovableListChangeKinds`, `TreeChangeKinds`, `TextChangeKinds`, `SubscriberCallback`, `UpdateSource`.
 - Utilities: `toNormalizedJson(doc)` for tree normalization. `$cid` is a reserved property injected into mirrored map values but there is no exported constant.
+
+Bulk initialization prefers optional `LoroDoc.toContainerTree()` when available. Its
+`Value` nodes are opaque, including embedded objects with `type/cid/value` fields.
+Carry the format flag in each walk context; never infer it from child value shape.
+Older packages continue through verified deep-value or handle reads. Tree projection
+retains its existing normalization path. Tests must disable both bulk APIs when
+explicitly comparing with the legacy handle path.
+The container-tree path selects required roots before materialization, excluding
+explicit Ignore roots. Preserve unknown roots according to ignoreUnknownProperties.

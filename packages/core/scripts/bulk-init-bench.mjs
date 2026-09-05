@@ -129,11 +129,13 @@ function countTraversalCalls(doc, entryCount) {
         LoroDoc.prototype,
         "getDeepValueWithID",
     );
+    const originalContainerTree = LoroDoc.prototype.toContainerTree;
     const shallowReads = [LoroMap, LoroList].map((type) => [
         type.prototype,
         type.prototype.getShallowValue,
     ]);
     const calls = {
+        toContainerTree: 0,
         parentShallow: 0,
         getDeepValueWithID: 0,
         listGet: 0,
@@ -145,6 +147,12 @@ function countTraversalCalls(doc, entryCount) {
         prototype.getShallowValue = function () {
             calls.parentShallow += 1;
             return Reflect.apply(original, this, []);
+        };
+    }
+    if (typeof originalContainerTree === "function") {
+        LoroDoc.prototype.toContainerTree = function (...args) {
+            calls.toContainerTree += 1;
+            return Reflect.apply(originalContainerTree, this, args);
         };
     }
     LoroDoc.prototype.getDeepValueWithID = function () {
@@ -171,6 +179,8 @@ function countTraversalCalls(doc, entryCount) {
     } finally {
         for (const [prototype, original] of shallowReads)
             prototype.getShallowValue = original;
+        if (typeof originalContainerTree === "function")
+            LoroDoc.prototype.toContainerTree = originalContainerTree;
         LoroDoc.prototype.getDeepValueWithID = originalGetDeepValueWithID;
         LoroList.prototype.get = originalListGet;
         LoroMap.prototype.get = originalMapGet;
@@ -240,12 +250,13 @@ function main() {
     const calls = countTraversalCalls(doc, entryCount);
     const timing = benchmarkInitialization(doc, entryCount, warmup, iterations);
 
-    console.log("bulk initialization benchmark (getDeepValueWithID)");
+    console.log("bulk initialization benchmark (preferred available API)");
     console.log(
         `entries=${entryCount} itemsPerEntry=${itemsPerEntry} warmup=${warmup} iterations=${iterations}`,
     );
     console.table([
         {
+            toContainerTree: calls.toContainerTree,
             getDeepValueWithID: calls.getDeepValueWithID,
             parentShallow: calls.parentShallow,
             listGet: calls.listGet,
