@@ -161,7 +161,8 @@ function parseDeepValueCid(raw: unknown): ContainerID | undefined {
 
 /**
  * Read a `{ value, cid }` container node from a `getDeepValueWithID` payload.
- * Returns undefined for primitives and embedded plain values; an object that
+ * This only identifies a candidate wrapper; callers must confirm child slots
+ * against the parent shallow value before unwrapping. An object that
  * merely has "value"/"cid" keys whose cid is not a recognizable container id
  * is treated as an embedded plain value.
  */
@@ -3484,43 +3485,50 @@ export class Mirror<S extends SchemaType> {
         parentLocalInfer: InferContainerOptions | undefined,
         ctx: BulkWalkContext,
     ): unknown {
-        const node = readDeepValueContainerNode(childNode);
-        if (node) {
-            return this.bulkContainerChild(
-                parentCid,
-                parentKind,
-                key,
-                node.cid,
-                node.value,
-                parentSchema,
-                parentLocalInfer,
-                ctx,
-            );
-        }
         if (isObject(childNode) || Array.isArray(childNode)) {
-            // loro-crdt 1.13.3 drops the { value, cid } wrapper for empty
-            // containers, making them indistinguishable from embedded plain
-            // values in the deep value alone. The parent's shallow value
-            // resolves the ambiguity: containers appear as "cid:..." id
-            // strings there.
+            // Both container wrappers and embedded user objects can have
+            // { cid, value } fields. Check the parent's actual slot before
+            // interpreting that shape. Cache one shallow read per parent.
+            // This also identifies empty containers whose wrappers are
+            // omitted by loro-crdt 1.13.3.
             const shallow = this.getBulkParentShallowValue(parentCid, ctx);
             const actual = (
                 shallow as Record<string | number, unknown> | undefined
             )?.[key];
-            if (typeof actual === "string" && actual.startsWith("cid:")) {
+            let childCid =
+                typeof actual === "string" && actual.startsWith("cid:")
+                    ? (actual as ContainerID)
+                    : undefined;
+            // Older Loro versions expose mergeable references as binary
+            // markers. Resolve only these ambiguous slots through get(),
+            // which distinguishes a real container from user-owned bytes.
+            if (actual instanceof Uint8Array) {
+                const parent = this.doc.getContainerById(parentCid) as
+                    | LoroMap
+                    | LoroList
+                    | LoroMovableList
+                    | undefined;
+                const child =
+                    parentKind === "Map"
+                        ? (parent as LoroMap | undefined)?.get(String(key))
+                        : (
+                              parent as LoroList | LoroMovableList | undefined
+                          )?.get(Number(key));
+                if (isContainer(child)) childCid = child.id;
+            }
+            if (childCid) {
+                const node = readDeepValueContainerNode(childNode);
                 return this.bulkContainerChild(
                     parentCid,
                     parentKind,
                     key,
-                    actual as ContainerID,
-                    childNode,
+                    childCid,
+                    node ? node.value : childNode,
                     parentSchema,
                     parentLocalInfer,
                     ctx,
                 );
             }
-            // Embedded plain value: legacy passes it through applyDecode.
-            return applyDecode(getChildSchema(parentSchema, key), childNode);
         }
         return applyDecode(getChildSchema(parentSchema, key), childNode);
     }
@@ -3655,9 +3663,9 @@ export class Mirror<S extends SchemaType> {
 
     /**
      * Shallow value of a map/list parent, cached per container for the
-     * duration of a bulk walk. Only consulted to disambiguate bare
-     * object/array children on loro-crdt versions that drop the
-     * { value, cid } wrapper of empty containers.
+     * duration of a bulk walk. Consulted for object/array
+     * children to distinguish real containers from embedded user values,
+     * including objects that happen to match the { value, cid } wrapper.
      */
     private getBulkParentShallowValue(
         parentCid: ContainerID,
