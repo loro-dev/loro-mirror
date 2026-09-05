@@ -67,6 +67,7 @@ import {
     schemaToContainerType,
     tryInferContainerType,
     getRootContainerByType,
+    containerIdToContainerType,
     defineCidProperty,
     hardenCidDescriptors,
     stripUndefined,
@@ -89,6 +90,84 @@ interface MirrorStateObject {
 type RootSnapshotOptions = {
     registerContainers?: boolean;
 };
+
+type BulkWalkSemantics = {
+    /**
+     * Read registered schemas for decode/child-schema resolution (mirror init
+     * semantics). When false, walk with `normalizeContainerForJson` semantics
+     * (unknown roots under `ignoreUnknownProperties`): no registry lookups,
+     * no decoding, no registration.
+     */
+    useRegistrySchema: boolean;
+    /**
+     * Skip a user-owned `$cid` map key (normalizeContainerForJson behavior)
+     * instead of reproducing the legacy stamp-then-assign throw.
+     */
+    skipCidKey: boolean;
+};
+
+type BulkWalkContext = {
+    semantics: BulkWalkSemantics;
+    registerContainers: boolean;
+    /** Parent shallow values, cached per container id for one walk. */
+    shallowValues: Map<ContainerID, unknown>;
+};
+
+const MIRROR_WALK_SEMANTICS: BulkWalkSemantics = {
+    useRegistrySchema: true,
+    skipCidKey: false,
+};
+
+const UNKNOWN_ROOT_WALK_SEMANTICS: BulkWalkSemantics = {
+    useRegistrySchema: false,
+    skipCidKey: true,
+};
+
+// Debug-like cid format produced by getDeepValueWithID, e.g.
+// "idx:2, id:cid:2@4190814119833933475:Map" (roots: "idx:0, id:cid:root-x:Map").
+const DEEP_VALUE_CID_MARKER = "id:cid:";
+
+const DEEP_VALUE_CONTAINER_KINDS = new Set([
+    "Map",
+    "List",
+    "MovableList",
+    "Text",
+    "Tree",
+    "Counter",
+]);
+
+/**
+ * Parse the cid of a `getDeepValueWithID` container node. Tolerant of both
+ * the Debug-like format ("idx:2, id:cid:...") and bare container ids.
+ */
+function parseDeepValueCid(raw: unknown): ContainerID | undefined {
+    if (typeof raw !== "string") return undefined;
+    const markerIndex = raw.indexOf(DEEP_VALUE_CID_MARKER);
+    if (markerIndex >= 0) {
+        return raw.slice(markerIndex + "id:".length) as ContainerID;
+    }
+    if (raw.startsWith("cid:")) return raw as ContainerID;
+    return undefined;
+}
+
+/**
+ * Read a `{ value, cid }` container node from a `getDeepValueWithID` payload.
+ * This only identifies a candidate wrapper; callers must confirm child slots
+ * against the parent shallow value before unwrapping. An object that
+ * merely has "value"/"cid" keys whose cid is not a recognizable container id
+ * is treated as an embedded plain value.
+ */
+function readDeepValueContainerNode(
+    node: unknown,
+): { cid: ContainerID; value: unknown } | undefined {
+    if (!isObject(node)) return undefined;
+    if (!("value" in node) || !("cid" in node)) return undefined;
+    const cid = parseDeepValueCid((node as { cid: unknown }).cid);
+    if (!cid) return undefined;
+    const kind = containerIdToContainerType(cid);
+    if (!kind || !DEEP_VALUE_CONTAINER_KINDS.has(kind)) return undefined;
+    return { cid, value: (node as { value: unknown }).value };
+}
 
 type RegisterContainerOptions = {
     scanNested?: boolean;
@@ -2898,6 +2977,32 @@ export class Mirror<S extends SchemaType> {
             return toNormalizedJson(this.doc) as Record<string, unknown>;
         }
 
+        // Bulk path: one wasm call for the whole document plus a single JS
+        // walk, instead of ~10 wasm crossings per container.
+        const docWithDeepValue = this.doc as LoroDoc & {
+            getDeepValueWithID?: () => unknown;
+        };
+        if (typeof docWithDeepValue.getDeepValueWithID !== "function") {
+            return this.buildRootStateSnapshotLegacy(prevState, options);
+        }
+
+        return this.buildRootStateSnapshotFromDeepValue(prevState, options);
+    }
+
+    /**
+     * Build a fresh state snapshot from the LoroDoc by walking it container by
+     * container. Kept intact as the fallback for loro-crdt versions without
+     * `getDeepValueWithID` and for parity testing.
+     */
+    private buildRootStateSnapshotLegacy(
+        prevState?: Record<string, unknown>,
+        options: RootSnapshotOptions = {},
+    ): Record<string, unknown> {
+        if (!this.schema || this.schema.type !== "schema") {
+            // Fallback to previous normalization if no schema
+            return toNormalizedJson(this.doc) as Record<string, unknown>;
+        }
+
         const root: Record<string, unknown> = {};
         const rootSchema = this.schema as RootSchemaType<
             Record<string, ContainerSchemaType>
@@ -2971,6 +3076,494 @@ export class Mirror<S extends SchemaType> {
             }
         }
         return root;
+    }
+
+    /**
+     * Build a fresh state snapshot from a single `doc.getDeepValueWithID()`
+     * call plus one JS walk over the returned tree. Produces exactly the same
+     * state, `containerRegistry`, `inferOptionsByContainerId`, and
+     * `rootPathById` contents as `buildRootStateSnapshotLegacy`.
+     */
+    private buildRootStateSnapshotFromDeepValue(
+        prevState?: Record<string, unknown>,
+        options: RootSnapshotOptions = {},
+    ): Record<string, unknown> {
+        const rootSchema = this.schema as RootSchemaType<
+            Record<string, ContainerSchemaType>
+        >;
+        const registerContainers = options.registerContainers === true;
+
+        // Pass 1: touch every schema-declared root container. Accessing a root
+        // is a no-op in Loro but makes it visible in the deep value, and the
+        // legacy path does the same before snapshotting. Root registrations
+        // are refreshed so the walk below finds the root schema in the
+        // registry, exactly like the legacy path (roots are registered by
+        // initializeContainers before this runs).
+        const rootContainers = new Map<
+            string,
+            { cid: ContainerID; containerType: ContainerType }
+        >();
+        for (const key in rootSchema.definition) {
+            const fieldSchema = rootSchema.definition[key];
+            if ((fieldSchema as { type: string }).type === "ignore") continue;
+            const containerType = schemaToContainerType(fieldSchema);
+            if (!containerType) continue;
+            const container = getRootContainerByType(
+                this.doc,
+                key,
+                containerType,
+            );
+            rootContainers.set(key, {
+                cid: container.id,
+                containerType,
+            });
+            if (registerContainers && isContainerSchema(fieldSchema)) {
+                this.registerContainerInBulkWalk(container.id, fieldSchema);
+            }
+        }
+
+        // Read AFTER pass 1 so roots that were never accessed are included.
+        const deepValue = (
+            this.doc as LoroDoc & { getDeepValueWithID: () => unknown }
+        ).getDeepValueWithID();
+        const deepRoots = isObject(deepValue) ? deepValue : {};
+
+        const ctx: BulkWalkContext = {
+            semantics: MIRROR_WALK_SEMANTICS,
+            registerContainers,
+            shallowValues: new Map(),
+        };
+
+        // Pass 2: build the state, preserving definition key order.
+        const root: Record<string, unknown> = {};
+        for (const key in rootSchema.definition) {
+            const fieldSchema = rootSchema.definition[key];
+            // Preserve Ignore fields from previous state — they are memory-only
+            if ((fieldSchema as { type: string }).type === "ignore") {
+                if (prevState && key in prevState) {
+                    root[key] = prevState[key];
+                }
+                continue;
+            }
+            const info = rootContainers.get(key);
+            if (!info) continue;
+            const { cid, containerType } = info;
+            if (containerType === "Tree") {
+                // The deep-value tree shape differs from tree.toJSON() and its
+                // node data maps carry no cids, so trees keep the existing
+                // handle-based logic.
+                const arr = this.containerToMirrorState(
+                    this.doc.getTree(key),
+                    options,
+                ) as unknown[];
+                if (!Array.isArray(arr) || arr.length === 0) continue;
+                root[key] = arr;
+                continue;
+            }
+            const node = deepRoots[key];
+            if (node === undefined) {
+                // Should not happen after pass 1; stay safe and use the
+                // per-container traversal for this root.
+                root[key] = this.containerToMirrorState(
+                    getRootContainerByType(this.doc, key, containerType),
+                    options,
+                );
+                continue;
+            }
+            const unwrapped = readDeepValueContainerNode(node);
+            // loro-crdt 1.13.3 drops the { value, cid } wrapper for empty
+            // containers; the root cid/kind are known here, so a bare value is
+            // the root container's content.
+            const rawValue = unwrapped ? unwrapped.value : node;
+            root[key] = this.bulkContainerStateByKind(
+                cid,
+                containerType,
+                rawValue,
+                ctx,
+            );
+        }
+
+        // With ignoreUnknownProperties, also mirror doc root keys the schema
+        // does not declare (e.g. written by peers on a newer schema version),
+        // so state stays consistent with the incremental event path — which
+        // always applies them — instead of deleting them on the next write.
+        if (this.options.ignoreUnknownProperties) {
+            // LoroDoc roots are always containers, so this returns only
+            // root key -> container id without descending into their values.
+            const shallowDocState = this.doc.getShallowValue();
+            // Unknown roots are not registered and have no schema: walk them
+            // with normalizeContainerForJson semantics instead.
+            const unknownCtx: BulkWalkContext = {
+                semantics: UNKNOWN_ROOT_WALK_SEMANTICS,
+                registerContainers: false,
+                shallowValues: ctx.shallowValues,
+            };
+            for (const [key, containerId] of Object.entries(shallowDocState)) {
+                if (
+                    Object.prototype.hasOwnProperty.call(
+                        rootSchema.definition,
+                        key,
+                    )
+                ) {
+                    continue;
+                }
+
+                const cid = containerId;
+                const kind = containerIdToContainerType(cid);
+                const node = deepRoots[key];
+                if (node === undefined || kind === undefined) {
+                    const container = this.doc.getContainerById(cid);
+                    if (!container) {
+                        // Match toNormalizedJson's error for an unresolved
+                        // container id so this optimization does not hide a
+                        // corrupt or inconsistent document state.
+                        throw new Error(`ContainerID not found: ${cid}`);
+                    }
+                    root[key] = normalizeContainerForJson(container);
+                    continue;
+                }
+                const unwrapped = readDeepValueContainerNode(node);
+                const rawValue = unwrapped ? unwrapped.value : node;
+                root[key] = this.bulkContainerStateByKind(
+                    cid,
+                    kind,
+                    rawValue,
+                    unknownCtx,
+                );
+            }
+        }
+        return root;
+    }
+
+    /**
+     * Snapshot one container from its deep-value payload, dispatching on the
+     * container kind. Anything the walk cannot handle (trees, counters, future
+     * kinds, malformed payloads) falls back to the handle-based logic.
+     */
+    private bulkContainerStateByKind(
+        cid: ContainerID,
+        kind: ContainerType,
+        rawValue: unknown,
+        ctx: BulkWalkContext,
+    ): MirrorState {
+        switch (kind) {
+            case "Map":
+                return this.bulkMapState(cid, rawValue, ctx);
+            case "List":
+            case "MovableList":
+                return this.bulkListState(cid, kind, rawValue, ctx);
+            case "Text":
+                return typeof rawValue === "string"
+                    ? rawValue
+                    : this.bulkLegacyContainerFallback(cid, ctx);
+            default:
+                return this.bulkLegacyContainerFallback(cid, ctx);
+        }
+    }
+
+    private bulkMapState(
+        cid: ContainerID,
+        rawValue: unknown,
+        ctx: BulkWalkContext,
+    ): MirrorState {
+        if (!isObject(rawValue)) {
+            return this.bulkLegacyContainerFallback(cid, ctx);
+        }
+        // The registered schema, read after this map was registered by its
+        // parent (or as a root) — same timing as containerToMirrorState.
+        const schema = ctx.semantics.useRegistrySchema
+            ? this.getContainerSchema(cid)
+            : undefined;
+        const parentLocalInfer = ctx.registerContainers
+            ? this.inferOptionsByContainerId.get(cid)
+            : undefined;
+        const obj = rawValue as MirrorStateObject;
+        if (Object.prototype.hasOwnProperty.call(obj, CID_KEY)) {
+            if (ctx.semantics.skipCidKey) {
+                // normalizeContainerForJson skips a user-owned "$cid" key.
+                delete obj[CID_KEY];
+            } else {
+                // Legacy parity: containerToMirrorState stamps $cid on a fresh
+                // object first, so assigning a user "$cid" key afterwards
+                // throws on the read-only property (strict mode). Reproduce
+                // that, including the partial child registration before it.
+                const fresh: MirrorStateObject = {};
+                defineCidProperty(fresh, cid);
+                for (const k of Object.keys(obj)) {
+                    fresh[k] = this.bulkChildState(
+                        cid,
+                        "Map",
+                        k,
+                        obj[k],
+                        schema,
+                        parentLocalInfer,
+                        ctx,
+                    ) as MirrorState;
+                }
+                return fresh;
+            }
+        }
+        // Stamp before assigning children, like containerToMirrorState. The
+        // deep-value payload is fresh from a single wasm call and is reused
+        // directly as state.
+        defineCidProperty(obj, cid);
+        for (const k of Object.keys(obj)) {
+            obj[k] = this.bulkChildState(
+                cid,
+                "Map",
+                k,
+                obj[k],
+                schema,
+                parentLocalInfer,
+                ctx,
+            ) as MirrorState;
+        }
+        return obj;
+    }
+
+    private bulkListState(
+        cid: ContainerID,
+        kind: "List" | "MovableList",
+        rawValue: unknown,
+        ctx: BulkWalkContext,
+    ): MirrorState {
+        if (!Array.isArray(rawValue)) {
+            return this.bulkLegacyContainerFallback(cid, ctx);
+        }
+        const schema = ctx.semantics.useRegistrySchema
+            ? this.getContainerSchema(cid)
+            : undefined;
+        const parentLocalInfer = ctx.registerContainers
+            ? this.inferOptionsByContainerId.get(cid)
+            : undefined;
+        const arr = rawValue as MirrorState[];
+        for (let i = 0; i < arr.length; i++) {
+            arr[i] = this.bulkChildState(
+                cid,
+                kind,
+                i,
+                arr[i],
+                schema,
+                parentLocalInfer,
+                ctx,
+            ) as MirrorState;
+        }
+        return arr;
+    }
+
+    /**
+     * Snapshot one child slot of a map/list from its deep-value payload,
+     * applying the same registration and decode semantics as the legacy
+     * per-container traversal.
+     */
+    private bulkChildState(
+        parentCid: ContainerID,
+        parentKind: "Map" | "List" | "MovableList",
+        key: string | number,
+        childNode: unknown,
+        parentSchema: ContainerSchemaType | undefined,
+        parentLocalInfer: InferContainerOptions | undefined,
+        ctx: BulkWalkContext,
+    ): unknown {
+        if (isObject(childNode) || Array.isArray(childNode)) {
+            // Both container wrappers and embedded user objects can have
+            // { cid, value } fields. Check the parent's actual slot before
+            // interpreting that shape. Cache one shallow read per parent.
+            // This also identifies empty containers whose wrappers are
+            // omitted by loro-crdt 1.13.3.
+            const shallow = this.getBulkParentShallowValue(parentCid, ctx);
+            const actual = (
+                shallow as Record<string | number, unknown> | undefined
+            )?.[key];
+            let childCid =
+                typeof actual === "string" && actual.startsWith("cid:")
+                    ? (actual as ContainerID)
+                    : undefined;
+            // Older Loro versions expose mergeable references as binary
+            // markers. Resolve only these ambiguous slots through get(),
+            // which distinguishes a real container from user-owned bytes.
+            if (actual instanceof Uint8Array) {
+                const parent = this.doc.getContainerById(parentCid) as
+                    | LoroMap
+                    | LoroList
+                    | LoroMovableList
+                    | undefined;
+                const child =
+                    parentKind === "Map"
+                        ? (parent as LoroMap | undefined)?.get(String(key))
+                        : (
+                              parent as LoroList | LoroMovableList | undefined
+                          )?.get(Number(key));
+                if (isContainer(child)) childCid = child.id;
+            }
+            if (childCid) {
+                const node = readDeepValueContainerNode(childNode);
+                return this.bulkContainerChild(
+                    parentCid,
+                    parentKind,
+                    key,
+                    childCid,
+                    node ? node.value : childNode,
+                    parentSchema,
+                    parentLocalInfer,
+                    ctx,
+                );
+            }
+        }
+        return applyDecode(getChildSchema(parentSchema, key), childNode);
+    }
+
+    private bulkContainerChild(
+        parentCid: ContainerID,
+        parentKind: "Map" | "List" | "MovableList",
+        key: string | number,
+        childCid: ContainerID,
+        rawValue: unknown,
+        parentSchema: ContainerSchemaType | undefined,
+        parentLocalInfer: InferContainerOptions | undefined,
+        ctx: BulkWalkContext,
+    ): unknown {
+        if (ctx.registerContainers) {
+            this.registerChildContainerInBulkWalk(
+                parentCid,
+                parentKind,
+                key,
+                childCid,
+                parentSchema,
+                parentLocalInfer,
+            );
+        }
+        const kind = containerIdToContainerType(childCid);
+        if (!kind) {
+            return this.bulkLegacyContainerFallback(childCid, ctx);
+        }
+        return this.bulkContainerStateByKind(childCid, kind, rawValue, ctx);
+    }
+
+    /**
+     * registerChildContainer without the Loro handles and without the
+     * scanNested side effect (the walk itself descends into every child).
+     * Replicates its schema-resolution and infer-options semantics exactly.
+     */
+    private registerChildContainerInBulkWalk(
+        parentCid: ContainerID,
+        parentKind: "Map" | "List" | "MovableList",
+        childKey: string | number,
+        childCid: ContainerID,
+        parentSchema: ContainerSchemaType | undefined,
+        parentLocalInfer: InferContainerOptions | undefined,
+    ) {
+        let nestedSchema: ContainerSchemaType | undefined;
+
+        if (parentKind === "Map") {
+            if (
+                parentSchema &&
+                isLoroMapSchema(parentSchema) &&
+                typeof childKey === "string"
+            ) {
+                const candidate = getMapFieldSchema(parentSchema, childKey);
+                if (candidate?.type === "any") {
+                    this.inferOptionsByContainerId.set(
+                        childCid,
+                        this.getInferOptionsForChild(parentCid, candidate),
+                    );
+                }
+                if (candidate && isContainerSchema(candidate)) {
+                    nestedSchema = candidate;
+                }
+            }
+        } else if (
+            parentSchema &&
+            (isLoroListSchema(parentSchema) ||
+                isLoroMovableListSchema(parentSchema))
+        ) {
+            const itemSchema = parentSchema.itemSchema;
+            if (itemSchema?.type === "any") {
+                this.inferOptionsByContainerId.set(
+                    childCid,
+                    this.getInferOptionsForChild(parentCid, itemSchema),
+                );
+            }
+            if (isContainerSchema(itemSchema)) {
+                nestedSchema = itemSchema;
+            }
+        }
+
+        if (
+            !parentSchema &&
+            !nestedSchema &&
+            parentLocalInfer &&
+            !this.inferOptionsByContainerId.has(childCid)
+        ) {
+            this.inferOptionsByContainerId.set(childCid, parentLocalInfer);
+        }
+
+        this.registerContainerInBulkWalk(childCid, nestedSchema);
+    }
+
+    /**
+     * registerContainerHandle with scanNested:false, minus the handle. The
+     * scanNested side effect is irrelevant in the bulk walk because the walk
+     * itself descends into every nested container.
+     */
+    private registerContainerInBulkWalk(
+        containerId: ContainerID,
+        schemaType: ContainerSchemaType | undefined,
+    ) {
+        const existing = this.containerRegistry.get(containerId);
+        if (existing) {
+            if (!existing.schema && schemaType) {
+                existing.schema = schemaType;
+            }
+            return;
+        }
+        this.registerContainerWithRegistry(containerId, schemaType);
+    }
+
+    /**
+     * Handle-based fallback for containers the deep-value walk cannot handle.
+     * Uses the existing per-container logic with the semantics of the current
+     * walk (mirror schema decoding vs. plain normalization).
+     */
+    private bulkLegacyContainerFallback(
+        cid: ContainerID,
+        ctx: BulkWalkContext,
+    ): MirrorState {
+        const container = this.doc.getContainerById(cid);
+        if (!container) {
+            throw new Error(`ContainerID not found: ${cid}`);
+        }
+        if (ctx.semantics.useRegistrySchema) {
+            return this.containerToMirrorState(container, {
+                registerContainers: ctx.registerContainers,
+            });
+        }
+        return normalizeContainerForJson(container) as MirrorState;
+    }
+
+    /**
+     * Shallow value of a map/list parent, cached per container for the
+     * duration of a bulk walk. Consulted for object/array
+     * children to distinguish real containers from embedded user values,
+     * including objects that happen to match the { value, cid } wrapper.
+     */
+    private getBulkParentShallowValue(
+        parentCid: ContainerID,
+        ctx: BulkWalkContext,
+    ): unknown {
+        let shallow = ctx.shallowValues.get(parentCid);
+        if (shallow === undefined) {
+            const parent = this.doc.getContainerById(parentCid);
+            const kind = parent?.kind();
+            shallow =
+                kind === "Map" || kind === "List" || kind === "MovableList"
+                    ? (
+                          parent as LoroMap | LoroList | LoroMovableList
+                      ).getShallowValue()
+                    : {};
+            ctx.shallowValues.set(parentCid, shallow);
+        }
+        return shallow;
     }
 
     /**

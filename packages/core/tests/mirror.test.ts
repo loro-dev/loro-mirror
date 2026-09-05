@@ -1006,7 +1006,7 @@ describe("Mirror - State Consistency", () => {
         });
     });
 
-    it("reads each root list item once during construction", () => {
+    it("snapshots root list items with a single deep-value call during construction", () => {
         const todosSchema = schema({
             todos: schema.LoroList(
                 schema.LoroMap({
@@ -1023,6 +1023,7 @@ describe("Mirror - State Consistency", () => {
         doc.commit();
 
         const getSpy = vi.spyOn(LoroList.prototype, "get");
+        const deepValueSpy = vi.spyOn(LoroDoc.prototype, "getDeepValueWithID");
         let mirror: Mirror<typeof todosSchema> | undefined;
 
         try {
@@ -1033,10 +1034,14 @@ describe("Mirror - State Consistency", () => {
             });
             expect(mirror.getState().todos).toHaveLength(1);
             expect(mirror.getContainerIds()).toContain(todo.id);
-            expect(getSpy).toHaveBeenCalledTimes(1);
+            // The bulk snapshot reads the whole doc at once instead of
+            // reading each list item individually.
+            expect(deepValueSpy).toHaveBeenCalledTimes(1);
+            expect(getSpy).not.toHaveBeenCalled();
         } finally {
             mirror?.dispose();
             getSpy.mockRestore();
+            deepValueSpy.mockRestore();
         }
     });
 
