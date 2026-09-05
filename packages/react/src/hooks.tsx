@@ -249,12 +249,42 @@ export function useLazyRange<T, I>(
     useEffect(() => {
         if (!list) return;
         let cancelled = false;
-        void list.hydrate(from, to).then(() => {
-            if (!cancelled) setTick((t) => t + 1);
-        });
-        const unsubscribe = list.subscribeRange(from, to, () => {
+        let scheduled = false;
+        let needsHydration = false;
+        const refresh = () => {
+            if (cancelled) return;
             setTick((t) => t + 1);
-        });
+            needsHydration = true;
+            if (scheduled) return;
+            scheduled = true;
+            // Wait for Mirror to finish the entire event batch before reading
+            // final item snapshots, and coalesce hydrate's own notifications.
+            void Promise.resolve().then(async () => {
+                try {
+                    while (needsHydration && !cancelled) {
+                        needsHydration = false;
+                        let missing = false;
+                        for (
+                            let i = Math.max(0, from);
+                            i < Math.min(to, list.length);
+                            i++
+                        ) {
+                            if (!list.isHydrated(i)) {
+                                missing = true;
+                                break;
+                            }
+                        }
+                        if (missing) await list.hydrate(from, to);
+                    }
+                } finally {
+                    scheduled = false;
+                    if (!cancelled) setTick((t) => t + 1);
+                }
+            });
+        };
+        // Protect the window before hydration can trigger LRU eviction.
+        const unsubscribe = list.subscribeRange(from, to, refresh);
+        refresh();
         return () => {
             cancelled = true;
             unsubscribe();

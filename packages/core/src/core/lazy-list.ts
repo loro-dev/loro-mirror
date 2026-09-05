@@ -79,6 +79,7 @@ interface LazyListInternal<T> {
     cidBySelectorId: Map<string, ContainerID>;
     hydrated: Map<ContainerID, HydratedEntry<T>>;
     ranges: Set<RangeSubscription>;
+    writePins: Set<ContainerID>;
     version: number;
     clock: number;
 }
@@ -147,6 +148,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
             cidBySelectorId: new Map(),
             hydrated: new Map(),
             ranges: new Set(),
+            writePins: new Set(),
             version: 0,
             clock: 0,
         };
@@ -269,6 +271,20 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         this.refreshSelectorId(cid);
         this.evictIfNeeded();
         return true;
+    }
+
+    /** Keep an update target alive until its synchronous write finishes. */
+    _withHydratedItem<R>(i: number, update: (value: T | undefined) => R): R {
+        const cid = this._s.ids[i];
+        const alreadyPinned = this._s.writePins.has(cid);
+        this._s.writePins.add(cid);
+        try {
+            this._hydrateIndex(i);
+            return update(this._s.hydrated.get(cid)?.value);
+        } finally {
+            if (!alreadyPinned) this._s.writePins.delete(cid);
+            this.evictIfNeeded();
+        }
     }
 
     /**
@@ -593,7 +609,11 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         const candidates = Array.from(s.hydrated.entries())
             .filter(([cid]) => {
                 const pos = s.posById.get(cid);
-                return pos !== undefined && !this.isProtectedIndex(pos);
+                return (
+                    pos !== undefined &&
+                    !s.writePins.has(cid) &&
+                    !this.isProtectedIndex(pos)
+                );
             })
             .sort((a, b) => a[1].lru - b[1].lru);
         for (const [cid] of candidates) {

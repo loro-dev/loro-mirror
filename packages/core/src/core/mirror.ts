@@ -4020,6 +4020,10 @@ export class Mirror<S extends SchemaType> {
         if (!this.schemaHasLazyList) return event;
         const kept: LoroEventBatch["events"] = [];
         let handledAny = false;
+        const itemBatches = new Map<
+            LazyListImpl<unknown, unknown>,
+            Map<ContainerID, LoroEventBatch["events"]>
+        >();
         for (const e of event.events) {
             const cls = this.classifyLazyEvent(e, excludeLists);
             if (cls.kind === "none") {
@@ -4034,16 +4038,27 @@ export class Mirror<S extends SchemaType> {
                 continue;
             }
             if (cls.kind === "inside") {
-                this.applyEventToLazyItem(
-                    cls.list,
-                    cls.itemCid,
-                    e,
-                    event,
-                    excludeLists,
-                );
+                let items = itemBatches.get(cls.list);
+                if (!items) itemBatches.set(cls.list, (items = new Map()));
+                let events = items.get(cls.itemCid);
+                if (!events) items.set(cls.itemCid, (events = []));
+                events.push(e);
                 continue;
             }
             // "drop": event inside an unmaterialized nested lazy list.
+        }
+        // Apply each item's events together: a parent event may already read
+        // a newly attached child's final state. The normal batch applier's
+        // ignoreSet must survive until the child's own events are processed.
+        for (const [list, items] of itemBatches) {
+            for (const [itemCid, events] of items) {
+                this.applyEventToLazyItem(
+                    list,
+                    itemCid,
+                    { ...event, events },
+                    excludeLists,
+                );
+            }
         }
         if (!handledAny) return event;
         return { ...event, events: kept } as LoroEventBatch;
@@ -4100,16 +4115,20 @@ export class Mirror<S extends SchemaType> {
     private applyEventToLazyItem(
         list: LazyListImpl<unknown, unknown>,
         itemCid: ContainerID,
-        e: LoroEventBatch["events"][number],
         batch: LoroEventBatch,
         excludeLists?: Set<ContainerID>,
     ): void {
         if (list._isHydratedCid(itemCid)) {
             const current = list._getHydratedCid(itemCid);
-            const rest = this.pathWithinContainer(e.target, itemCid);
             const subBatch = {
                 ...batch,
-                events: [{ ...e, path: ["item", ...rest] }],
+                events: batch.events.map((e) => ({
+                    ...e,
+                    path: [
+                        "item",
+                        ...this.pathWithinContainer(e.target, itemCid),
+                    ],
+                })),
             } as LoroEventBatch;
             // Recurse so events on lazy lists nested inside this item are
             // intercepted too; exclude this list to terminate the recursion.
@@ -4124,19 +4143,21 @@ export class Mirror<S extends SchemaType> {
             return;
         }
         // Non-hydrated item: keep the index cache fresh, never hydrate.
-        if (e.diff.type === "map" && e.target === itemCid) {
-            list._updateIndexFromMapDiff(itemCid, e.diff.updated);
-        } else if (e.diff.type === "text") {
-            const rest = this.pathWithinContainer(e.target, itemCid);
-            const field = rest.length === 1 ? rest[0] : undefined;
-            if (typeof field === "string" && list._hasIndexField(field)) {
-                const text = this.doc.getContainerById(e.target);
-                if (text && text.kind() === "Text") {
-                    list._updateIndexFieldFromContainer(
-                        itemCid,
-                        field,
-                        (text as LoroText).toJSON(),
-                    );
+        for (const e of batch.events) {
+            if (e.diff.type === "map" && e.target === itemCid) {
+                list._updateIndexFromMapDiff(itemCid, e.diff.updated);
+            } else if (e.diff.type === "text") {
+                const rest = this.pathWithinContainer(e.target, itemCid);
+                const field = rest.length === 1 ? rest[0] : undefined;
+                if (typeof field === "string" && list._hasIndexField(field)) {
+                    const text = this.doc.getContainerById(e.target);
+                    if (text && text.kind() === "Text") {
+                        list._updateIndexFieldFromContainer(
+                            itemCid,
+                            field,
+                            (text as LoroText).toJSON(),
+                        );
+                    }
                 }
             }
         }
@@ -4432,36 +4453,37 @@ export class Mirror<S extends SchemaType> {
                 `mirror.list: updateAt/updateById require container items`,
             );
         }
-        // The updater needs the full item: hydrate it first.
-        if (!ref.lazy.isHydrated(index)) {
-            ref.lazy._hydrateIndex(index);
-        }
-        const oldItem = ref.lazy.get(index) as T;
-        const newItem = produce<T>(oldItem, (draft) => {
-            (updater as (d: unknown) => void)(draft);
-        });
-        if (newItem === oldItem) return;
-        if (this.options.validateUpdates) {
-            const validation = validateSchema(ref.schema.itemSchema, newItem);
-            if (validation && !validation.valid) {
-                throw new Error(
-                    `State validation failed: ${validation.errors?.join(", ")}`,
+        ref.lazy._withHydratedItem(index, (value) => {
+            const oldItem = value as T;
+            const newItem = produce<T>(oldItem, (draft) => {
+                (updater as (d: unknown) => void)(draft);
+            });
+            if (newItem === oldItem) return;
+            if (this.options.validateUpdates) {
+                const validation = validateSchema(
+                    ref.schema.itemSchema,
+                    newItem,
                 );
+                if (validation && !validation.valid) {
+                    throw new Error(
+                        `State validation failed: ${validation.errors?.join(", ")}`,
+                    );
+                }
             }
-        }
-        // Exactly what setState does for an item edit under a non-lazy list:
-        // diff the old/new item state against the item container and apply.
-        const changes = diffContainer(
-            this.doc,
-            oldItem,
-            newItem,
-            cid as ContainerID,
-            ref.schema.itemSchema,
-            this.getInferOptionsForContainer(cid as ContainerID),
-        );
-        if (changes.length === 0) return;
-        this.applyLocalLoroChanges(changes, undefined, undefined);
-        this.notifySubscribers(UpdateSource.MIRROR);
+            // Exactly what setState does for an item edit under a non-lazy list:
+            // diff the old/new item state against the item container and apply.
+            const changes = diffContainer(
+                this.doc,
+                oldItem,
+                newItem,
+                cid as ContainerID,
+                ref.schema.itemSchema,
+                this.getInferOptionsForContainer(cid as ContainerID),
+            );
+            if (changes.length === 0) return;
+            this.applyLocalLoroChanges(changes, undefined, undefined);
+            this.notifySubscribers(UpdateSource.MIRROR);
+        });
     }
 }
 
