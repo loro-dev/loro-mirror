@@ -27,6 +27,7 @@
         "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
         "bench:ephemeral": "pnpm build && node --expose-gc ./scripts/ephemeral-bench.mjs",
         "bench:bulk-init": "pnpm build && node --expose-gc ./scripts/bulk-init-bench.mjs",
+        "bench:lazy-list": "pnpm build && node --expose-gc ./scripts/lazy-list-bench.mjs",
         "bench:ignore-unknown-properties": "pnpm build && node --expose-gc ./scripts/ignore-unknown-properties-bench.mjs"
     },
     "keywords": [

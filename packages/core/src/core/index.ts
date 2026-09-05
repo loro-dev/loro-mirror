@@ -9,5 +9,7 @@ export type {
     SubscriberCallback,
     UpdateMetadata,
     InferContainerOptions,
-    RootInitialValue
+    RootInitialValue,
+    LazyListWriter,
 } from "./mirror.js";
+export { LazyListImpl, LazyListWriteError, isLazyList } from "./lazy-list.js";
