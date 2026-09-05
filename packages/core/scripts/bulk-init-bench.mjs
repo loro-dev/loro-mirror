@@ -129,11 +129,13 @@ function countTraversalCalls(doc, entryCount) {
         LoroDoc.prototype,
         "getDeepValueWithID",
     );
+    const originalReadState = LoroDoc.prototype.readState;
     const shallowReads = [LoroMap, LoroList].map((type) => [
         type.prototype,
         type.prototype.getShallowValue,
     ]);
     const calls = {
+        readState: 0,
         parentShallow: 0,
         getDeepValueWithID: 0,
         listGet: 0,
@@ -145,6 +147,12 @@ function countTraversalCalls(doc, entryCount) {
         prototype.getShallowValue = function () {
             calls.parentShallow += 1;
             return Reflect.apply(original, this, []);
+        };
+    }
+    if (typeof originalReadState === "function") {
+        LoroDoc.prototype.readState = function () {
+            calls.readState += 1;
+            return Reflect.apply(originalReadState, this, []);
         };
     }
     LoroDoc.prototype.getDeepValueWithID = function () {
@@ -171,6 +179,8 @@ function countTraversalCalls(doc, entryCount) {
     } finally {
         for (const [prototype, original] of shallowReads)
             prototype.getShallowValue = original;
+        if (typeof originalReadState === "function")
+            LoroDoc.prototype.readState = originalReadState;
         LoroDoc.prototype.getDeepValueWithID = originalGetDeepValueWithID;
         LoroList.prototype.get = originalListGet;
         LoroMap.prototype.get = originalMapGet;
@@ -240,12 +250,13 @@ function main() {
     const calls = countTraversalCalls(doc, entryCount);
     const timing = benchmarkInitialization(doc, entryCount, warmup, iterations);
 
-    console.log("bulk initialization benchmark (getDeepValueWithID)");
+    console.log("bulk initialization benchmark (preferred available API)");
     console.log(
         `entries=${entryCount} itemsPerEntry=${itemsPerEntry} warmup=${warmup} iterations=${iterations}`,
     );
     console.table([
         {
+            readState: calls.readState,
             getDeepValueWithID: calls.getDeepValueWithID,
             parentShallow: calls.parentShallow,
             listGet: calls.listGet,
