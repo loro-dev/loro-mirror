@@ -1024,13 +1024,13 @@ describe("Mirror - State Consistency", () => {
 
         const getSpy = vi.spyOn(LoroList.prototype, "get");
         const proto = LoroDoc.prototype as unknown as Record<
-            "readState" | "getDeepValueWithID",
+            "toContainerTree" | "getDeepValueWithID",
             () => unknown
         >;
         const deepValueSpy = vi.spyOn(
             proto,
-            typeof proto.readState === "function"
-                ? "readState"
+            typeof proto.toContainerTree === "function"
+                ? "toContainerTree"
                 : "getDeepValueWithID",
         );
         let mirror: Mirror<typeof todosSchema> | undefined;

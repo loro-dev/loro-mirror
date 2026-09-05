@@ -129,13 +129,13 @@ function countTraversalCalls(doc, entryCount) {
         LoroDoc.prototype,
         "getDeepValueWithID",
     );
-    const originalReadState = LoroDoc.prototype.readState;
+    const originalContainerTree = LoroDoc.prototype.toContainerTree;
     const shallowReads = [LoroMap, LoroList].map((type) => [
         type.prototype,
         type.prototype.getShallowValue,
     ]);
     const calls = {
-        readState: 0,
+        toContainerTree: 0,
         parentShallow: 0,
         getDeepValueWithID: 0,
         listGet: 0,
@@ -149,10 +149,10 @@ function countTraversalCalls(doc, entryCount) {
             return Reflect.apply(original, this, []);
         };
     }
-    if (typeof originalReadState === "function") {
-        LoroDoc.prototype.readState = function () {
-            calls.readState += 1;
-            return Reflect.apply(originalReadState, this, []);
+    if (typeof originalContainerTree === "function") {
+        LoroDoc.prototype.toContainerTree = function (...args) {
+            calls.toContainerTree += 1;
+            return Reflect.apply(originalContainerTree, this, args);
         };
     }
     LoroDoc.prototype.getDeepValueWithID = function () {
@@ -179,8 +179,8 @@ function countTraversalCalls(doc, entryCount) {
     } finally {
         for (const [prototype, original] of shallowReads)
             prototype.getShallowValue = original;
-        if (typeof originalReadState === "function")
-            LoroDoc.prototype.readState = originalReadState;
+        if (typeof originalContainerTree === "function")
+            LoroDoc.prototype.toContainerTree = originalContainerTree;
         LoroDoc.prototype.getDeepValueWithID = originalGetDeepValueWithID;
         LoroList.prototype.get = originalListGet;
         LoroMap.prototype.get = originalMapGet;
@@ -256,7 +256,7 @@ function main() {
     );
     console.table([
         {
-            readState: calls.readState,
+            toContainerTree: calls.toContainerTree,
             getDeepValueWithID: calls.getDeepValueWithID,
             parentShallow: calls.parentShallow,
             listGet: calls.listGet,

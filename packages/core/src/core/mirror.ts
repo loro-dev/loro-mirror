@@ -109,7 +109,7 @@ type BulkWalkSemantics = {
 type BulkWalkContext = {
     semantics: BulkWalkSemantics;
     registerContainers: boolean;
-    /** True only when this walk consumes the explicit readState node contract. */
+    /** True only when this walk consumes the explicit toContainerTree node contract. */
     structuredState: boolean;
     /** Parent shallow values, cached per container id for one walk. */
     shallowValues: Map<ContainerID, unknown>;
@@ -2983,10 +2983,12 @@ export class Mirror<S extends SchemaType> {
         // walk, instead of ~10 wasm crossings per container.
         const docWithDeepValue = this.doc as LoroDoc & {
             getDeepValueWithID?: () => unknown;
-            readState?: () => unknown;
+            toContainerTree?: (options?: {
+                roots?: readonly string[];
+            }) => unknown;
         };
         if (
-            typeof docWithDeepValue.readState !== "function" &&
+            typeof docWithDeepValue.toContainerTree !== "function" &&
             typeof docWithDeepValue.getDeepValueWithID !== "function"
         ) {
             return this.buildRootStateSnapshotLegacy(prevState, options);
@@ -3130,12 +3132,32 @@ export class Mirror<S extends SchemaType> {
 
         // Read AFTER pass 1 so roots that were never accessed are included.
         const doc = this.doc as LoroDoc & {
-            readState?: () => unknown;
+            toContainerTree?: (options?: {
+                roots?: readonly string[];
+            }) => unknown;
             getDeepValueWithID: () => unknown;
         };
-        const structuredState = typeof doc.readState === "function";
-        const deepValue = doc.readState
-            ? doc.readState()
+        const structuredState = typeof doc.toContainerTree === "function";
+        let roots: string[] | undefined;
+        if (structuredState) {
+            roots = [...rootContainers.keys()];
+            // Preserve unknown roots only under the existing opt-in policy.
+            // Explicit Ignore roots are never materialized by the bulk reader.
+            if (this.options.ignoreUnknownProperties) {
+                for (const key of Object.keys(this.doc.getShallowValue())) {
+                    if (
+                        !Object.prototype.hasOwnProperty.call(
+                            rootSchema.definition,
+                            key,
+                        )
+                    ) {
+                        roots.push(key);
+                    }
+                }
+            }
+        }
+        const deepValue = doc.toContainerTree
+            ? doc.toContainerTree({ roots })
             : doc.getDeepValueWithID();
         const deepRoots = isObject(deepValue) ? deepValue : {};
 
@@ -3379,7 +3401,8 @@ export class Mirror<S extends SchemaType> {
         ctx: BulkWalkContext,
     ): unknown {
         if (ctx.structuredState) {
-            if (!isObject(childNode)) throw new Error("Invalid readState node");
+            if (!isObject(childNode))
+                throw new Error("Invalid toContainerTree node");
             if (childNode.type === "Value") {
                 return applyDecode(
                     getChildSchema(parentSchema, key),
@@ -3392,7 +3415,7 @@ export class Mirror<S extends SchemaType> {
                 value: unknown;
             };
             if (typeof node.cid !== "string")
-                throw new Error("Missing readState container ID");
+                throw new Error("Missing toContainerTree container ID");
             return this.bulkContainerChild(
                 parentCid,
                 parentKind,

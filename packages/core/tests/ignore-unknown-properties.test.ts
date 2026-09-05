@@ -327,13 +327,13 @@ describe("ignoreUnknownProperties", () => {
         const mapGetSpy = vi.spyOn(LoroMap.prototype, "get");
         const textToJSONSpy = vi.spyOn(LoroText.prototype, "toJSON");
         const proto = LoroDoc.prototype as unknown as Record<
-            "readState" | "getDeepValueWithID",
+            "toContainerTree" | "getDeepValueWithID",
             () => unknown
         >;
         const deepValueSpy = vi.spyOn(
             proto,
-            typeof proto.readState === "function"
-                ? "readState"
+            typeof proto.toContainerTree === "function"
+                ? "toContainerTree"
                 : "getDeepValueWithID",
         );
         let mirror: Mirror<typeof historySchema> | undefined;

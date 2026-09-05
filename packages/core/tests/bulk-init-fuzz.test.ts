@@ -631,8 +631,9 @@ describe("bulk init snapshot parity fuzz", () => {
                 legacyDoc as unknown as { getDeepValueWithID?: unknown }
             ).getDeepValueWithID = undefined;
 
-            (legacyDoc as LoroDoc & { readState?: unknown }).readState =
-                undefined;
+            (
+                legacyDoc as LoroDoc & { toContainerTree?: unknown }
+            ).toContainerTree = undefined;
 
             const label = `seed=${seed}`;
             const bulk = new Mirror({ doc: bulkDoc, ...options });
