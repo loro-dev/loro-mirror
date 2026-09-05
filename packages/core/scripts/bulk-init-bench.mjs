@@ -129,13 +129,24 @@ function countTraversalCalls(doc, entryCount) {
         LoroDoc.prototype,
         "getDeepValueWithID",
     );
+    const shallowReads = [LoroMap, LoroList].map((type) => [
+        type.prototype,
+        type.prototype.getShallowValue,
+    ]);
     const calls = {
+        parentShallow: 0,
         getDeepValueWithID: 0,
         listGet: 0,
         mapGet: 0,
         textToJSON: 0,
     };
 
+    for (const [prototype, original] of shallowReads) {
+        prototype.getShallowValue = function () {
+            calls.parentShallow += 1;
+            return Reflect.apply(original, this, []);
+        };
+    }
     LoroDoc.prototype.getDeepValueWithID = function () {
         calls.getDeepValueWithID += 1;
         return Reflect.apply(originalGetDeepValueWithID, this, []);
@@ -158,6 +169,8 @@ function countTraversalCalls(doc, entryCount) {
         mirror.dispose();
         return calls;
     } finally {
+        for (const [prototype, original] of shallowReads)
+            prototype.getShallowValue = original;
         LoroDoc.prototype.getDeepValueWithID = originalGetDeepValueWithID;
         LoroList.prototype.get = originalListGet;
         LoroMap.prototype.get = originalMapGet;
@@ -234,6 +247,7 @@ function main() {
     console.table([
         {
             getDeepValueWithID: calls.getDeepValueWithID,
+            parentShallow: calls.parentShallow,
             listGet: calls.listGet,
             mapGet: calls.mapGet,
             textToJSON: calls.textToJSON,
