@@ -601,3 +601,7 @@ Without `ephemeralStore`, all changes go to LoroDoc as usual. See the [core pack
 ## License
 
 MIT
+
+Lazy item hydration uses `loro-crdt >=1.16.0` container trees. Mixed schemas keep
+roots containing lazy lists out of the full document read. Items containing nested
+lazy lists preserve shallow traversal rather than materializing those lists.

@@ -59,3 +59,8 @@ retains its existing normalization path. Tests must disable both bulk APIs when
 explicitly comparing with the legacy handle path.
 The container-tree path selects required roots before materialization, excluding
 explicit Ignore roots. Preserve unknown roots according to ignoreUnknownProperties.
+
+Lazy hydration uses the published container.toContainerTree API for ordinary item
+subtrees. Roots/items containing nested lazy lists retain shallow traversal so
+unrequested descendants stay unread; mixed schemas exclude those roots from
+the document bulk read. Never feed structured Value nodes to the legacy index parser.

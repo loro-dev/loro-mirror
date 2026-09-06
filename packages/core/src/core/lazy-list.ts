@@ -235,9 +235,9 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
 
     /**
      * Batch-read the item range into memory. Per item this resolves the
-     * container handle and runs Mirror's normal per-container state builder
-     * (loro-crdt 1.13.3 has no per-container deep-read-with-ids API; if one
-     * appears the host will use it). Resolves once the range is loaded.
+     * container handle and reads its subtree with toContainerTree. Items with
+     * nested lazy lists retain a shallow traversal to preserve their laziness.
+     * Resolves once the range is loaded.
      */
     hydrate(from: number, to: number): Promise<void> {
         const start = Math.max(0, from);

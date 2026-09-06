@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { LoroDoc, LoroList, LoroMap, LoroText } from "loro-crdt";
 import { Mirror, schema } from "../src/index.js";
 
@@ -90,3 +90,58 @@ it.each([false, true])(
         mirror.dispose();
     },
 );
+
+it("hydrates through container trees without reading unselected lazy items in mixed roots", async () => {
+    const doc = new LoroDoc();
+    doc.getMap("session").set("name", "mixed");
+    const raw = doc.getList("items");
+    const first = raw.pushContainer(new LoroMap());
+    first.set("id", "first");
+    const body = first.setContainer("body", new LoroText());
+    body.insert(0, "visible");
+    const opaque = { type: "Map", cid: body.id, value: ["ordinary"] };
+    first.set("opaque", opaque);
+    const second = raw.pushContainer(new LoroMap());
+    second.set("id", "second");
+    let deep = second;
+    for (let i = 0; i < 270; i++)
+        deep = deep.setContainer("child", new LoroMap());
+    deep.set("end", true);
+    doc.commit();
+    // Any accidental whole-document tree read fails on the excluded subtree.
+    expect(() => doc.toContainerTree()).toThrow("nesting");
+    doc.getDeepValueWithID = () => {
+        throw new Error("legacy bulk read");
+    };
+    const mirror = new Mirror({
+        doc,
+        schema: schema({
+            session: schema.LoroMap({ name: schema.String() }),
+            items: schema.LoroList(
+                schema.LoroMapRecord(schema.Any()),
+                undefined,
+                {
+                    lazy: { index: ["id"], maxHydrated: 10, tailKeep: 0 },
+                },
+            ),
+        }),
+    });
+    const list = mirror.getState().items;
+    expect(mirror.getState().session.name).toBe("mixed");
+    expect(list.index(1)).toEqual({ id: "second" });
+    expect(list.isHydrated(1)).toBe(false);
+    const old = vi
+        .spyOn(LoroText.prototype, "toJSON")
+        .mockImplementation(() => {
+            throw new Error("legacy text read");
+        });
+    try {
+        await list.hydrate(0, 1);
+        expect(list.get(0)).toEqual({ id: "first", body: "visible", opaque });
+        expect(list.isHydrated(1)).toBe(false);
+        expect(mirror.getContainerIds()).toContain(body.id);
+    } finally {
+        old.mockRestore();
+        mirror.dispose();
+    }
+});

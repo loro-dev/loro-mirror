@@ -3251,7 +3251,11 @@ export class Mirror<S extends SchemaType> {
         const structuredState = typeof doc.toContainerTree === "function";
         let roots: string[] | undefined;
         if (structuredState) {
-            roots = [...rootContainers.keys()];
+            // Keep lazy subtrees out of the document-wide read, even when
+            // ordinary roots are present. Their index reads stay shallow.
+            roots = [...rootContainers.keys()].filter(
+                (key) => !schemaContainsLazyList(rootSchema.definition[key]),
+            );
             // Preserve unknown roots only under the existing opt-in policy.
             // Explicit Ignore roots are never materialized by the bulk reader.
             if (this.options.ignoreUnknownProperties) {
@@ -3485,7 +3489,7 @@ export class Mirror<S extends SchemaType> {
         if (isLazyListSchema(schema)) {
             return this.getOrCreateLazyList(
                 cid,
-                rawValue,
+                ctx.structuredState ? undefined : rawValue,
             ) as unknown as MirrorState;
         }
         const parentLocalInfer = ctx.registerContainers
@@ -4040,29 +4044,19 @@ export class Mirror<S extends SchemaType> {
                 scanNested: false,
             });
         }
-        // loro-crdt 1.13.3 has no per-container deep-read-with-ids API, so
-        // hydration walks handles. Prefer one when a future version adds it.
-        const deep = (
-            container as Container & { getDeepValueWithID?: () => unknown }
-        ).getDeepValueWithID;
-        if (typeof deep === "function") {
-            const payload = deep.call(container);
-            const node = readDeepValueContainerNode(payload);
-            const kind = container.kind();
-            const ctx: BulkWalkContext = {
-                semantics: MIRROR_WALK_SEMANTICS,
+        // A nested lazy list must remain unread until its own hydration.
+        // For ordinary item subtrees, construct all descendants with one read.
+        if (itemSchema && schemaContainsLazyList(itemSchema)) {
+            return this.containerToMirrorState(container, {
                 registerContainers: true,
-                shallowValues: new Map(),
-            };
-            return this.bulkContainerStateByKind(
-                itemCid,
-                kind,
-                node ? node.value : payload,
-                ctx,
-            );
+            });
         }
-        return this.containerToMirrorState(container, {
+        const node = container.toContainerTree();
+        return this.bulkContainerStateByKind(itemCid, node.type, node.value, {
+            structuredState: true,
+            semantics: MIRROR_WALK_SEMANTICS,
             registerContainers: true,
+            shallowValues: new Map(),
         });
     }
 
