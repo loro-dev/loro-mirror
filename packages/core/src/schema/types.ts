@@ -281,9 +281,15 @@ export interface LoroTreeSchema<T extends Record<string, SchemaType>>
 }
 
 /**
+ * Field types allowed at the document root: containers, plus `Ignore`
+ * (a memory-only field that never touches the LoroDoc).
+ */
+export type RootFieldSchemaType = ContainerSchemaType | IgnoreSchemaType;
+
+/**
  * Root schema type
  */
-export interface RootSchemaType<T extends Record<string, ContainerSchemaType>>
+export interface RootSchemaType<T extends Record<string, RootFieldSchemaType>>
     extends BaseSchemaType {
     type: "schema";
     definition: RootSchemaDefinition<T>;
@@ -304,7 +310,7 @@ export type SchemaType =
     | LoroMovableListSchema<SchemaType>
     | LoroTextSchemaType
     | LoroTreeSchema<Record<string, SchemaType>>
-    | RootSchemaType<Record<string, ContainerSchemaType>>;
+    | RootSchemaType<Record<string, RootFieldSchemaType>>;
 
 export type ContainerSchemaType =
     | LoroMapSchema<Record<string, SchemaType>>
@@ -318,7 +324,7 @@ export type ContainerSchemaType =
  * Schema definition type
  */
 export type RootSchemaDefinition<
-    T extends Record<string, ContainerSchemaType>,
+    T extends Record<string, RootFieldSchemaType>,
 > = {
     [K in keyof T]: T[K];
 };

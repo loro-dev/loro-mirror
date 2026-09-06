@@ -64,3 +64,6 @@ Lazy hydration uses the published container.toContainerTree API for ordinary ite
 subtrees. Roots/items containing nested lazy lists retain shallow traversal so
 unrequested descendants stay unread; mixed schemas exclude those roots from
 the document bulk read. Never feed structured Value nodes to the legacy index parser.
+
+Root schema fields may be Ignore (RootFieldSchemaType); Ignore events are filtered before registration and lazy handling.
+Consistency checks preserve nested Ignore memory values and still check normal siblings.
