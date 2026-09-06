@@ -67,3 +67,8 @@ the document bulk read. Never feed structured Value nodes to the legacy index pa
 
 Root schema fields may be Ignore (RootFieldSchemaType); Ignore events are filtered before registration and lazy handling.
 Consistency checks preserve nested Ignore memory values and still check normal siblings.
+
+Lazy item event recursion stops at an already-handled list boundary; never route
+that item's events back to an outer lazy list. `subscribeRange` remains half-open.
+`subscribeLength` observes length without retaining items; React range readers
+subscribe to both so a tail window can advance after an append.

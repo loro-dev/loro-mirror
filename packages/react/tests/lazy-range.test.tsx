@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, expect, it } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { LoroDoc } from "loro-crdt";
 import { isLazyList, Mirror, schema } from "loro-mirror";
 import type { InferType } from "loro-mirror";
@@ -126,4 +126,54 @@ describe("useLazyRange", () => {
         expect(list.isHydrated(0)).toBe(false);
         expect(list.isHydrated(1)).toBe(false);
     });
+});
+
+it("advances a tail window when local or remote appends change its length", async () => {
+    const doc = new LoroDoc();
+    seedDoc(doc, 3);
+    let current: Mirror<typeof listSchema> | undefined;
+    function Tail() {
+        const { store } = useLoroStore({ doc, schema: listSchema });
+        current = store;
+        const list = store.getState().items;
+        const { items } = useLazyRange(
+            list,
+            Math.max(0, list.length - 2),
+            list.length,
+        );
+        return (
+            <div data-testid="tail">
+                {list.length}:
+                {items.map((x) => x?.title ?? "loading").join(",")}
+            </div>
+        );
+    }
+    const view = render(<Tail />);
+    await waitFor(() => {
+        expect(screen.getByTestId("tail").textContent).toBe(
+            "3:title 1,title 2",
+        );
+    });
+    await act(async () => {
+        current!
+            .list<ItemInput>("items")
+            .push({ id: "local", title: "LOCAL", done: false });
+    });
+    await waitFor(() => {
+        expect(screen.getByTestId("tail").textContent).toBe("4:title 2,LOCAL");
+    });
+    const remote = new LoroDoc();
+    remote.import(doc.export({ mode: "snapshot" }));
+    const remoteMirror = new Mirror({ doc: remote, schema: listSchema });
+    remoteMirror
+        .list<ItemInput>("items")
+        .push({ id: "remote", title: "REMOTE", done: false });
+    await act(async () => {
+        doc.import(remote.export({ mode: "update" }));
+    });
+    await waitFor(() => {
+        expect(screen.getByTestId("tail").textContent).toBe("5:LOCAL,REMOTE");
+    });
+    view.unmount();
+    remoteMirror.dispose();
 });

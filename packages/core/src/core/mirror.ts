@@ -4322,14 +4322,15 @@ export class Mirror<S extends SchemaType> {
         let cur = this.doc.getContainerById(e.target);
         let child: Container | undefined;
         while (cur) {
-            if (!excludeLists?.has(cur.id)) {
-                const list = this.lazyLists.get(cur.id);
-                if (list) {
-                    if (child) {
-                        return { kind: "inside", list, itemCid: child.id };
-                    }
-                    return { kind: "structural", list };
+            // This event is already being applied inside this list's item.
+            // Crossing that boundary would route it back to an outer list.
+            if (excludeLists?.has(cur.id)) return { kind: "none" };
+            const list = this.lazyLists.get(cur.id);
+            if (list) {
+                if (child) {
+                    return { kind: "inside", list, itemCid: child.id };
                 }
+                return { kind: "structural", list };
             }
             child = cur;
             cur = cur.parent() ?? undefined;

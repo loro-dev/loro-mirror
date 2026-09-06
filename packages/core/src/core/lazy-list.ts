@@ -79,6 +79,7 @@ interface LazyListInternal<T> {
     cidBySelectorId: Map<string, ContainerID>;
     hydrated: Map<ContainerID, HydratedEntry<T>>;
     ranges: Set<RangeSubscription>;
+    lengthListeners: Set<() => void>;
     writePins: Set<ContainerID>;
     version: number;
     clock: number;
@@ -148,6 +149,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
             cidBySelectorId: new Map(),
             hydrated: new Map(),
             ranges: new Set(),
+            lengthListeners: new Set(),
             writePins: new Set(),
             version: 0,
             clock: 0,
@@ -307,6 +309,13 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         }
     }
 
+    subscribeLength(listener: () => void): () => void {
+        this._s.lengthListeners.add(listener);
+        return () => {
+            this._s.lengthListeners.delete(listener);
+        };
+    }
+
     subscribeRange(from: number, to: number, listener: () => void): () => void {
         const sub: RangeSubscription = { from, to, listener };
         this._s.ranges.add(sub);
@@ -327,6 +336,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
      */
     _applyListDelta(deltas: LazyListDelta): void {
         const s = this._s;
+        const previousLength = s.ids.length;
         let index = 0;
         let minChanged = Infinity;
         for (const d of deltas) {
@@ -364,6 +374,9 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         if (minChanged === Infinity) return;
         this.rebuildPositions();
         s.version++;
+        if (s.ids.length !== previousLength) {
+            for (const listener of s.lengthListeners) listener();
+        }
         // A structural change at `minChanged` shifts every later index, so
         // any range reaching past it observes moved indices.
         for (const sub of s.ranges) {
@@ -468,6 +481,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
      */
     _refreshFromDoc(): void {
         const s = this._s;
+        const previousLength = s.ids.length;
         const raw = this.host.readItemIds(this.listId);
         const nextIds = raw.map((v) =>
             isContainer(v) ? v.id : (v as ContainerID),
@@ -499,6 +513,9 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         }
         this.rebuildPositions();
         s.version++;
+        if (s.ids.length !== previousLength) {
+            for (const listener of s.lengthListeners) listener();
+        }
         // Everything may have moved; notify all ranges.
         for (const sub of s.ranges) sub.listener();
     }

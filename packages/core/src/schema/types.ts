@@ -76,6 +76,8 @@ export interface LazyList<T, I = Partial<T>> {
      * structural change moves indices within the range. Returns unsubscribe.
      */
     subscribeRange(from: number, to: number, listener: () => void): () => void;
+    /** Observe length changes without retaining or hydrating any items. */
+    subscribeLength(listener: () => void): () => void;
 }
 
 export type InferContainerOptions = {

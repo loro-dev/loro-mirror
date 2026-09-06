@@ -284,10 +284,14 @@ export function useLazyRange<T, I>(
         };
         // Protect the window before hydration can trigger LRU eviction.
         const unsubscribe = list.subscribeRange(from, to, refresh);
+        // A tail window ends at the old length: appends fall outside its
+        // half-open range. Observe length separately so it can advance.
+        const unsubscribeLength = list.subscribeLength(refresh);
         refresh();
         return () => {
             cancelled = true;
             unsubscribe();
+            unsubscribeLength();
             list.release(from, to);
         };
     }, [list, from, to]);

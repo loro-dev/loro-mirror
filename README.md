@@ -311,7 +311,8 @@ Notes:
 - The `LazyList` instance is stable across updates; `version` increments on structural and index-field changes.
 - Hydration is keyed by item container id, so positional views stay correct across concurrent remote edits.
 - Ephemeral patches never touch lazy lists (paths crossing a lazy list pass through untouched), and `checkStateConsistency` verifies lazy paths by instance identity only.
-- React: `useLazyRange(list, from, to)` from `loro-mirror-react` hydrates a window, re-renders on in-range changes, and releases on unmount.
+- `subscribeRange(from, to, listener)` observes the half-open range `[from, to)`. Use `subscribeLength(listener)` to observe appends outside that range without retaining or hydrating items.
+- React: `useLazyRange(list, from, to)` from `loro-mirror-react` hydrates a window, re-renders on in-range changes and length changes (so tail windows can advance), and releases on unmount.
 
 #### Reserved Field: `$cid`
 
