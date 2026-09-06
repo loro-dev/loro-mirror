@@ -141,3 +141,46 @@ describe("schema.Ignore event filtering", () => {
         expect(subscriber).not.toHaveBeenCalled();
     });
 });
+
+it("keeps nested Ignore memory values out of consistency comparisons", () => {
+    const doc = new LoroDoc();
+    const session = doc.getMap("session");
+    session.set("name", "before");
+    const cache = session.setContainer("cache", new LoroList());
+    cache.push("original");
+    doc.commit();
+    const mirror = new Mirror({
+        doc,
+        schema: schema({
+            session: schema.LoroMap({
+                name: schema.String(),
+                cache: schema.Ignore(),
+            }),
+        }),
+        checkStateConsistency: true,
+    });
+    const before = mirror.getState().session.cache;
+    cache.push("doc-only");
+    doc.commit();
+    expect(() => {
+        mirror.setState((draft) => {
+            draft.session.name = "after";
+        });
+    }).not.toThrow();
+    expect(mirror.getState().session.cache).toEqual(before);
+    expect(session.get("name")).toBe("after");
+    expect(cache.toJSON()).toEqual(["original", "doc-only"]);
+    // Replacing the ignored value with memory-only data must also compare cleanly.
+    mirror.setState((draft) => {
+        draft.session.cache = { local: true };
+    });
+    expect(() => {
+        mirror.checkStateConsistency();
+    }).not.toThrow();
+    // Normal fields must still be checked, not skipped with their ignored sibling.
+    session.set("name", "different");
+    expect(() => {
+        mirror.checkStateConsistency();
+    }).toThrow("State diverged");
+    mirror.dispose();
+});

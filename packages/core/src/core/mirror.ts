@@ -2861,6 +2861,7 @@ export class Mirror<S extends SchemaType> {
         // when ephemeral patches are active.
         const base = this.baseState as unknown as Record<string, unknown>;
         const snapshot = this.buildRootStateSnapshot(base);
+        this.preserveIgnoredComparisonValues(snapshot, base, this.schema);
         // `$cid` is non-enumerable, so `deepEqual` cannot see it; compare the markers
         // separately to catch a tampered or stale container id in the state.
         const valuesDiverged = !deepEqual(base, snapshot);
@@ -2874,6 +2875,49 @@ export class Mirror<S extends SchemaType> {
                 safeStringify(snapshot),
             );
             throw new Error("[InternalError] State diverged");
+        }
+    }
+
+    // The comparison snapshot owns these objects. Ignore is memory-only: neither
+    // its document value nor its container identities participate in consistency.
+    private preserveIgnoredComparisonValues(
+        snapshot: unknown,
+        base: unknown,
+        schema: SchemaType | undefined,
+    ): void {
+        if (
+            !schema ||
+            !snapshot ||
+            !base ||
+            typeof snapshot !== "object" ||
+            typeof base !== "object"
+        )
+            return;
+        const fresh = snapshot as Record<string, unknown>;
+        const memory = base as Record<string, unknown>;
+        for (const key of new Set([
+            ...Object.keys(fresh),
+            ...Object.keys(memory),
+        ])) {
+            const childSchema = getChildSchema(schema, key);
+            if (childSchema?.type === "ignore") {
+                if (Object.prototype.hasOwnProperty.call(memory, key)) {
+                    Object.defineProperty(fresh, key, {
+                        value: memory[key],
+                        enumerable: true,
+                        configurable: true,
+                        writable: true,
+                    });
+                } else {
+                    delete fresh[key];
+                }
+            } else {
+                this.preserveIgnoredComparisonValues(
+                    fresh[key],
+                    memory[key],
+                    childSchema,
+                );
+            }
         }
     }
 
