@@ -7,7 +7,6 @@ import {
     AnySchemaOptions,
     AnySchemaType,
     BooleanSchemaType,
-    ContainerSchemaType,
     IgnoreSchemaType,
     LoroListSchema,
     LoroMapSchema,
@@ -16,6 +15,7 @@ import {
     LoroTextSchemaType,
     LoroTreeSchema,
     NumberSchemaType,
+    RootFieldSchemaType,
     RootSchemaDefinition,
     RootSchemaType,
     SchemaDefinition,
@@ -87,7 +87,7 @@ export * from "./validators.js";
  * Create a schema definition
  */
 export function schema<
-    T extends Record<string, ContainerSchemaType>,
+    T extends Record<string, RootFieldSchemaType>,
     O extends SchemaOptions = {},
 >(
     definition: RootSchemaDefinition<T>,
