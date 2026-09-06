@@ -632,7 +632,7 @@ describe("bulk init snapshot parity fuzz", () => {
             ).getDeepValueWithID = undefined;
 
             (
-                legacyDoc as LoroDoc & { toContainerTree?: unknown }
+                legacyDoc as unknown as { toContainerTree?: unknown }
             ).toContainerTree = undefined;
 
             const label = `seed=${seed}`;

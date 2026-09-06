@@ -129,7 +129,11 @@ function countTraversalCalls(doc, entryCount) {
         LoroDoc.prototype,
         "getDeepValueWithID",
     );
-    const originalContainerTree = LoroDoc.prototype.toContainerTree;
+    // Saved for instrumentation; invoked with the document receiver via apply below.
+    const originalContainerTree = Object.getOwnPropertyDescriptor(
+        LoroDoc.prototype,
+        "toContainerTree",
+    )?.value;
     const shallowReads = [LoroMap, LoroList].map((type) => [
         type.prototype,
         type.prototype.getShallowValue,

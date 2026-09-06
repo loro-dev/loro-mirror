@@ -16,7 +16,7 @@ it("prefers toContainerTree and never interprets nodes inside opaque values", ()
     root.set("opaque", opaque);
     doc.getMap("unknown").set("opaque", opaque);
     doc.commit();
-    const typed = doc as LoroDoc & { toContainerTree?: () => unknown };
+    const typed = doc as unknown as { toContainerTree?: () => unknown };
     typed.toContainerTree = () => ({
         root: {
             type: "Map",
@@ -69,7 +69,7 @@ it.each([false, true])(
         doc.getMap("history").set("large", "ignored");
         doc.getMap("unknown").set("value", "peer");
         doc.commit();
-        const typed = doc as LoroDoc & {
+        const typed = doc as unknown as {
             toContainerTree?: (options?: {
                 roots?: readonly string[];
             }) => unknown;
@@ -114,3 +114,32 @@ it.each([false, true])(
         mirror.dispose();
     },
 );
+
+it("initializes from the published loro-crdt container tree API", () => {
+    const doc = new LoroDoc();
+    const root = doc.getMap("root");
+    const text = root.setContainer("text", new LoroText());
+    text.insert(0, "published API");
+    const opaque = { type: "Map", cid: text.id, value: ["ordinary"] };
+    root.set("opaque", opaque);
+    doc.commit();
+    expect(typeof doc.toContainerTree).toBe("function");
+    doc.getDeepValueWithID = () => {
+        throw new Error("must use the published container tree API");
+    };
+    const mirror = new Mirror({
+        doc,
+        schema: schema({ root: schema.LoroMapRecord(schema.Any()) }),
+        checkStateConsistency: true,
+    });
+    expect(mirror.getState()).toEqual({
+        root: { text: "published API", opaque },
+    });
+    expect(mirror.getContainerIds().sort((a, b) => a.localeCompare(b))).toEqual(
+        [root.id, text.id].sort((a, b) => a.localeCompare(b)),
+    );
+    expect(() => {
+        mirror.checkStateConsistency();
+    }).not.toThrow();
+    mirror.dispose();
+});
