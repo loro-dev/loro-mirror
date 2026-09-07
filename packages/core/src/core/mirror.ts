@@ -4255,6 +4255,7 @@ export class Mirror<S extends SchemaType> {
         excludeLists?: Set<ContainerID>,
     ): LoroEventBatch {
         if (!this.schemaHasLazyList) return event;
+        if (!excludeLists) this.releaseDeletedLazyLists(event);
         const kept: LoroEventBatch["events"] = [];
         let handledAny = false;
         const itemBatches = new Map<
@@ -4299,6 +4300,34 @@ export class Mirror<S extends SchemaType> {
         }
         if (!handledAny) return event;
         return { ...event, events: kept } as LoroEventBatch;
+    }
+
+    /** Only structural removal/replacement can detach cached lazy subtrees. */
+    private releaseDeletedLazyLists(batch: LoroEventBatch): void {
+        const mayDetach = batch.events.some(({ target, diff }) => {
+            if (diff.type === "list")
+                return diff.diff.some((d) => (d.delete ?? 0) > 0);
+            if (diff.type === "tree")
+                return diff.diff.some((d) => d.action === "delete");
+            if (diff.type !== "map") return false;
+            return Object.keys(diff.updated).some((key) => {
+                const childSchema = this.getSchemaForChild(target, key);
+                return (
+                    childSchema !== undefined &&
+                    schemaContainsLazyList(childSchema)
+                );
+            });
+        });
+        if (!mayDetach) return;
+        // Events describe the committed end state. A move may include a
+        // deletion delta without deleting the container, so test reachability
+        // rather than clearing every id mentioned by a deletion delta.
+        for (const [id, list] of this.lazyLists) {
+            const container = this.doc.getContainerById(id);
+            if (container && !(container as LoroList).isDeleted()) continue;
+            list._clearDeleted();
+            this.lazyLists.delete(id);
+        }
     }
 
     private classifyLazyEvent(
@@ -4646,13 +4675,17 @@ export class Mirror<S extends SchemaType> {
             this.getInferOptionsForContainer(ref.listId),
         );
         this.applyLocalLoroChanges([change], undefined, undefined);
-        // Keep the freshly written item hydrated (its $cid was stamped during
-        // apply), so reads through the write API see it immediately.
+        // Read the persisted representation: input arrays are not nested
+        // LazyList views, and schema decoders may change the state shape.
+        // Keep the freshly written item hydrated for immediate reads.
         const cid = isObject(item)
             ? (item as Record<string, unknown>)[CID_KEY]
             : undefined;
         if (typeof cid === "string") {
-            ref.lazy._setHydratedFromWrite(cid as ContainerID, item);
+            ref.lazy._setHydratedFromWrite(
+                cid as ContainerID,
+                this.readLazyItemState(ref.listId, cid as ContainerID),
+            );
         }
         this.notifySubscribers(UpdateSource.MIRROR);
     }

@@ -72,3 +72,8 @@ Lazy item event recursion stops at an already-handled list boundary; never route
 that item's events back to an outer lazy list. `subscribeRange` remains half-open.
 `subscribeLength` observes length without retaining items; React range readers
 subscribe to both so a tail window can advance after an append.
+Lazy writer insertions cache the schema-decoded document read, not the input
+object (nested lists must already be LazyList views). Structural deletion or
+replacement clears unreachable lazy-list state using final container liveness;
+ordinary text/scalar events do not scan all lazy lists. Undo may create a fresh
+view for a restored subtree; stale deleted views must remain empty.

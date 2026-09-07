@@ -474,6 +474,21 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         this.notifyItemChanged(itemCid);
     }
 
+    /** Release all strong state references once this list leaves the document. */
+    _clearDeleted(): void {
+        const s = this._s;
+        s.ids = [];
+        s.posById.clear();
+        s.indexCache.clear();
+        s.selectorIdByCid.clear();
+        s.cidBySelectorId.clear();
+        s.hydrated.clear();
+        s.writePins.clear();
+        s.ranges.clear();
+        s.lengthListeners.clear();
+        s.version++;
+    }
+
     /**
      * Re-sync ids from the doc (used when the snapshot is rebuilt without
      * events, e.g. the ephemeral fallback path). Hydrated entries are kept by
