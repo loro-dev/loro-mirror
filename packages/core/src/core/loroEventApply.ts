@@ -134,6 +134,14 @@ function applySingleTextEvent<T extends object>(
     if (next === node) return state;
     for (let i = parents.length - 1; i >= 0; i--) {
         const { node: parent, key } = parents[i];
+        const arrayCopy = Array.isArray(parent)
+            ? copyDenseArray(parent)
+            : undefined;
+        if (arrayCopy) {
+            arrayCopy[key as number] = next;
+            next = arrayCopy;
+            continue;
+        }
         const descriptors = Object.getOwnPropertyDescriptors(parent);
         descriptors[key] = { ...descriptors[key], value: next };
         next = Array.isArray(parent)
@@ -141,6 +149,34 @@ function applySingleTextEvent<T extends object>(
             : Object.create(Object.getPrototypeOf(parent), descriptors);
     }
     return next as T;
+}
+
+/** Avoid defineProperties for ordinary dense arrays, without invoking getters,
+ * iterators or slice's species constructor. Unusual descriptors use the old copy.
+ */
+function copyDenseArray(parent: unknown[]): unknown[] | undefined {
+    if (
+        Object.getPrototypeOf(parent) !== Array.prototype ||
+        Reflect.ownKeys(parent).length !== parent.length + 1 ||
+        !Object.getOwnPropertyDescriptor(parent, "length")?.writable
+    )
+        return undefined;
+    // Preallocate without Array.from callbacks/iterators on this hot path.
+    // eslint-disable-next-line unicorn/no-new-array
+    const copy = new Array<unknown>(parent.length);
+    for (let i = 0; i < parent.length; i++) {
+        const descriptor = Object.getOwnPropertyDescriptor(parent, i);
+        if (
+            !descriptor ||
+            !("value" in descriptor) ||
+            !descriptor.writable ||
+            !descriptor.enumerable ||
+            !descriptor.configurable
+        )
+            return undefined;
+        copy[i] = descriptor.value;
+    }
+    return copy;
 }
 
 /**
