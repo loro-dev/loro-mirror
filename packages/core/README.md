@@ -340,7 +340,7 @@ For more React patterns (selectors, actions, provider), see `packages/react/READ
 
 Single-event updates to an existing string leaf copy only its ancestor path,
 preserving `$cid`, old snapshots and unchanged branch identities. Missing baselines,
-accessor/non-plain paths, tree paths and structural/multi-event batches retain the
+accessor/non-plain paths (including array subclasses), tree paths and structural/multi-event batches retain the
 general Immer path. Ordinary dense arrays copy validated data values directly;
 holes, extra keys, accessors or unusual descriptors retain descriptor copying.
 No getters, iterators or species constructors run during this copy. It remains

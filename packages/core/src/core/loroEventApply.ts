@@ -106,6 +106,7 @@ function applySingleTextEvent<T extends object>(
         if (node === null || typeof node !== "object") return undefined;
         if (Array.isArray(node)) {
             if (
+                Object.getPrototypeOf(node) !== Array.prototype ||
                 typeof key !== "number" ||
                 !Number.isInteger(key) ||
                 key < 0 ||
@@ -156,7 +157,6 @@ function applySingleTextEvent<T extends object>(
  */
 function copyDenseArray(parent: unknown[]): unknown[] | undefined {
     if (
-        Object.getPrototypeOf(parent) !== Array.prototype ||
         Reflect.ownKeys(parent).length !== parent.length + 1 ||
         !Object.getOwnPropertyDescriptor(parent, "length")?.writable
     )

@@ -107,7 +107,29 @@ describe("applyEventBatchToState (inline)", () => {
                 0: { ...descriptors[0], value: after.rows[0] },
             });
             expect(Object.getOwnPropertyDescriptors(rows)).toEqual(descriptors);
-            expect(Object.getPrototypeOf(after.rows)).toBe(Array.prototype);
+            if (kind === "subclass") {
+                const event = batch!.events[0];
+                // Force the general path with an equivalent empty text event.
+                const general = applyEventBatchToState(before, {
+                    ...batch!,
+                    events: [
+                        ...batch!.events,
+                        { ...event, diff: { type: "text", diff: [] } },
+                    ],
+                });
+                expect(Object.getPrototypeOf(after.rows)).toBe(
+                    Object.getPrototypeOf(rows),
+                );
+                expect(Object.getPrototypeOf(after.rows)).toBe(
+                    Object.getPrototypeOf(general.rows),
+                );
+                expect(Object.getOwnPropertyDescriptors(after.rows)).toEqual(
+                    Object.getOwnPropertyDescriptors(general.rows),
+                );
+                expect(after.rows[1]).toBe(rows[1]);
+            } else {
+                expect(Object.getPrototypeOf(after.rows)).toBe(Array.prototype);
+            }
             expect(getterReads).toBe(0);
         },
     );
