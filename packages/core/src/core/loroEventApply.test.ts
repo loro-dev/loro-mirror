@@ -1,7 +1,10 @@
 /* eslint-disable unicorn/consistent-function-scoping */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { LoroDoc, LoroText, LoroList, LoroMap, LoroCounter } from "loro-crdt";
+import type { LoroEventBatch } from "loro-crdt";
 import { applyEventBatchToState } from "./loroEventApply.js";
+import * as immerInstance from "./immer-instance.js";
+import { Mirror } from "./mirror.js";
 
 const commitAndAssert = (doc: LoroDoc, getState: () => unknown) => {
     doc.commit();
@@ -9,6 +12,313 @@ const commitAndAssert = (doc: LoroDoc, getState: () => unknown) => {
 };
 
 describe("applyEventBatchToState (inline)", () => {
+    it.each([
+        "dense",
+        "sparse",
+        "extra",
+        "hidden",
+        "symbol",
+        "readonly",
+        "accessor",
+        "length",
+        "subclass",
+    ])(
+        "preserves array descriptors and references for %s ancestors",
+        (kind) => {
+            const doc = new LoroDoc();
+            const text = doc
+                .getList("rows")
+                .pushContainer(new LoroMap())
+                .setContainer("body", new LoroText());
+            text.update("a");
+            doc.commit();
+            let batch: LoroEventBatch | undefined;
+            const unsubscribe = doc.subscribe((event) => {
+                batch = event;
+            });
+            text.update("ab");
+            doc.commit();
+            unsubscribe();
+            expect(batch).toBeDefined();
+            const rows: unknown[] = [{ body: "a" }, { body: "sibling" }];
+            let getterReads = 0;
+            switch (kind) {
+                case "sparse":
+                    Reflect.deleteProperty(rows, "1");
+                    break;
+                case "extra":
+                    Reflect.deleteProperty(rows, "1");
+                    Object.defineProperty(rows, "extra", { value: true });
+                    break;
+                case "hidden":
+                    Object.defineProperty(rows, "hidden", { value: true });
+                    break;
+                case "symbol":
+                    Object.defineProperty(rows, Symbol("meta"), {
+                        value: true,
+                    });
+                    break;
+                case "readonly":
+                    Object.defineProperty(rows, "1", { writable: false });
+                    break;
+                case "accessor":
+                    Object.defineProperty(rows, "1", {
+                        get: () => {
+                            getterReads++;
+                            return "sibling";
+                        },
+                    });
+                    break;
+                case "length":
+                    Object.defineProperty(rows, "length", { writable: false });
+                    break;
+                case "subclass":
+                    Object.setPrototypeOf(
+                        rows,
+                        class extends Array {}.prototype,
+                    );
+                    break;
+            }
+            const descriptors = Object.getOwnPropertyDescriptors(
+                rows as object,
+            );
+            const before = { rows };
+            const defineProperties = vi.spyOn(Object, "defineProperties");
+            let after: typeof before;
+            try {
+                after = applyEventBatchToState(before, batch!);
+                if (kind === "dense") {
+                    expect(
+                        defineProperties.mock.calls.some(([target]) =>
+                            Array.isArray(target),
+                        ),
+                    ).toBe(false);
+                }
+            } finally {
+                defineProperties.mockRestore();
+            }
+            expect(after.rows[0]).toEqual({ body: "ab" });
+            expect(after.rows[0]).not.toBe(rows[0]);
+            expect(Object.getOwnPropertyDescriptor(after.rows, "1")).toEqual(
+                descriptors[1],
+            );
+            expect(Object.getOwnPropertyDescriptors(after.rows)).toEqual({
+                ...descriptors,
+                0: { ...descriptors[0], value: after.rows[0] },
+            });
+            expect(Object.getOwnPropertyDescriptors(rows)).toEqual(descriptors);
+            if (kind === "subclass") {
+                const event = batch!.events[0];
+                // Force the general path with an equivalent empty text event.
+                const general = applyEventBatchToState(before, {
+                    ...batch!,
+                    events: [
+                        ...batch!.events,
+                        { ...event, diff: { type: "text", diff: [] } },
+                    ],
+                });
+                expect(Object.getPrototypeOf(after.rows)).toBe(
+                    Object.getPrototypeOf(rows),
+                );
+                expect(Object.getPrototypeOf(after.rows)).toBe(
+                    Object.getPrototypeOf(general.rows),
+                );
+                expect(Object.getOwnPropertyDescriptors(after.rows)).toEqual(
+                    Object.getOwnPropertyDescriptors(general.rows),
+                );
+                expect(after.rows[1]).toBe(rows[1]);
+            } else {
+                expect(Object.getPrototypeOf(after.rows)).toBe(Array.prototype);
+            }
+            expect(getterReads).toBe(0);
+        },
+    );
+
+    it("copies only an existing text path without drafting, preserving snapshots and cid descriptors", () => {
+        const doc = new LoroDoc();
+        const list = doc.getList("rows");
+        const row = list.pushContainer(new LoroMap());
+        const text = row.setContainer("text", new LoroText());
+        text.update("hello");
+        list.pushContainer(new LoroMap()).set("untouched", true);
+        doc.commit();
+        const mirror = new Mirror({ doc });
+        const before = mirror.getState() as { rows: { text: string }[] };
+        const descriptor = Object.getOwnPropertyDescriptor(
+            before.rows[0],
+            "$cid",
+        );
+        expect(descriptor).toMatchObject({
+            enumerable: false,
+            writable: false,
+        });
+        const produce = vi.spyOn(immerInstance, "produce");
+        try {
+            text.insert(5, " world");
+            doc.commit();
+            const after = mirror.getState() as typeof before;
+            expect(after.rows[0].text).toBe("hello world");
+            expect(before.rows[0].text).toBe("hello");
+            expect(after.rows).not.toBe(before.rows);
+            expect(after.rows[0]).not.toBe(before.rows[0]);
+            expect(after.rows[1]).toBe(before.rows[1]);
+            expect(
+                Object.getOwnPropertyDescriptor(after.rows[0], "$cid"),
+            ).toEqual(descriptor);
+            // Deterministic work guard: disabling the fast path must fail this test,
+            // even if the resulting JSON is still correct. No timing threshold.
+            expect(produce).not.toHaveBeenCalled();
+        } finally {
+            produce.mockRestore();
+            mirror.dispose();
+        }
+    });
+
+    it("matches the general path across local and concurrent imported text edits", () => {
+        const doc = new LoroDoc();
+        doc.setPeerId("1");
+        const rows = doc.getMap("task").setContainer("rows", new LoroList());
+        const text = rows
+            .pushContainer(new LoroMap())
+            .setContainer("body", new LoroText());
+        rows.pushContainer(new LoroMap()).set("unchanged", true);
+        text.update("seed");
+        doc.commit();
+        const peer = new LoroDoc();
+        peer.setPeerId("2");
+        peer.import(doc.export({ mode: "snapshot" }));
+        let fast = doc.toJSON();
+        let general = doc.toJSON();
+        const observations: {
+            fast: unknown;
+            general: unknown;
+            doc: unknown;
+            old: unknown;
+            oldGeneral: unknown;
+            previous: string;
+        }[] = [];
+        const errors: unknown[] = [];
+        const unsub = doc.subscribe((batch) => {
+            try {
+                const previous = JSON.stringify(fast);
+                const old = fast;
+                const oldGeneral = general;
+                fast = applyEventBatchToState(fast, batch, (id) =>
+                    doc.getContainerById(id),
+                );
+                const event = batch.events[0];
+                // An extra empty text delta forces the unchanged general batch path.
+                const control =
+                    batch.events.length === 1 && event.diff.type === "text"
+                        ? {
+                              ...batch,
+                              events: [
+                                  ...batch.events,
+                                  {
+                                      ...event,
+                                      diff: { type: "text" as const, diff: [] },
+                                  },
+                              ],
+                          }
+                        : batch;
+                general = applyEventBatchToState(general, control, (id) =>
+                    doc.getContainerById(id),
+                );
+                observations.push({
+                    fast,
+                    general,
+                    doc: doc.toJSON(),
+                    old,
+                    oldGeneral,
+                    previous,
+                });
+            } catch (error) {
+                errors.push(error);
+            }
+        });
+        try {
+            for (let i = 0; i < 50; i++) {
+                text.update(`local ${i} 🦀`);
+                doc.commit();
+                const peerRow = (
+                    peer.getMap("task").get("rows") as LoroList
+                ).get(0) as LoroMap;
+                (peerRow.get("body") as LoroText).update(`peer ${i} 文本`);
+                peer.commit();
+                doc.import(
+                    peer.export({ mode: "update", from: doc.version() }),
+                );
+                peer.import(
+                    doc.export({ mode: "update", from: peer.version() }),
+                );
+                expect(peer.toJSON()).toEqual(doc.toJSON());
+            }
+            // Structural and mixed batches must still initialize/delete correctly.
+            const extra = doc
+                .getMap("task")
+                .setContainer("extra", new LoroText());
+            extra.update("new");
+            text.update("final");
+            doc.commit();
+            doc.getMap("task").delete("extra");
+            doc.commit();
+            // Wasm dispatch may turn callback throws into unhandled rejections.
+            // Assert in the test body, including application errors and delivery.
+            expect(errors).toEqual([]);
+            expect(observations.length).toBeGreaterThanOrEqual(100);
+            const assertParity = (
+                a: unknown,
+                b: unknown,
+                oldA: unknown,
+                oldB: unknown,
+            ) => {
+                if (
+                    a === null ||
+                    typeof a !== "object" ||
+                    b === null ||
+                    typeof b !== "object"
+                ) {
+                    expect(a).toEqual(b);
+                    return;
+                }
+                expect(Object.getPrototypeOf(a)).toBe(Object.getPrototypeOf(b));
+                expect(Reflect.ownKeys(a)).toEqual(Reflect.ownKeys(b));
+                expect(a === oldA).toBe(b === oldB);
+                for (const key of Reflect.ownKeys(a)) {
+                    const da = Object.getOwnPropertyDescriptor(a, key)!;
+                    const db = Object.getOwnPropertyDescriptor(b, key)!;
+                    expect({ ...da, value: undefined }).toEqual({
+                        ...db,
+                        value: undefined,
+                    });
+                    assertParity(
+                        da.value,
+                        db.value,
+                        oldA && typeof oldA === "object"
+                            ? Object.getOwnPropertyDescriptor(oldA, key)?.value
+                            : undefined,
+                        oldB && typeof oldB === "object"
+                            ? Object.getOwnPropertyDescriptor(oldB, key)?.value
+                            : undefined,
+                    );
+                }
+            };
+            for (const observed of observations) {
+                assertParity(
+                    observed.fast,
+                    observed.general,
+                    observed.old,
+                    observed.oldGeneral,
+                );
+                expect(observed.fast).toEqual(observed.general);
+                expect(observed.fast).toEqual(observed.doc);
+                expect(JSON.stringify(observed.old)).toBe(observed.previous);
+            }
+        } finally {
+            unsub();
+        }
+    });
+
     it("syncs map primitives", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
