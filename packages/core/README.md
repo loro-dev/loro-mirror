@@ -1,5 +1,22 @@
 # Loro Mirror
 
+## Streaming text implementation note
+
+Single-event updates to an existing string leaf copy only that leaf's ancestor
+path instead of using the general Immer draft and descriptor repair pass. Copies
+retain `$cid` descriptors and untouched branch identities; old snapshots remain
+unchanged. Missing baselines, accessor/non-plain paths, tree paths and structural
+or multi-event batches retain the general path. There is no storage or public API
+change. Wide ancestor arrays still require copying; this is not windowed reading.
+
+Run `pnpm build` then `node packages/core/scripts/single-text-event-bench.mjs`
+from the repository root. The synthetic benchmark compares single-text events
+with equivalent batches containing an extra empty text event to force the general
+path (so the control includes that extra event's overhead). It checks equal output,
+warms both paths and alternates order. It measures event application only, not
+end-to-end application performance. The existing event test suite checks real
+Loro edits/imports and includes a non-timing guard against reintroducing drafting.
+
 ## Quick Start
 
 Define a schema and instantiate a `Mirror` with a `LoroDoc`.

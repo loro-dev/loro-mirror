@@ -8,10 +8,7 @@ import {
     LoroEventBatch,
     TreeID,
 } from "loro-crdt";
-import {
-    normalizeTreeJson,
-    type NormalizedTreeNode,
-} from "./tree-utils.js";
+import { normalizeTreeJson, type NormalizedTreeNode } from "./tree-utils.js";
 import {
     defineCidProperty,
     hardenCidDescriptors,
@@ -65,6 +62,8 @@ export function applyEventBatchToState<T extends object>(
               ) => SchemaType | undefined;
           },
 ): T {
+    const textState = applySingleTextEvent(currentState, event);
+    if (textState !== undefined) return textState;
     const opts =
         typeof options === "function"
             ? { getContainerById: options }
@@ -88,6 +87,60 @@ export function applyEventBatchToState<T extends object>(
     // them before the state is published.
     hardenCidDescriptors(next, currentState);
     return next;
+}
+
+/** Copy only the ancestors of an existing text leaf, retaining descriptors and
+ * untouched branches. Other batches keep the general Immer path below.
+ */
+function applySingleTextEvent<T extends object>(
+    state: T,
+    batch: LoroEventBatch,
+): T | undefined {
+    if (batch.events.length !== 1) return undefined;
+    const event = batch.events[0];
+    if (!event || event.diff.type !== "text" || !event.path?.length)
+        return undefined;
+    const parents: { node: object; key: string | number }[] = [];
+    let node: unknown = state;
+    for (const key of event.path) {
+        if (node === null || typeof node !== "object") return undefined;
+        if (Array.isArray(node)) {
+            if (
+                typeof key !== "number" ||
+                !Number.isInteger(key) ||
+                key < 0 ||
+                key >= node.length
+            )
+                return undefined;
+        } else {
+            const proto = Object.getPrototypeOf(node);
+            if (
+                (proto !== Object.prototype && proto !== null) ||
+                typeof key !== "string" ||
+                key === "__proto__" ||
+                key === "constructor" ||
+                key === "prototype" ||
+                key === "$cid"
+            )
+                return undefined;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(node, key);
+        if (!descriptor || !("value" in descriptor)) return undefined;
+        parents.push({ node, key });
+        node = descriptor.value;
+    }
+    if (typeof node !== "string") return undefined;
+    let next: unknown = applyTextDelta(node, event.diff.diff);
+    if (next === node) return state;
+    for (let i = parents.length - 1; i >= 0; i--) {
+        const { node: parent, key } = parents[i];
+        const descriptors = Object.getOwnPropertyDescriptors(parent);
+        descriptors[key] = { ...descriptors[key], value: next };
+        next = Array.isArray(parent)
+            ? Object.defineProperties([], descriptors)
+            : Object.create(Object.getPrototypeOf(parent), descriptors);
+    }
+    return next as T;
 }
 
 /**

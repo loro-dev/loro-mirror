@@ -1,7 +1,9 @@
 /* eslint-disable unicorn/consistent-function-scoping */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { LoroDoc, LoroText, LoroList, LoroMap, LoroCounter } from "loro-crdt";
 import { applyEventBatchToState } from "./loroEventApply.js";
+import * as immerInstance from "./immer-instance.js";
+import { Mirror } from "./mirror.js";
 
 const commitAndAssert = (doc: LoroDoc, getState: () => unknown) => {
     doc.commit();
@@ -9,6 +11,115 @@ const commitAndAssert = (doc: LoroDoc, getState: () => unknown) => {
 };
 
 describe("applyEventBatchToState (inline)", () => {
+    it("copies only an existing text path without drafting, preserving snapshots and cid descriptors", () => {
+        const doc = new LoroDoc();
+        const list = doc.getList("rows");
+        const row = list.pushContainer(new LoroMap());
+        const text = row.setContainer("text", new LoroText());
+        text.update("hello");
+        list.pushContainer(new LoroMap()).set("untouched", true);
+        doc.commit();
+        const mirror = new Mirror({ doc });
+        const before = mirror.getState() as { rows: { text: string }[] };
+        const descriptor = Object.getOwnPropertyDescriptor(
+            before.rows[0],
+            "$cid",
+        );
+        expect(descriptor).toMatchObject({
+            enumerable: false,
+            writable: false,
+        });
+        const produce = vi.spyOn(immerInstance, "produce");
+        try {
+            text.insert(5, " world");
+            doc.commit();
+            const after = mirror.getState() as typeof before;
+            expect(after.rows[0].text).toBe("hello world");
+            expect(before.rows[0].text).toBe("hello");
+            expect(after.rows).not.toBe(before.rows);
+            expect(after.rows[0]).not.toBe(before.rows[0]);
+            expect(after.rows[1]).toBe(before.rows[1]);
+            expect(
+                Object.getOwnPropertyDescriptor(after.rows[0], "$cid"),
+            ).toEqual(descriptor);
+            // Deterministic work guard: disabling the fast path must fail this test,
+            // even if the resulting JSON is still correct. No timing threshold.
+            expect(produce).not.toHaveBeenCalled();
+        } finally {
+            produce.mockRestore();
+            mirror.dispose();
+        }
+    });
+
+    it("matches the general path across local and concurrent imported text edits", () => {
+        const doc = new LoroDoc();
+        doc.setPeerId("1");
+        const text = doc.getMap("task").setContainer("body", new LoroText());
+        text.update("seed");
+        doc.commit();
+        const peer = new LoroDoc();
+        peer.setPeerId("2");
+        peer.import(doc.export({ mode: "snapshot" }));
+        let fast = doc.toJSON();
+        let general = doc.toJSON();
+        const unsub = doc.subscribe((batch) => {
+            const previous = JSON.stringify(fast);
+            const old = fast;
+            fast = applyEventBatchToState(fast, batch, (id) =>
+                doc.getContainerById(id),
+            );
+            const event = batch.events[0];
+            // An extra empty text delta forces the unchanged general batch path.
+            const control =
+                batch.events.length === 1 && event.diff.type === "text"
+                    ? {
+                          ...batch,
+                          events: [
+                              ...batch.events,
+                              {
+                                  ...event,
+                                  diff: { type: "text" as const, diff: [] },
+                              },
+                          ],
+                      }
+                    : batch;
+            general = applyEventBatchToState(general, control, (id) =>
+                doc.getContainerById(id),
+            );
+            expect(fast).toEqual(general);
+            expect(fast).toEqual(doc.toJSON());
+            expect(JSON.stringify(old)).toBe(previous);
+        });
+        try {
+            for (let i = 0; i < 50; i++) {
+                text.update(`local ${i} 🦀`);
+                doc.commit();
+                (peer.getMap("task").get("body") as LoroText).update(
+                    `peer ${i} 文本`,
+                );
+                peer.commit();
+                doc.import(
+                    peer.export({ mode: "update", from: doc.version() }),
+                );
+                peer.import(
+                    doc.export({ mode: "update", from: peer.version() }),
+                );
+                expect(peer.toJSON()).toEqual(doc.toJSON());
+            }
+            // Structural and mixed batches must still initialize/delete correctly.
+            const extra = doc
+                .getMap("task")
+                .setContainer("extra", new LoroText());
+            extra.update("new");
+            text.update("final");
+            doc.commit();
+            doc.getMap("task").delete("extra");
+            doc.commit();
+        } finally {
+            unsub();
+        }
+    });
+
     it("syncs map primitives", () => {
         const doc = new LoroDoc();
         let state: Record<string, unknown> = {};
