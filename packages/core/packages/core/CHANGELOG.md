@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.3](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.3.2...loro-mirror-v2.3.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **core:** drop doc events targeting schema.Ignore fields ([#97](https://github.com/loro-dev/loro-mirror/issues/97)) ([217012a](https://github.com/loro-dev/loro-mirror/commit/217012a59e310e94fd829c4e25d34feb3c9eb6dc))
+
 ## [2.3.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.3.1...loro-mirror-v2.3.2) (2026-09-09)
 
 
