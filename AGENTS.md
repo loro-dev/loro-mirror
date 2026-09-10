@@ -62,3 +62,5 @@ explicit Ignore roots. Preserve unknown roots according to ignoreUnknownProperti
 Consistency checks exclude Ignore values and their container identities at nested
 schema paths as well as roots; document changes to Ignore must not make later
 normal setState calls fail. Normal sibling values and identities remain checked.
+
+Tree consistency comparison applies nodeSchema to each node.data and the tree schema to children; wrapper fields are not node data. Ignore projection must not suppress comparison of ordinary tree fields.
