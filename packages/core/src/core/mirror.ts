@@ -2402,12 +2402,20 @@ export class Mirror<S extends SchemaType> {
                     if (fieldSchema && isContainerSchema(fieldSchema)) {
                         const ct = schemaToContainerType(fieldSchema);
                         if (ct && isValueOfContainerType(ct, val)) {
-                            this.insertContainerIntoMap(
+                            const inserted = this.insertContainerIntoMap(
                                 map,
                                 fieldSchema,
                                 key,
                                 val,
                             );
+                            // Pending state is also the published read state.
+                            // Replace only this newly constructed lazy slot;
+                            // unchanged rows and their views retain identity.
+                            if (isLazyListSchema(fieldSchema)) {
+                                value[key] = this.getOrCreateLazyList(
+                                    inserted.id,
+                                );
+                            }
                         } else {
                             // Schema says container but value doesn't match - fall back to primitive
                             map.set(key, applyEncode(fieldSchema, val));
@@ -4533,7 +4541,10 @@ export class Mirror<S extends SchemaType> {
             for (let i = 0; i < newValue.length; i++) {
                 const next = newValue[i];
                 const id = identity(next);
-                const old = id === undefined ? oldValue[i] : previous.get(id);
+                // Unattached inputs are insertions, not replacements of the
+                // old row at this position. Existing map views always carry a CID.
+                if (id === undefined) continue;
+                const old = previous.get(id);
                 if (tree) {
                     if (!isObject(old) || !isObject(next)) continue;
                     this.assertLazyUntouched(

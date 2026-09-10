@@ -95,3 +95,6 @@ diffs as well as container-targeted events; mixed batches retain normal fields.
 Lazy write guards traverse eager lists, map records and tree data, matching
 surviving list items by container ID and tree nodes by node ID across reordering.
 Typed tree reads must not materialize nested lazy bodies through toJSON.
+New list rows without a container ID are insertions, never positional matches
+for lazy-view write guards. Newly initialized map fields declared lazy must
+publish LazyList views after their document containers have been created.

@@ -98,10 +98,7 @@ it.each([false, true])(
             doc,
             schema: schema({
                 root: schema.LoroMapRecord(schema.Any()),
-                // Root Ignore is supported at runtime; the existing root schema type excludes it.
-                history: schema.Ignore() as unknown as ReturnType<
-                    typeof schema.LoroMapRecord
-                >,
+                history: schema.Ignore(),
             }),
             ignoreUnknownProperties: keepUnknown,
         });

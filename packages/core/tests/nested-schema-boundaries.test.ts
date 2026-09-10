@@ -268,3 +268,60 @@ it("guards lazy fields under map records before any sibling is written", () => {
     expect(doc.toJSON()).toEqual(before);
     expect(isLazyList(m.getState().rows.a.items)).toBe(true);
 });
+
+for (const movable of [false, true]) {
+    for (const index of [0, 1, 3]) {
+        it(`accepts ${movable ? "movable" : "ordinary"} insertion at ${index} and exposes lazy children`, async () => {
+            const doc = new LoroDoc();
+            const rows = movable
+                ? doc.getMovableList("rows")
+                : doc.getList("rows");
+            for (const id of ["a", "b", "c"]) {
+                const row = rows.insertContainer(rows.length, new LoroMap());
+                row.set("id", id);
+                row.setContainer("items", new LoroList()).push(id);
+            }
+            doc.commit();
+            const item = schema.LoroMap({
+                id: schema.String(),
+                items: schema.LoroList(schema.String(), undefined, {
+                    lazy: { index: [] },
+                }),
+            });
+            const m = new Mirror({
+                doc,
+                schema: schema({
+                    rows: movable
+                        ? schema.LoroMovableList(item, (x) => x.id)
+                        : schema.LoroList(item, (x) => x.id),
+                }),
+            });
+            const previous = m.getState().rows.map((row) => row.items);
+            m.setState((d) => {
+                d.rows.splice(index, 0, {
+                    id: "new",
+                    items: ["body"],
+                } as unknown as (typeof d.rows)[number]);
+            });
+            const state = m.getState().rows;
+            const expected = ["a", "b", "c"];
+            expected.splice(index, 0, "new");
+            expect(state.map((row) => row.id)).toEqual(expected);
+            expect(isLazyList(state[index].items)).toBe(true);
+            await state[index].items.hydrate(0, 1);
+            expect(state[index].items.get(0)).toBe("body");
+            state
+                .filter((row) => row.id !== "new")
+                .forEach((row, i) => {
+                    expect(row.items).toBe(previous[i]);
+                });
+            expect(rows.length).toBe(4);
+            expect(() => {
+                m.setState((d) => {
+                    Object.assign(d.rows[index], { items: [] });
+                });
+            }).toThrow(LazyListWriteError);
+            m.dispose();
+        });
+    }
+}
