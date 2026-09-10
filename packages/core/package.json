@@ -1,6 +1,6 @@
 {
     "name": "loro-mirror",
-    "version": "2.3.1",
+    "version": "2.3.2",
     "description": "Type-safe state management synchronized with Loro CRDT via a declarative schema and bidirectional mirroring.",
     "type": "module",
     "main": "dist/index.js",
@@ -28,6 +28,7 @@
         "bench:ephemeral": "pnpm build && node --expose-gc ./scripts/ephemeral-bench.mjs",
         "bench:bulk-init": "pnpm build && node --expose-gc ./scripts/bulk-init-bench.mjs",
         "bench:lazy-list": "pnpm build && node --expose-gc ./scripts/lazy-list-bench.mjs",
+        "bench:single-text-event": "pnpm build && node ./scripts/single-text-event-bench.mjs",
         "bench:ignore-unknown-properties": "pnpm build && node --expose-gc ./scripts/ignore-unknown-properties-bench.mjs"
     },
     "keywords": [
