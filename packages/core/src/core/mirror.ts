@@ -2893,6 +2893,26 @@ export class Mirror<S extends SchemaType> {
             typeof base !== "object"
         )
             return;
+        if (isLoroTreeSchema(schema)) {
+            if (!Array.isArray(snapshot) || !Array.isArray(base)) return;
+            for (let i = 0; i < snapshot.length; i++) {
+                const node = snapshot[i] as Record<string, unknown> | undefined;
+                const previous = base[i] as Record<string, unknown> | undefined;
+                if (!node || !previous) continue;
+                // Tree nodes wrap the schema-owned data in { id, data, children }.
+                this.preserveIgnoredComparisonValues(
+                    node.data,
+                    previous.data,
+                    schema.nodeSchema,
+                );
+                this.preserveIgnoredComparisonValues(
+                    node.children,
+                    previous.children,
+                    schema,
+                );
+            }
+            return;
+        }
         const fresh = snapshot as Record<string, unknown>;
         const memory = base as Record<string, unknown>;
         for (const key of new Set([
