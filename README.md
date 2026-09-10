@@ -269,6 +269,7 @@ const todoSchema = schema({
 #### Ignored Fields
 
 - Fields defined with `schema.Ignore()` won't sync with Loro, commonly used for derived/cached fields. Runtime validation always passes for these fields.
+- This holds in both directions: doc events targeting an ignored field (an ignored root key, or a nested ignored map field when the event path resolves to it) are dropped entirely — no state update, no container registration, and no subscriber notification for a batch containing only ignored events.
 
 #### Reserved Field: `$cid`
 

@@ -11,6 +11,7 @@ import {
     LoroMovableListSchema,
     LoroTextSchemaType,
     LoroTreeSchema,
+    RootFieldSchemaType,
     RootSchemaType,
     SchemaType,
 } from "./types.js";
@@ -76,10 +77,44 @@ export function isLoroMovableListSchema<T extends SchemaType>(
 /**
  * Type guard for RootSchemaType
  */
-export function isRootSchemaType<T extends Record<string, ContainerSchemaType>>(
+export function isRootSchemaType<T extends Record<string, RootFieldSchemaType>>(
     schema?: SchemaType,
 ): schema is RootSchemaType<T> {
     return !!schema && (schema as BaseSchemaType).type === "schema";
+}
+
+/**
+ * Whether a schema subtree contains any `Ignore` field. Recursive schemas are
+ * tolerated (each schema object is visited once).
+ */
+export function schemaContainsIgnoreField(schema: SchemaType | undefined): boolean {
+    const visited = new Set<SchemaType>();
+    const walk = (s: SchemaType | undefined): boolean => {
+        if (!s || visited.has(s)) return false;
+        visited.add(s);
+        if (s.type === "ignore") return true;
+        switch (s.type) {
+            case "schema":
+            case "loro-map": {
+                const record = s as {
+                    definition: Record<string, SchemaType>;
+                    catchallType?: SchemaType;
+                };
+                return (
+                    Object.values(record.definition).some(walk) ||
+                    walk(record.catchallType)
+                );
+            }
+            case "loro-list":
+            case "loro-movable-list":
+                return walk(s.itemSchema);
+            case "loro-tree":
+                return walk(s.nodeSchema);
+            default:
+                return false;
+        }
+    };
+    return walk(schema);
 }
 
 /**
