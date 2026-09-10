@@ -43,15 +43,49 @@
 
 - `Mirror(options: MirrorOptions<S>)`
     - `doc` (required), `schema?`, `initialState?`, `validateUpdates?`, `ignoreUnknownProperties?`, `debug?`, `checkStateConsistency?`, `inferOptions?`.
-    - Methods: `getState()`, `setState(updater, options?)`, `subscribe(cb)`, `dispose()`, `checkStateConsistency()`, `getContainerIds()`.
+    - Methods: `getState()`, `setState(updater, options?)`, `subscribe(cb)`, `dispose()`, `checkStateConsistency()`, `getContainerIds()`, `list<T>(path)` (returns a `LazyListWriter<T>` with `push`/`insert`/`deleteById`/`updateById`/`updateAt` for schema-declared lazy lists).
     - `SetStateOptions` supports `{ tags?: string | string[] }`; subscriber metadata includes `{ source: UpdateSource; tags?: string[] }`.
-- `schema(definition, options?)` plus builders: `.String()`, `.Number()`, `.Boolean()`, `.Ignore()`, `.LoroMap()`, `.LoroMapRecord()`, `.LoroList()`, `.LoroMovableList()`, `.LoroText()`, `.LoroTree()`. Root fields may be `Ignore` (see `RootFieldSchemaType`); doc events targeting `Ignore` fields are dropped (no state/registration/notification).
-- Runtime helpers from the schema module: `validateSchema`, `getDefaultValue`, `createValueFromSchema`, and type guards such as `isContainerSchema`, `isLoroMapSchema`, `isLoroListSchema`, `isLoroMovableListSchema`, `isLoroTextSchema`, `isLoroTreeSchema`, `isRootSchemaType`, `isListLikeSchema`.
-- Types re-exported at the root: `MirrorOptions`, `SetStateOptions`, `UpdateMetadata`, `InferType`, `InferInputType`, `InferContainerOptions`, `SchemaType`, `ContainerSchemaType`, `RootSchemaType`, `LoroMapSchema`, `LoroListSchema`, `LoroMovableListSchema`, `LoroTextSchemaType`, `LoroTreeSchema`, `SchemaOptions`, `ChangeKinds`, `MapChangeKinds`, `ListChangeKinds`, `MovableListChangeKinds`, `TreeChangeKinds`, `TextChangeKinds`, `SubscriberCallback`, `UpdateSource`.
+- `schema(definition, options?)` plus builders: `.String()`, `.Number()`, `.Boolean()`, `.Ignore()`, `.LoroMap()`, `.LoroMapRecord()`, `.LoroList()`, `.LoroMovableList()`, `.LoroText()`, `.LoroTree()`.
+    - `schema.LoroList(item, idSelector?, options?)` accepts `options.lazy: LazyListOptions` (`{ index: string[]; maxHydrated?: number; tailKeep?: number }`). A lazy list is not read into state at init; `getState()` exposes a `LazyList<T, I>` (length/version/ids/indexOf/index/get/slice/isHydrated/hydrate/release/subscribeRange), `setState` touching a lazy path throws `LazyListWriteError`, and writes go through `mirror.list(path)`. When all schema roots are lazy lists, init uses shallow reads only (no full-document deep read).
+- Runtime helpers from the schema module: `validateSchema`, `getDefaultValue`, `createValueFromSchema`, and type guards such as `isContainerSchema`, `isLoroMapSchema`, `isLoroListSchema`, `isLoroMovableListSchema`, `isLoroTextSchema`, `isLoroTreeSchema`, `isRootSchemaType`, `isListLikeSchema`, `isLazyListSchema`, `schemaContainsLazyList`. Value helpers from core: `isLazyList` (brand check, brand is `Symbol.for("loro-mirror.lazyList")`), `LazyListImpl`, `LazyListWriteError`.
+- Types re-exported at the root: `MirrorOptions`, `SetStateOptions`, `UpdateMetadata`, `InferType`, `InferInputType`, `InferContainerOptions`, `SchemaType`, `ContainerSchemaType`, `RootSchemaType`, `LoroMapSchema`, `LoroListSchema`, `LoroMovableListSchema`, `LoroTextSchemaType`, `LoroTreeSchema`, `SchemaOptions`, `LazyList`, `LazyListOptions`, `LazyListWriter`, `ChangeKinds`, `MapChangeKinds`, `ListChangeKinds`, `MovableListChangeKinds`, `TreeChangeKinds`, `TextChangeKinds`, `SubscriberCallback`, `UpdateSource`. For a lazy list, `InferType` is `LazyList<Item, Partial<Item>>` and `InferInputType` is the same `LazyList` type (arrays are rejected at the type level; seed via `mirror.list(path)`).
 - Utilities: `toNormalizedJson(doc)` for tree normalization. `$cid` is a reserved property injected into mirrored map values but there is no exported constant.
 
+Bulk initialization prefers optional `LoroDoc.toContainerTree()` when available. Its
+`Value` nodes are opaque, including embedded objects with `type/cid/value` fields.
+Carry the format flag in each walk context; never infer it from child value shape.
+Older packages continue through verified deep-value or handle reads. Tree projection
+retains its existing normalization path. Tests must disable both bulk APIs when
+explicitly comparing with the legacy handle path.
+The container-tree path selects required roots before materialization, excluding
+explicit Ignore roots. Preserve unknown roots according to ignoreUnknownProperties.
+
+Lazy hydration uses the published container.toContainerTree API for ordinary item
+subtrees. Roots/items containing nested lazy lists retain shallow traversal so
+unrequested descendants stay unread; mixed schemas exclude those roots from
+the document bulk read. Never feed structured Value nodes to the legacy index parser.
+
+Root schema fields may be Ignore (RootFieldSchemaType); Ignore events are filtered before registration and lazy handling.
+Consistency checks preserve nested Ignore memory values and still check normal siblings.
+
+Lazy item event recursion stops at an already-handled list boundary; never route
+that item's events back to an outer lazy list. `subscribeRange` remains half-open.
+`subscribeLength` observes length without retaining items; React range readers
+subscribe to both so a tail window can advance after an append.
+Lazy writer insertions cache the schema-decoded document read, not the input
+object (nested lists must already be LazyList views). Structural deletion or
+replacement clears unreachable lazy-list state using final container liveness;
+ordinary text/scalar events do not scan all lazy lists. Undo may create a fresh
+view for a restored subtree; stale deleted views must remain empty.
 Consistency checks exclude Ignore values and their container identities at nested
 schema paths as well as roots; document changes to Ignore must not make later
 normal setState calls fail. Normal sibling values and identities remain checked.
 
 Tree consistency comparison applies nodeSchema to each node.data and the tree schema to children; wrapper fields are not node data. Ignore projection must not suppress comparison of ordinary tree fields.
+
+When container-tree reading hits Loro's nesting limit, fall back to per-container reads. Other read or schema/decode errors must propagate unchanged.
+
+Lazy slots preserve container provenance from real handles independently of their
+id strings. A literal string, including one equal to a live container id, stays
+opaque. Resolve ambiguous shallow map fields through map.get(field), not by
+looking up the string as an id elsewhere in the document.
