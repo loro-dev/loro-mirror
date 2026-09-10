@@ -54,8 +54,8 @@
 Bulk initialization prefers optional `LoroDoc.toContainerTree()` when available. Its
 `Value` nodes are opaque, including embedded objects with `type/cid/value` fields.
 Carry the format flag in each walk context; never infer it from child value shape.
-Older packages continue through verified deep-value or handle reads. Tree projection
-retains its existing normalization path. Tests must disable both bulk APIs when
+Older packages continue through verified deep-value or handle reads. Typed trees read node data through the schema-aware container reader; untyped trees
+retain JSON normalization. Tests must disable both bulk APIs when
 explicitly comparing with the legacy handle path.
 The container-tree path selects required roots before materialization, excluding
 explicit Ignore roots. Preserve unknown roots according to ignoreUnknownProperties.
@@ -89,3 +89,12 @@ Lazy slots preserve container provenance from real handles independently of thei
 id strings. A literal string, including one equal to a live container id, stays
 opaque. Resolve ambiguous shallow map fields through map.get(field), not by
 looking up the string as an id elsewhere in the document.
+
+Nested Ignore fields are omitted on initial reads and filtered inside parent Map
+diffs as well as container-targeted events; mixed batches retain normal fields.
+Lazy write guards traverse eager lists, map records and tree data, matching
+surviving list items by container ID and tree nodes by node ID across reordering.
+Typed tree reads must not materialize nested lazy bodies through toJSON.
+New list rows without a container ID are insertions, never positional matches
+for lazy-view write guards. Newly initialized map fields declared lazy must
+publish LazyList views after their document containers have been created.
