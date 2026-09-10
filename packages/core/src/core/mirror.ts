@@ -568,7 +568,7 @@ export class Mirror<S extends SchemaType> {
         readItemIds: (listId) => {
             const c = this.doc.getContainerById(listId);
             if (c && (c.kind() === "List" || c.kind() === "MovableList")) {
-                return (c as LoroList | LoroMovableList).getShallowValue();
+                return (c as LoroList | LoroMovableList).toArray();
             }
             return [];
         },
@@ -3060,6 +3060,26 @@ export class Mirror<S extends SchemaType> {
             typeof base !== "object"
         )
             return;
+        if (isLoroTreeSchema(schema)) {
+            if (!Array.isArray(snapshot) || !Array.isArray(base)) return;
+            for (let i = 0; i < snapshot.length; i++) {
+                const node = snapshot[i] as Record<string, unknown> | undefined;
+                const previous = base[i] as Record<string, unknown> | undefined;
+                if (!node || !previous) continue;
+                // Tree nodes wrap the schema-owned data in { id, data, children }.
+                this.preserveIgnoredComparisonValues(
+                    node.data,
+                    previous.data,
+                    schema.nodeSchema,
+                );
+                this.preserveIgnoredComparisonValues(
+                    node.children,
+                    previous.children,
+                    schema,
+                );
+            }
+            return;
+        }
         const fresh = snapshot as Record<string, unknown>;
         const memory = base as Record<string, unknown>;
         for (const key of new Set([
@@ -3450,9 +3470,16 @@ export class Mirror<S extends SchemaType> {
                 }
             }
         }
-        const deepValue = doc.toContainerTree
-            ? doc.toContainerTree({ roots })
-            : doc.getDeepValueWithID();
+        let deepValue: unknown;
+        try {
+            deepValue = doc.toContainerTree
+                ? doc.toContainerTree({ roots })
+                : doc.getDeepValueWithID();
+        } catch (error) {
+            if (!structuredState || !isContainerTreeDepthError(error))
+                throw error;
+            return this.buildRootStateSnapshotLegacy(prevState, options);
+        }
         const deepRoots = isObject(deepValue) ? deepValue : {};
 
         const ctx: BulkWalkContext = {
@@ -4046,10 +4073,8 @@ export class Mirror<S extends SchemaType> {
             );
         }
 
-        // One wasm call: position-aligned identities (cid strings for
-        // container items, raw primitives otherwise). The shallow read also
-        // disambiguates bare objects in the payload: loro-crdt 1.13.3 drops
-        // the { value, cid } wrapper of empty containers.
+        // One shallow wasm read with actual container handles. Keep provenance
+        // separately from ids: a primitive can be the exact same cid string.
         const rawIds = this.lazyHost.readItemIds(listId);
         const ids = rawIds.map((v) =>
             isContainer(v) ? v.id : (v as ContainerID),
@@ -4066,7 +4091,7 @@ export class Mirror<S extends SchemaType> {
         const indexCache = new Map<ContainerID, Record<string, unknown>>();
         for (let i = 0; i < ids.length; i++) {
             const cid = ids[i];
-            if (typeof cid !== "string" || !cid.startsWith("cid:")) continue;
+            if (!isContainer(rawIds[i])) continue;
             // Register the item container with its schema (no nested scan —
             // nested containers are registered when the item hydrates).
             this.registerContainerInBulkWalk(cid, containerItemSchema);
@@ -4086,7 +4111,7 @@ export class Mirror<S extends SchemaType> {
             this.lazyHost,
             listId,
             schema,
-            ids,
+            rawIds,
             indexCache,
         );
         this.lazyLists.set(listId, list);
@@ -4144,16 +4169,23 @@ export class Mirror<S extends SchemaType> {
         >;
         const out: Record<string, unknown> = {};
         for (const field of fields) {
-            const raw = shallow[field];
-            if (raw === undefined) continue;
+            const shallowValue = shallow[field];
+            if (shallowValue === undefined) continue;
+            // Only ambiguous shallow strings require a slot read. Existence of
+            // that id elsewhere in the document is not evidence about this slot.
+            const raw =
+                typeof shallowValue === "string" &&
+                shallowValue.startsWith("cid:")
+                    ? (container as LoroMap).get(field)
+                    : shallowValue;
             out[field] = this.decodeLazyIndexRaw(itemSchema, field, raw);
         }
         return out;
     }
 
     /**
-     * Decode one index field from a raw shallow value; container references
-     * (cid strings) are resolved to their JSON value (LoroText → string).
+     * Decode a disambiguated slot value. Only real container handles are
+     * converted to JSON; literal cid-shaped strings remain opaque.
      */
     private decodeLazyIndexRaw(
         itemSchema: SchemaType | undefined,
@@ -4161,14 +4193,7 @@ export class Mirror<S extends SchemaType> {
         raw: unknown,
     ): unknown {
         let v = raw;
-        if (typeof raw === "string" && raw.startsWith("cid:")) {
-            const c = this.doc.getContainerById(raw as ContainerID);
-            if (!c) return undefined;
-            v =
-                c.kind() === "Text"
-                    ? (c as LoroText).toJSON()
-                    : (c as { toJSON(): unknown }).toJSON();
-        }
+        if (isContainer(raw)) v = raw.toJSON();
         return applyDecode(
             itemSchema ? getChildSchema(itemSchema, field) : undefined,
             v,
@@ -4230,7 +4255,15 @@ export class Mirror<S extends SchemaType> {
                 registerContainers: true,
             });
         }
-        const node = container.toContainerTree();
+        let node: ReturnType<Container["toContainerTree"]>;
+        try {
+            node = container.toContainerTree();
+        } catch (error) {
+            if (!isContainerTreeDepthError(error)) throw error;
+            return this.containerToMirrorState(container, {
+                registerContainers: true,
+            });
+        }
         return this.bulkContainerStateByKind(itemCid, node.type, node.value, {
             structuredState: true,
             semantics: MIRROR_WALK_SEMANTICS,
@@ -4719,7 +4752,7 @@ export class Mirror<S extends SchemaType> {
             );
         }
         const cid = ref.lazy.ids()[index];
-        if (typeof cid !== "string" || !cid.startsWith("cid:")) {
+        if (!ref.lazy._isContainerItem(index)) {
             throw new Error(
                 `mirror.list: updateAt/updateById require container items`,
             );
@@ -4911,4 +4944,16 @@ function mergeInitialIntoBaseWithSchema(
             continue;
         }
     }
+}
+
+// Loro currently reports its container-tree depth limit as a JS error string.
+// Only that read limitation falls back; unrelated read/decode errors propagate.
+function isContainerTreeDepthError(error: unknown): boolean {
+    const message =
+        error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : "";
+    return /toContainerTree nesting exceeds \d+ levels/.test(message);
 }

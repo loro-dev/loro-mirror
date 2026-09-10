@@ -28,7 +28,7 @@ export type LazyListDelta = Array<{
  * `mirror.ts` at runtime.
  */
 export interface LazyListHost {
-    /** Current shallow ids of the list (`list.getShallowValue()`). */
+    /** Shallow values with real container handles (`list.toArray()`). */
     readItemIds(listId: ContainerID): unknown[];
     /**
      * Decoded values of the schema's `lazy.index` fields for one item
@@ -67,10 +67,12 @@ type RangeSubscription = { from: number; to: number; listener: () => void };
 interface LazyListInternal<T> {
     /**
      * Position-aligned item identities: container id strings for container
-     * items, raw primitives for primitive items (mirrors
-     * `list.getShallowValue()` exactly).
+     * items, raw primitives for primitive items. containerItems distinguishes
+     * literal strings from references even when their values are identical.
      */
     ids: ContainerID[];
+    /** Slot provenance; a literal string may equal a real container id. */
+    containerItems: boolean[];
     posById: Map<ContainerID, number>;
     /** Index-field values (decoded) per item container id; covers all items. */
     indexCache: Map<ContainerID, Record<string, unknown>>;
@@ -87,10 +89,6 @@ interface LazyListInternal<T> {
 
 const DEFAULT_MAX_HYDRATED = 200;
 const DEFAULT_TAIL_KEEP = 20;
-
-function isCidString(value: unknown): value is ContainerID {
-    return typeof value === "string" && value.startsWith("cid:");
-}
 
 /**
  * Thrown by `Mirror.setState` when an update touches a lazy list path.
@@ -138,11 +136,14 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         host: LazyListHost,
         listId: ContainerID,
         listSchema: LazyListSchemaWithOptions,
-        ids: ContainerID[],
+        values: unknown[],
         indexCache: Map<ContainerID, Record<string, unknown>>,
     ) {
         const internal: LazyListInternal<T> = {
-            ids,
+            ids: values.map((v) =>
+                isContainer(v) ? v.id : (v as ContainerID),
+            ),
+            containerItems: values.map((v) => isContainer(v)),
             posById: new Map(),
             indexCache,
             selectorIdByCid: new Map(),
@@ -195,6 +196,11 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         return this._s.ids;
     }
 
+    /** Internal provenance check; never infer identity from a string value. */
+    _isContainerItem(i: number): boolean {
+        return this._s.containerItems[i] === true;
+    }
+
     indexOf(id: string): number {
         const byCid = this._s.posById.get(id as ContainerID);
         if (byCid !== undefined) return byCid;
@@ -205,13 +211,13 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
 
     index(i: number): I | undefined {
         const cid = this._s.ids[i];
-        if (!isCidString(cid)) return undefined;
+        if (!this._isContainerItem(i)) return undefined;
         return this._s.indexCache.get(cid) as I | undefined;
     }
 
     get(i: number): T | undefined {
         const entry = this._s.ids[i];
-        if (!isCidString(entry)) {
+        if (!this._isContainerItem(i)) {
             // Primitive items are always fully known (they cannot nest
             // containers), so they read as hydrated.
             return entry as T;
@@ -231,7 +237,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
 
     isHydrated(i: number): boolean {
         const entry = this._s.ids[i];
-        if (!isCidString(entry)) return entry !== undefined;
+        if (!this._isContainerItem(i)) return entry !== undefined;
         return this._s.hydrated.has(entry);
     }
 
@@ -261,7 +267,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
      */
     _hydrateIndex(i: number): boolean {
         const cid = this._s.ids[i];
-        if (!isCidString(cid)) return false;
+        if (!this._isContainerItem(i)) return false;
         const existing = this._s.hydrated.get(cid);
         if (existing) {
             existing.lru = ++this._s.clock;
@@ -300,7 +306,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         let changed = false;
         for (let i = start; i < end; i++) {
             const cid = this._s.ids[i];
-            if (!isCidString(cid)) continue;
+            if (!this._isContainerItem(i)) continue;
             if (this.isInActiveRange(i)) continue;
             if (this._s.hydrated.delete(cid)) changed = true;
         }
@@ -346,9 +352,10 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
                 const count = d.delete;
                 if (count > 0) {
                     const removed = s.ids.splice(index, count);
+                    const containers = s.containerItems.splice(index, count);
                     minChanged = Math.min(minChanged, index);
-                    for (const cid of removed) {
-                        if (!isCidString(cid)) continue;
+                    for (const [offset, cid] of removed.entries()) {
+                        if (!containers[offset]) continue;
                         s.hydrated.delete(cid);
                         s.indexCache.delete(cid);
                         this.dropSelectorId(cid);
@@ -358,10 +365,12 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
                 const inserted = d.insert.map((v) =>
                     isContainer(v) ? v.id : (v as ContainerID),
                 );
+                const containers = d.insert.map((v) => isContainer(v));
                 s.ids.splice(index, 0, ...inserted);
+                s.containerItems.splice(index, 0, ...containers);
                 minChanged = Math.min(minChanged, index);
-                for (const cid of inserted) {
-                    if (!isCidString(cid)) continue;
+                for (const [offset, cid] of inserted.entries()) {
+                    if (!containers[offset]) continue;
                     s.indexCache.set(
                         cid,
                         this.host.readItemIndex(this.listId, cid),
@@ -478,6 +487,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
     _clearDeleted(): void {
         const s = this._s;
         s.ids = [];
+        s.containerItems = [];
         s.posById.clear();
         s.indexCache.clear();
         s.selectorIdByCid.clear();
@@ -501,11 +511,16 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         const nextIds = raw.map((v) =>
             isContainer(v) ? v.id : (v as ContainerID),
         );
+        const containerItems = raw.map((v) => isContainer(v));
         const same =
             nextIds.length === s.ids.length &&
-            nextIds.every((id, i) => id === s.ids[i]);
+            nextIds.every(
+                (id, i) =>
+                    id === s.ids[i] &&
+                    containerItems[i] === s.containerItems[i],
+            );
         if (same) return;
-        const live = new Set(nextIds);
+        const live = new Set(nextIds.filter((_, i) => containerItems[i]));
         for (const cid of Array.from(s.hydrated.keys())) {
             if (!live.has(cid)) {
                 s.hydrated.delete(cid);
@@ -516,8 +531,9 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
             if (!live.has(cid)) s.indexCache.delete(cid);
         }
         s.ids = nextIds;
-        for (const cid of nextIds) {
-            if (!isCidString(cid)) continue;
+        s.containerItems = containerItems;
+        for (const [i, cid] of nextIds.entries()) {
+            if (!containerItems[i]) continue;
             if (!s.indexCache.has(cid)) {
                 s.indexCache.set(
                     cid,
@@ -553,7 +569,7 @@ export class LazyListImpl<T = unknown, I = Partial<T>>
         s.posById.clear();
         for (let i = 0; i < s.ids.length; i++) {
             const id = s.ids[i];
-            if (isCidString(id)) s.posById.set(id, i);
+            if (s.containerItems[i]) s.posById.set(id, i);
         }
     }
 

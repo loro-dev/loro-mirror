@@ -77,3 +77,15 @@ object (nested lists must already be LazyList views). Structural deletion or
 replacement clears unreachable lazy-list state using final container liveness;
 ordinary text/scalar events do not scan all lazy lists. Undo may create a fresh
 view for a restored subtree; stale deleted views must remain empty.
+Consistency checks exclude Ignore values and their container identities at nested
+schema paths as well as roots; document changes to Ignore must not make later
+normal setState calls fail. Normal sibling values and identities remain checked.
+
+Tree consistency comparison applies nodeSchema to each node.data and the tree schema to children; wrapper fields are not node data. Ignore projection must not suppress comparison of ordinary tree fields.
+
+When container-tree reading hits Loro's nesting limit, fall back to per-container reads. Other read or schema/decode errors must propagate unchanged.
+
+Lazy slots preserve container provenance from real handles independently of their
+id strings. A literal string, including one equal to a live container id, stays
+opaque. Resolve ambiguous shallow map fields through map.get(field), not by
+looking up the string as an id elsewhere in the document.
