@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.3.1...loro-mirror-v2.3.2) (2026-09-09)
+
+
+### Performance Improvements
+
+* **core:** copy paths for single text events ([#99](https://github.com/loro-dev/loro-mirror/issues/99)) ([f2aa415](https://github.com/loro-dev/loro-mirror/commit/f2aa4156f7763cc1bd81b6baab23d2bd89eaf6b1))
+
 ## [2.3.1](https://github.com/loro-dev/loro-mirror/compare/loro-mirror-v2.3.0...loro-mirror-v2.3.1) (2026-08-29)
 
 

@@ -336,6 +336,26 @@ For more React patterns (selectors, actions, provider), see `packages/react/READ
 - `setState` accepts an updater that either mutates a draft or returns a new object — use whichever style you prefer.
 - Subscriptions receive `{ source: LORO | MIRROR | EPHEMERAL, tags?: string[] }`.
 
+### Streaming text implementation note
+
+Single-event updates to an existing string leaf copy only its ancestor path,
+preserving `$cid`, old snapshots and unchanged branch identities. Missing baselines,
+accessor/non-plain paths (including array subclasses), tree paths and structural/multi-event batches retain the
+general Immer path. Ordinary dense arrays copy validated data values directly;
+holes, extra keys, accessors or unusual descriptors retain descriptor copying.
+No getters, iterators or species constructors run during this copy. It remains
+O(ancestor width), not windowed reading; storage and public APIs do not change.
+
+Run `pnpm --filter loro-mirror bench:single-text-event`. The synthetic benchmark
+warms each path and alternates five samples of 30 events, checking output equality.
+The general-path control adds an empty text event (its overhead is included).
+Set `TEXT_EVENT_BASELINE` to a module URL exporting `applyEventBatchToState` to
+compare a previous build on exactly the same single-event batches. Measurements
+exclude writes, startup and UI rendering. Tests collect callback results/errors
+and assert outside Wasm dispatch; corruption must fail the named test even when
+unhandled errors are ignored. Array tests preserve descriptors and sharing without
+depending on wall-clock thresholds.
+
 ## License
 
 MIT
