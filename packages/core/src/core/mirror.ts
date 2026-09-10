@@ -76,7 +76,6 @@ import {
     stripUndefined,
     applyDecode,
     applyEncode,
-    decodeNestedJsonValues,
     safeStringify,
     cidsEqual,
     tryUpdateToContainer,
@@ -925,6 +924,11 @@ export class Mirror<S extends SchemaType> {
                 const map = container as LoroMap;
                 const context = this.getChildRegistrationContext(container);
                 for (const key of map.keys()) {
+                    if (
+                        getChildSchema(context.parentSchema, key)?.type ===
+                        "ignore"
+                    )
+                        continue;
                     const value = map.get(key);
                     if (isContainer(value)) {
                         this.registerChildContainer(
@@ -1055,10 +1059,38 @@ export class Mirror<S extends SchemaType> {
             }
             return rootKeyByCid;
         };
-        const events = event.events.filter(
-            (e) => !this.isIgnoredEvent(e, getRootKeyByCid),
-        );
-        if (events.length === event.events.length) return event;
+        let changed = false;
+        const events: LoroEventBatch["events"] = [];
+        for (const e of event.events) {
+            if (this.isIgnoredEvent(e, getRootKeyByCid)) {
+                changed = true;
+                continue;
+            }
+            if (this.hasNestedIgnoreFields && e.diff.type === "map") {
+                let targetSchema: SchemaType | undefined = this.schema;
+                for (const key of e.path)
+                    targetSchema = getChildSchema(targetSchema, key);
+                const entries = Object.entries(e.diff.updated);
+                const kept = entries.filter(
+                    ([key]) =>
+                        getChildSchema(targetSchema, key)?.type !== "ignore",
+                );
+                if (kept.length !== entries.length) {
+                    changed = true;
+                    if (kept.length)
+                        events.push({
+                            ...e,
+                            diff: {
+                                ...e.diff,
+                                updated: Object.fromEntries(kept),
+                            },
+                        });
+                    continue;
+                }
+            }
+            events.push(e);
+        }
+        if (!changed) return event;
         return { ...event, events } as LoroEventBatch;
     }
 
@@ -3122,6 +3154,7 @@ export class Mirror<S extends SchemaType> {
                 : undefined;
             defineCidProperty(obj, c.id);
             for (const k of m.keys()) {
+                if (getChildSchema(schema, k)?.type === "ignore") continue;
                 const v = m.get(k);
                 if (isContainer(v)) {
                     if (childRegistrationContext) {
@@ -3185,56 +3218,19 @@ export class Mirror<S extends SchemaType> {
             if (options.registerContainers) {
                 this.registerNestedContainers(c);
             }
+            if (schema && isLoroTreeSchema(schema)) {
+                const readNodes = (
+                    nodes: ReturnType<LoroTree["roots"]>,
+                ): MirrorState[] =>
+                    nodes.map((node) => ({
+                        id: node.id,
+                        data: this.containerToMirrorState(node.data, options),
+                        children: readNodes(node.children() ?? []),
+                    }));
+                return readNodes(t.roots());
+            }
             // Normalize via toJSON first
             const normalized = normalizeTreeJsonForMirror(t.toJSON());
-            // Optionally inject $cid per node.data using an id->cid map from live nodes
-            const schema = this.getContainerSchema(t.id);
-            const withCid = schema && isLoroTreeSchema(schema);
-            if (withCid) {
-                const idToCid = new Map<string, string>();
-                // Best-effort: collect from runtime nodes if API available
-                const tMaybe = t as unknown as { getNodes?: () => unknown[] };
-                const nodes: unknown[] = tMaybe.getNodes?.() ?? [];
-                for (const raw of nodes) {
-                    try {
-                        const n = raw as { id?: unknown; data?: unknown };
-                        const id = typeof n.id === "string" ? n.id : undefined;
-                        let dataId: string | undefined;
-                        if (n.data && typeof n.data === "object") {
-                            const d = n.data as { id?: unknown };
-                            dataId =
-                                typeof d.id === "string" ? d.id : undefined;
-                        }
-                        if (id && dataId) idToCid.set(id, dataId);
-                    } catch {
-                        // ignore
-                    }
-                }
-                const stamp = (arr: unknown[]) => {
-                    for (const node of arr) {
-                        const n = node as {
-                            id: unknown;
-                            data?: unknown;
-                            children?: unknown;
-                        };
-                        const cid =
-                            typeof n.id === "string"
-                                ? idToCid.get(n.id)
-                                : undefined;
-                        if (cid) {
-                            if (!n.data || typeof n.data !== "object") {
-                                (n as { data: Record<string, unknown> }).data =
-                                    {};
-                            }
-                            defineCidProperty(n.data, cid as ContainerID);
-                        }
-                        if (Array.isArray(n.children))
-                            stamp(n.children as unknown[]);
-                    }
-                };
-                stamp(normalized);
-                decodeNestedJsonValues(normalized, schema);
-            }
             return normalized as unknown as MirrorState;
         }
         // Fallback
@@ -3646,6 +3642,7 @@ export class Mirror<S extends SchemaType> {
                 const fresh: MirrorStateObject = {};
                 defineCidProperty(fresh, cid);
                 for (const k of Object.keys(obj)) {
+                    if (getChildSchema(schema, k)?.type === "ignore") continue;
                     fresh[k] = this.bulkChildState(
                         cid,
                         "Map",
@@ -3664,6 +3661,10 @@ export class Mirror<S extends SchemaType> {
         // directly as state.
         defineCidProperty(obj, cid);
         for (const k of Object.keys(obj)) {
+            if (getChildSchema(schema, k)?.type === "ignore") {
+                delete obj[k];
+                continue;
+            }
             obj[k] = this.bulkChildState(
                 cid,
                 "Map",
@@ -4506,50 +4507,73 @@ export class Mirror<S extends SchemaType> {
     ): void {
         if (!this.schemaHasLazyList || oldState === newState) return;
         if (!this.schema || this.schema.type !== "schema") return;
-        const rootSchema = this.schema as RootSchemaType<
-            Record<string, ContainerSchemaType>
-        >;
-        this.assertLazyInMapDefinition(
-            rootSchema.definition,
-            oldState,
-            newState,
-            "",
-        );
+        this.assertLazyUntouched(this.schema, oldState, newState, "");
     }
 
-    private assertLazyInMapDefinition(
-        definition: Record<string, SchemaType>,
-        oldObj: unknown,
-        newObj: unknown,
+    private assertLazyUntouched(
+        fieldSchema: SchemaType,
+        oldValue: unknown,
+        newValue: unknown,
         path: string,
     ): void {
-        if (oldObj === newObj) return;
-        if (!isObject(oldObj) || !isObject(newObj)) return;
-        for (const key of Object.keys(definition)) {
-            const fieldSchema = definition[key];
-            const oldVal = oldObj[key];
-            const newVal = newObj[key];
-            if (oldVal === newVal) continue;
-            const fieldPath = path ? `${path}.${key}` : key;
-            if (isLazyListSchema(fieldSchema)) {
-                // Only throw when there was a LazyList to lose: if the slot
-                // never held one (schema drift), let the normal flow proceed.
-                if (isLazyList(oldVal)) {
-                    throw new LazyListWriteError(fieldPath);
+        if (oldValue === newValue) return;
+        if (isLazyListSchema(fieldSchema)) {
+            if (isLazyList(oldValue)) throw new LazyListWriteError(path);
+            return;
+        }
+        // Removing a parent is allowed. Only surviving containers need their
+        // existing lazy views preserved; match identities across reordering.
+        if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+            const tree = isLoroTreeSchema(fieldSchema);
+            const identity = (value: unknown): unknown =>
+                isObject(value) ? value[tree ? "id" : CID_KEY] : undefined;
+            const previous = new Map(
+                oldValue.map((value) => [identity(value), value]),
+            );
+            for (let i = 0; i < newValue.length; i++) {
+                const next = newValue[i];
+                const id = identity(next);
+                const old = id === undefined ? oldValue[i] : previous.get(id);
+                if (tree) {
+                    if (!isObject(old) || !isObject(next)) continue;
+                    this.assertLazyUntouched(
+                        fieldSchema.nodeSchema,
+                        old.data,
+                        next.data,
+                        `${path}[${i}].data`,
+                    );
+                    this.assertLazyUntouched(
+                        fieldSchema,
+                        old.children,
+                        next.children,
+                        `${path}[${i}].children`,
+                    );
+                } else {
+                    const child = getChildSchema(fieldSchema, i);
+                    if (child)
+                        this.assertLazyUntouched(
+                            child,
+                            old,
+                            next,
+                            `${path}[${i}]`,
+                        );
                 }
-                continue;
             }
-            if (isLoroMapSchema(fieldSchema)) {
-                this.assertLazyInMapDefinition(
-                    fieldSchema.definition as Record<string, SchemaType>,
-                    oldVal,
-                    newVal,
-                    fieldPath,
+            return;
+        }
+        if (!isObject(oldValue) || !isObject(newValue)) return;
+        for (const key of new Set([
+            ...Object.keys(oldValue),
+            ...Object.keys(newValue),
+        ])) {
+            const child = getChildSchema(fieldSchema, key);
+            if (child)
+                this.assertLazyUntouched(
+                    child,
+                    oldValue[key],
+                    newValue[key],
+                    path ? `${path}.${key}` : key,
                 );
-            }
-            // Lazy lists nested under (non-lazy) list items or tree nodes are
-            // not guarded: positional paths shift under legitimate edits, so
-            // a reference check could false-positive. Documented best-effort.
         }
     }
 
