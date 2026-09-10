@@ -59,6 +59,8 @@ it("preserves nested tree Ignore values while checking ordinary descendants", ()
         draft.tree[0].children[0].data.name = "after";
     });
     expect(child.data.get("name")).toBe("after");
-    expect(() => { mirror.checkStateConsistency(); }).not.toThrow();
+    expect(() => {
+        mirror.checkStateConsistency();
+    }).not.toThrow();
     mirror.dispose();
 });

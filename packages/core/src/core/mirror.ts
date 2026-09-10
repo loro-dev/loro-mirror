@@ -3354,9 +3354,16 @@ export class Mirror<S extends SchemaType> {
                 }
             }
         }
-        const deepValue = doc.toContainerTree
-            ? doc.toContainerTree({ roots })
-            : doc.getDeepValueWithID();
+        let deepValue: unknown;
+        try {
+            deepValue = doc.toContainerTree
+                ? doc.toContainerTree({ roots })
+                : doc.getDeepValueWithID();
+        } catch (error) {
+            if (!structuredState || !isContainerTreeDepthError(error))
+                throw error;
+            return this.buildRootStateSnapshotLegacy(prevState, options);
+        }
         const deepRoots = isObject(deepValue) ? deepValue : {};
 
         const ctx: BulkWalkContext = {
@@ -4066,4 +4073,16 @@ function mergeInitialIntoBaseWithSchema(
             continue;
         }
     }
+}
+
+// Loro currently reports its container-tree depth limit as a JS error string.
+// Only that read limitation falls back; unrelated read/decode errors propagate.
+function isContainerTreeDepthError(error: unknown): boolean {
+    const message =
+        error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : "";
+    return /toContainerTree nesting exceeds \d+ levels/.test(message);
 }
