@@ -32,3 +32,29 @@ it("does not hide unrelated container-tree read failures", () => {
             }),
     ).toThrow(failure);
 });
+
+it("hydrates a deep lazy item through the same depth-limit fallback", async () => {
+    const doc = new LoroDoc();
+    let map = doc.getList("items").pushContainer(new LoroMap());
+    for (let i = 0; i < 270; i++)
+        map = map.setContainer("child", new LoroMap());
+    map.set("end", true);
+    doc.commit();
+    const mirror = new Mirror({
+        doc,
+        schema: schema({
+            items: schema.LoroList(
+                schema.LoroMapRecord(schema.Any()),
+                undefined,
+                { lazy: { index: [] } },
+            ),
+        }),
+    });
+    const list = mirror.getState().items;
+    await list.hydrate(0, 1);
+    let value = list.get(0) as Record<string, unknown>;
+    for (let i = 0; i < 270; i++)
+        value = value.child as Record<string, unknown>;
+    expect(value.end).toBe(true);
+    mirror.dispose();
+});

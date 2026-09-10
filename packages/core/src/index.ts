@@ -8,12 +8,16 @@ export * from "./schema/index.js";
 export {
     Mirror,
     toNormalizedJson,
+    LazyListImpl,
+    LazyListWriteError,
+    isLazyList,
     type MirrorOptions,
     type SetStateOptions,
     type UpdateMetadata,
     type SubscriberCallback,
     type InferContainerOptions,
     type RootInitialValue,
+    type LazyListWriter,
     UpdateSource,
 } from "./core/index.js";
 
